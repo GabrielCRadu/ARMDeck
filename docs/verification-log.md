@@ -79,7 +79,7 @@ Directly diffed all three `reference/dts/` files node by node (Xo666 `6.16.7`, W
 | Feature | Xo666 `6.16.7` | WuerfelDev `6.17.0-instantnoodle` (wiki's tracked kernel) | ObiKeahloa `v6.13-instantnoodle` |
 |---|---|---|---|
 | **GPU (`&gpu`)** | `status = "okay"`, **zap-shader node configured** with `firmware-name = "qcom/sm8250/OnePlus/a650_zap.mbn"` | **`status = "disabled"`, unconditionally** | `status = "okay"`, but **no zap-shader node at all anywhere in the file** - the mandatory signed-firmware wiring the doc's own §3 calls a hard prerequisite is simply absent |
-| **Charger (`&pm8150b_charger`)** | Node does not exist | `status = "okay"`, wired to ADC channels | `status = "okay"`, near-identical wiring to WuerfelDev (same ADC channel list); `&pm8150b_fg` also `"okay"` |
+| **Charger (`&pm8150b_charger`)** | Node does not exist | `status = "okay"`, wired to ADC channels | Board DTS override block says `status = "okay"`, near-identical wiring to WuerfelDev - **but corrected 2026-08-24: this tree's own `pm8150b.dtsi` never defines the `pm8150b_charger`/`pm8150b_fg` labels, so the unmodified tree fails to compile at all (`dtc` "Label or path ... not found"). Text-only read, not compile-checked - see the correction note above and the later "reverse direction" log entry.** |
 | **USB-C SBU mux / orientation-switch** | `status` unset (defaults **okay**); has both `mode-switch` and `orientation-switch`; endpoint wired to `pm8150b_typec_sbu_out` | `status = "disabled"`, comment reads "Currently unconfigured"; endpoint is an empty stub | Same as WuerfelDev: `status = "disabled"`, identical "Currently unconfigured" comment - the two trees share this block near-verbatim, suggesting one was based on the other |
 | **Fuel gauge chip** | External `ti,bq27411` @ i2c16 addr 0x55, bus `status = "okay"` | External `ti,bq27541` present but bus `status = "disabled"` (vestigial) - real gauge is `&pm8150b_fg` | Same vestigial `bq27541`/disabled-bus pattern as WuerfelDev; real gauge is `&pm8150b_fg`, `status = "okay"` |
 | **Firmware path convention** | `qcom/sm8250/OnePlus/<name>.mbn` (capital O, `.mbn`) | Not directly checked (no zap node) | **`qcom/sm8250/oneplus/<name>.mdt`** - lowercase directory, `.mdt` extension instead of `.mbn`. Firmware blobs packaged for the other two trees are not directly usable here without repackaging. |
@@ -101,6 +101,20 @@ despite `status = "okay"`; Xo666 remains the only tree with *demonstrated* graph
 describing the device in general (i.e. some tree boots 3D) rather than describing that specific
 kernel snapshot - the wiki's per-feature table is not a description of one coherent, buildable
 kernel.
+
+**Correction (2026-08-24, added after actually cloning and compiling ObiKeahloa's tree - see the
+"reverse direction" entry later in this document, in section 4 of the log's chronological
+updates):** the charger/fg half of "ObiKeahloa comes closest on paper" above was itself wrong, not
+just the GPU half. This was written from reading the saved `reference/dts/` text, where
+`&pm8150b_fg`/`&pm8150b_charger` override blocks do appear with `status = "okay"`. Actually cloning
+and building the tree found that ObiKeahloa's own `pm8150b.dtsi` never defines those labels at all
+- the unmodified tree fails `make dtbs` outright with "Label or path pm8150b_fg not found" /
+"Label or path pm8150b_charger not found". So as shipped, ObiKeahloa's charger support was not
+"working," it was not buildable. A patch fixing this (alongside porting Xo666's zap-shader) exists
+now at `pmaports/linux-oneplus-instantnoodle-obikeahloa/` - see the later log entry for full
+details. The lesson generalizes: this document has now been burned twice by treating a DTS
+override block's presence as proof it resolves against something real, instead of compiling to
+check.
 
 #### A fourth resource: prebuilt firmware + ALSA package
 
@@ -555,6 +569,159 @@ looks right on paper," but it is not hardware evidence. Section 1.4's practical 
 cleanly has GPU and charging both confirmed working at once" - still stands until someone flashes
 this and checks `power_supply` sysfs on an actual device.
 
+### Update 2026-08-24 (same day, later still): the reverse direction attempted on ObiKeahloa - zap-shader port, plus a correction to the earlier ObiKeahloa assessment
+
+Section 1.4's divergence table describes ObiKeahloa (`sm8250/v6.13-instantnoodle`) as the closest
+match on paper: `&gpu { status = "okay"; }` and working-looking `pm8150b_charger`/`pm8150b_fg`
+board-DTS override blocks in the same tree, something neither Xo666 nor WuerfelDev has. Its stated
+blocker was that `&gpu` had no zap-shader child node, so the GPU's mandatory signed firmware had
+nowhere to be declared. This entry documents an attempt to fix exactly that, by porting Xo666's
+zap-shader block onto ObiKeahloa's tree - and a real correction to what that same divergence table
+claimed about ObiKeahloa's charger/fg support.
+
+**Setup.** Shallow-cloned `gitlab.com/ObiKeahloa/linux`, branch `sm8250/v6.13-instantnoodle`
+(`git clone --depth 1`), into the same WSL2 Ubuntu 24.04 host used for every other build in this
+project. Confirmed directly in the clone, not just from the saved `reference/dts/` copy, that
+`&gpu` really is bare (`arch/arm64/boot/dts/qcom/sm8250-oneplus-instantnoodle.dts`, line 610:
+`&gpu { status = "okay"; };`, nothing else). This tree has no OnePlus-8-specific defconfig name -
+`arch/arm64/configs/` contains only `defconfig`, `hardening.config`, and `virt.config` - so
+`make ARCH=arm64 LLVM=1 defconfig` (kbuild's plain default, which resolves to this fork's own
+`arch/arm64/configs/defconfig` file) was used instead of an `op8_defconfig`-style target.
+
+**Zap-shader port.** Before assuming the port would resolve, checked whether the `gpu_mem`
+reserved-memory node the zap-shader's `memory-region` references actually exists in ObiKeahloa's
+tree. It does: same label, same address and size as Xo666's
+(`reg = <0x0 0x8e21a000 0x0 0x2000>;`, deleted from the upstream `sm8250.dtsi` node of the same
+name and redefined at board level - both trees follow the identical pattern), just under the unit
+name `memory@8e21a000` instead of Xo666's `gpu@8e21a000` (cosmetic - the label the phandle
+resolves against is identical). So no reserved-memory node needed to be added; only the
+zap-shader child node itself, ported byte-for-byte from
+`reference/dts/sm8250-oneplus-instantnoodle.dts` (Xo666, lines 957-970):
+```
+&gpu {
+	status = "okay";
+
+	zap-shader {
+		memory-region = <&gpu_mem>;
+		firmware-name = "qcom/sm8250/OnePlus/a650_zap.mbn";
+	};
+};
+```
+
+**The correction.** Building `dtbs` at this point (zap-shader added, nothing else touched) failed
+- not because of the zap-shader change, but with two pre-existing errors unrelated to it:
+```
+Error: .../sm8250-oneplus-instantnoodle.dts:848.1-12 Label or path pm8150b_fg not found
+Error: .../sm8250-oneplus-instantnoodle.dts:854.1-17 Label or path pm8150b_charger not found
+```
+Confirmed this predates the zap-shader patch entirely: `git stash`-ing the change and building the
+completely unmodified clone's `dtbs` target produces the identical two errors. Checked why:
+`grep -rn 'pm8150b-charger\|pm8150b-fg' arch/arm64/boot/dts/qcom/` across the whole directory of
+this clone returns nothing. ObiKeahloa's own `pm8150b.dtsi`, in this branch, never defines the
+`pm8150b_charger` or `pm8150b_fg` labels its own board DTS's `&pm8150b_fg { ... }` and
+`&pm8150b_charger { ... }` override blocks target. Those override blocks are real and do carry
+`status = "okay"` in their text - that part of section 1.4's table is accurate as a description of
+the board DTS file - but the node definitions they need to attach to simply are not present
+anywhere in this kernel tree. dtc rightly refuses to resolve a reference to a label that does not
+exist, and refuses to build the whole `dtbs` target as a result.
+
+**This means the earlier fork-divergence table's characterization of ObiKeahloa - "near-identical
+wiring to WuerfelDev... `&pm8150b_fg` also 'okay'" - was wrong in a way that matters, not just
+imprecise.** That characterization was written from reading the saved `reference/dts/` snapshot's
+text, not from compiling the actual kernel source. The board-DTS override text looked complete and
+so was assumed to be backed by a working `pm8150b.dtsi`, the same way it is on WuerfelDev. It
+is not. Until this session actually cloned and built ObiKeahloa's tree, that gap was invisible -
+a pure DTS read cannot distinguish "this override activates a real, present node" from "this
+override references a label that does not exist and will hard-fail the build." Compiling caught
+it; reading did not. This is exactly the kind of thing this log tries to catch, and in this
+instance it did not catch it the first time around.
+
+**The fix applied.** Since ObiKeahloa's `pm8150b.dtsi` turned out to have the same
+charger/fg-less shape Xo666's did before its own charger patch (same `channel@6`/`channel@9` ADC
+layout, same missing `charger@1000`/`fuel-gauge@4000` nodes), the same content already used in
+`pmaports/linux-oneplus-instantnoodle/0001-port-charger-fg-from-wuerfeldev.patch` (originally
+sourced from WuerfelDev) was inserted into ObiKeahloa's `pm8150b.dtsi` at the same relative
+positions: the `pm8150b_charger` node, `channel@7`/`channel@8` ADC sub-nodes, and the `pm8150b_fg`
+node. ObiKeahloa's own board-level override blocks in `sm8250-oneplus-instantnoodle.dts` - which
+already declared `channel@83` (`vph_pwr`) and `channel@99` (`chg_sbux`) at board level, and already
+had the `&pm8150b_fg`/`&pm8150b_charger` override blocks - were left completely untouched; they
+were already correct, they just had nothing to attach to until this fix.
+
+**Compile verification, two layers, same rigor as the Xo666 charger patch:**
+
+1. **Raw `dtc` build.** `make ARCH=arm64 LLVM=1 defconfig` configured cleanly.
+   `make ARCH=arm64 LLVM=1 -j16 dtbs` completed with exit code 0 and zero warnings or errors
+   anywhere in the build log, `sm8250-oneplus-instantnoodle.dtb` included specifically (grepped
+   the full log for "warning"/"error" attached to that target - none). Decompiled the resulting
+   `.dtb` (`dtc -I dtb -O dts`) and confirmed all three node types resolve fully with
+   `status = "okay"`:
+   - `zap-shader` under `&gpu`: `memory-region` phandle resolves to the `gpu_mem` reserved-memory
+     node at `0x8e21a000`, `firmware-name = "qcom/sm8250/OnePlus/a650_zap.mbn"` present.
+   - `charger@1000`: all 5 io-channels correctly cross-referenced (`usb_in_i_uv`,
+     `usb_in_v_div_16`, `chg_sbux`, `vph_pwr`, `chg_temp`), `monitored-battery` phandle resolved.
+   - `fuel-gauge@4000`: `monitored-battery` and `power-supplies` phandles both resolved, the
+     latter pointing back at the charger node.
+   Also checked the SBU mux directly in the decompiled output rather than assuming: `fcs,fsa4480`
+   remains `status = "disabled"` on this tree, unchanged by this patch - matching WuerfelDev, as
+   section 1.4 already documented. This patch does not touch, and does not claim to fix, USB-C
+   orientation switching.
+2. **Patch file + real abuild/pmbootstrap pipeline.** Generated `git diff` into
+   `pmaports/linux-oneplus-instantnoodle-obikeahloa/0001-port-zap-shader-from-xo666.patch` (new
+   package directory, separate from and not modifying
+   `pmaports/linux-oneplus-instantnoodle/`), verified it applies cleanly to a clean checkout
+   (`git stash`, `git apply --check`, `git apply` - no fuzz or offset warnings). Wrote a new draft
+   `APKBUILD` at `pmaports/linux-oneplus-instantnoodle-obikeahloa/APKBUILD`, modeled on the
+   existing Xo666 package's APKBUILD (same LLVM cross-build convention, same `kernel.release`
+   install-step fix carried over from the start rather than rediscovered), pointing at
+   `gitlab.com/ObiKeahloa/linux` branch `sm8250/v6.13-instantnoodle` with `pkgname =
+   linux-oneplus-instantnoodle-obikeahloa` - deliberately distinct from the default kernel
+   package, not wired into `device-oneplus-instantnoodle` or picked as any kind of default.
+   First `pmbootstrap -y build` attempt failed immediately with `ERROR: linux-oneplus-instantnoodle-obikeahloa:
+   pkgdesc is too long` - a real, quick packaging bug (abuild's `pkgdesc` field has a length
+   limit), fixed by shortening the description. Copied the fixed APKBUILD and patch into
+   `~/pmaports/device/testing/linux-oneplus-instantnoodle-obikeahloa/` (the same local pmaports
+   checkout used for every package build in this project), ran `pmbootstrap checksum
+   linux-oneplus-instantnoodle-obikeahloa` (copied the regenerated checksums back into the
+   checked-in APKBUILD), then `pmbootstrap -y build linux-oneplus-instantnoodle-obikeahloa`.
+   **This build succeeded**, producing `linux-oneplus-instantnoodle-obikeahloa-6.13.0-r0.apk`
+   (43.5 MB), a full cold build (no prior cache for this source tree) that ran about 32 minutes.
+   The build log explicitly shows the patch being applied ("patching file
+   arch/arm64/boot/dts/qcom/pm8150b.dtsi", "patching file
+   arch/arm64/boot/dts/qcom/sm8250-oneplus-instantnoodle.dts") before the kernel and DTBs compile,
+   and the `sm8250-oneplus-instantnoodle.dtb` DTC line in that build's log carries no attached
+   warnings either.
+
+**Firmware path convention, flagged and not resolved.** Every other `firmware-name` property
+already present in ObiKeahloa's tree uses a lowercase, `.mdt`-suffixed path -
+`qcom/sm8250/oneplus/adsp.mdt`, `cdsp.mdt`, `slpi.mdt`, `venus.mdt` (confirmed by grepping this
+clone directly). The ported zap-shader node keeps Xo666's exact string instead -
+`qcom/sm8250/OnePlus/a650_zap.mbn`, capital O, `.mbn` extension - as a faithful port of the one
+tree with demonstrated GPU firmware loading, rather than guessing at an unproven `.mdt` rename. A
+firmware package built for this specific tree therefore cannot reuse the same lowercase/`.mdt`
+layout its other four blobs expect for the zap shader; whether the kernel's remoteproc/mdt loader
+would even accept the differently-cased/suffixed file through the same `firmware-name` mechanism
+is not verified here. Real open question for anyone packaging firmware for this combination, not
+a solved problem - same category of unresolved question as the `OnePlus8`/`OnePlus` path mismatch
+already documented in section 1's firmware discussion.
+
+**What this does NOT prove, stated plainly - same caveats as the Xo666 charger patch, plus one
+more.** This is compile-time verification only. Nothing here has been run on a real OnePlus 8. Not
+known: whether `pm8150b-charger`/`pm8150b-fg` actually probe on this hardware; whether the ADC
+channel assignments read sane values; whether the `a6xx`/`msm_gpu` driver actually accepts firmware
+through the `.mbn` path on this kernel given the tree's other firmware nodes use `.mdt`; and
+whether stacking all three changes (zap-shader plus the charger/fg node-definition port) together
+has any runtime interaction a static DTS/DTB diff cannot show.
+
+**Net result.** With both parts of this patch applied, ObiKeahloa's tree compiles clean and its
+compiled `.dtb` resolves GPU zap-shader, charger, and fuel-gauge simultaneously, plus packages
+successfully through the real `abuild`/`pmbootstrap` pipeline - a combination no single tree in
+this project had reached before. It is a better on-paper combination than the WuerfelDev-onto-Xo666
+charger port (which left the SBU mux disabled - and so does this: ObiKeahloa's `fcs,fsa4480` was
+already `status = "disabled"` before this patch and stays that way). It is still compile-verified
+only, on a fork this session found does not even build at HEAD without the charger/fg node
+definitions this patch adds - which is itself the most concrete evidence yet that reading device
+tree text is not a substitute for compiling it, a lesson this project has now paid for twice.
+
 ---
 
 ## 8. Summary
@@ -570,12 +737,20 @@ a fork of mainline maintained by one contributor, not upstream support, and the 
 install flow does not run. *(Addressed - see §7.)*
 
 **Watch.** The project's real bottleneck is **fork fragmentation**: no tree cleanly has GPU,
-charging, and clean USB-C orientation switching all working at once (§1.4). A third tree
-(ObiKeahloa) has charging AND an enabled `&gpu` node simultaneously - the closest match so
-far - but its DTS has no zap-shader firmware wiring at all, which every other part of this
-document treats as a hard requirement for the GPU to actually initialize. That makes
-ObiKeahloa's graphics support unconfirmed, not a proven win. Until someone tests ObiKeahloa
-on real hardware, or ports Xo666's zap-shader block onto it, or ports WuerfelDev/ObiKeahloa's
-charger nodes onto Xo666, **Xo666 remains the only tree with demonstrated graphics** and stays
-this document's reference. The Steam/FEX plumbing (§5.2) is the next-biggest source of
-uncertainty after the fork-merge problem.
+charging, and clean USB-C orientation switching all working at once (§1.4). Two merge/patch
+attempts now exist. The first ports WuerfelDev's charger/fg nodes onto Xo666
+(`pmaports/linux-oneplus-instantnoodle/`) - compile-verified through the real packaging
+pipeline, but leaves the SBU mux disabled. The second ports Xo666's zap-shader onto ObiKeahloa
+(`pmaports/linux-oneplus-instantnoodle-obikeahloa/`) - also compile-verified through the real
+packaging pipeline, GPU + charger + fg all confirmed resolved in the compiled `.dtb`, SBU mux
+still disabled there too. Doing the second port surfaced a real correction to this log's own
+earlier work: ObiKeahloa's charger/fg support, described in §1.4 as "near-identical wiring to
+WuerfelDev" based on a DTS text read, turned out not to compile at all at HEAD - its board-DTS
+override blocks reference `pm8150b_charger`/`pm8150b_fg` labels that its own `pm8150b.dtsi`
+never defines. Reading the device tree text said "working"; compiling it said "does not build."
+The zap-shader patch had to grow to include porting those node definitions too, using the same
+content already proven on Xo666. **Both patches remain compile-verified only, not hardware-tested
+- neither has been flashed to a real OnePlus 8.** Xo666 (unpatched) is still the only tree
+demonstrated to boot with 3D on the postmarketOS wiki's own device page; both patches are
+candidates layered on top of what compiles cleanly, not confirmations of what boots. The
+Steam/FEX plumbing (§5.2) is the next-biggest source of uncertainty after the fork-merge problem.

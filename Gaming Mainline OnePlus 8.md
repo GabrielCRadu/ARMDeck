@@ -20,7 +20,7 @@ fork-uri neoficiale, în afara pmaports și a kernelului postmarketOS oficial - 
 acord unele cu altele:
 
 - [`github.com/Xo666/mainline-instantnoodle`](https://github.com/Xo666/mainline-instantnoodle) (branch `6.16.7`), care conține `sm8250-oneplus-instantnoodle.dts` - acesta e device tree-ul folosit ca referință principală în acest document (vezi `reference/dts/`), pentru că e **singurul cu GPU dovedit funcțional** (zap-shader complet configurat).
-- [`gitlab.com/ObiKeahloa/linux`](https://gitlab.com/ObiKeahloa/linux/-/tree/sm8250/v6.13-instantnoodle) (branch `sm8250/v6.13-instantnoodle`) - are simultan `&gpu status = "okay"` **și** încărcare funcțională (`pm8150b_charger`), combinația cea mai apropiată de ideal. Dar DTS-ul **nu conține deloc un nod zap-shader** - firmware-ul semnat obligatoriu pentru GPU (Secțiunea 1, tabelul de firmware) nu are unde să fie declarat. Tratați GPU-ul de aici ca neconfirmat, nu ca funcțional, până nu e testat pe hardware real.
+- [`gitlab.com/ObiKeahloa/linux`](https://gitlab.com/ObiKeahloa/linux/-/tree/sm8250/v6.13-instantnoodle) (branch `sm8250/v6.13-instantnoodle`) - DTS-ul are `&gpu status = "okay"` **și** blocuri de override pentru `pm8150b_charger`/`pm8150b_fg` care arată `"okay"` în text, combinația cea mai apropiată de ideal pe hârtie. Dar DTS-ul **nu conține deloc un nod zap-shader** - firmware-ul semnat obligatoriu pentru GPU (Secțiunea 1, tabelul de firmware) nu are unde să fie declarat. **Mai mult, verificat 2026-08-24 prin compilare directă a sursei (nu doar citire de DTS): fork-ul, așa cum e livrat, nu se compilează deloc** - `pm8150b.dtsi` din acest fork nu definește etichetele `pm8150b_charger`/`pm8150b_fg` pe care propriile blocuri de override le țintesc, deci "încărcare funcțională" era o concluzie greșită, trasă doar din text. Un patch care rezolvă atât zap-shader-ul cât și acest gol de definiții există acum (`pmaports/linux-oneplus-instantnoodle-obikeahloa/`), compile-verificat - vezi caseta de mai jos și `docs/verification-log.md`.
 - [`gitlab.postmarketos.org/WuerfelDev/linux-sm8250`](https://gitlab.postmarketos.org/WuerfelDev/linux-sm8250/-/tree/6.17.0-instantnoodle) (branch implicit `6.17.0-instantnoodle`) - acesta e fork-ul spre care indică efectiv câmpul `pmoskernel = 6.17.0` de pe wiki-ul postmarketOS, nu cele de mai sus. Are încărcare funcțională, dar **GPU-ul e dezactivat explicit în DTS** (`&gpu { status = "disabled"; }`) - vezi caseta de mai jos.
 
 > **Cel mai important lucru de reținut din toată Secțiunea 1:** niciun fork, la data verificării,
@@ -37,6 +37,26 @@ acord unele cu altele:
 > `docs/verification-log.md`). **Asta e o verificare de compilare, nu una pe hardware real** -
 > nimeni n-a confirmat încă, pe un telefon fizic, că încărcarea sau fuel gauge-ul chiar funcționează
 > cu acest patch aplicat.
+>
+> **Actualizare 2026-08-24 (mai târziu, aceeași zi): și direcția inversă a fost încercată, pe
+> ObiKeahloa.** S-a portat zap-shader-ul de la Xo666 peste DTS-ul ObiKeahloa, ca să rezolve
+> blocajul GPU-ului de acolo. La verificare prin compilare (nu doar citire de text) a ieșit la
+> iveală o problemă reală, nesesizată înainte: blocurile de override `&pm8150b_fg`/`&pm8150b_charger`
+> din DTS-ul ObiKeahloa există în text și arată `status = "okay"`, dar `pm8150b.dtsi` din acest
+> fork **nu definește deloc** etichetele `pm8150b_charger`/`pm8150b_fg` la care se referă acele
+> blocuri - fork-ul, așa cum e livrat, nu se compilează deloc (`dtc` raportează
+> "Label or path pm8150b_fg not found"). Deci evaluarea de mai devreme din acest document, "are
+> simultan GPU activat și încărcare funcțională", era greșită pe jumătate de încărcare, nu doar
+> pe jumătatea de GPU - crezută corectă pe baza citirii textului DTS, infirmată de compilarea
+> reală. Patch-ul rezultat (`pmaports/linux-oneplus-instantnoodle-obikeahloa/0001-port-zap-shader-from-xo666.patch`)
+> a crescut ca să porteze și definițiile lipsă ale nodurilor de charger/fg (aceleași folosite deja
+> la portarea pe Xo666), nu doar zap-shader-ul. **Rezultat: se compilează curat, atât cu `dtc`
+> direct cât și prin `abuild`/`pmbootstrap` real, iar DTB-ul compilat confirmă toate trei
+> - GPU zap-shader, charger, fuel gauge - rezolvate cu `status = "okay"` simultan.** Mux-ul SBU
+> rămâne dezactivat pe acest fork, la fel ca pe WuerfelDev - patch-ul nu rezolvă orientarea USB-C.
+> **Tot netestat pe hardware real.** Detalii complete în `docs/verification-log.md`. Acest pachet
+> e experimental, un candidat suplimentar, nu kernelul implicit al proiectului - fluxul de
+> instalare din Secțiunea 5 rămâne indexat pe Xo666.
 
 Wiki-ul postmarketOS confirmă că dispozitivul boot-ează (`booting = yes`) cu 3D funcțional (`status_3d = Y`), dar îl marchează `packaged = no` și `category = testing` - adică **nu există un pachet `device-oneplus-instantnoodle` în pmaports**. Pachetele OnePlus care chiar există sunt `device-oneplus-enchilada` (6), `device-oneplus-fajita` (6T), `device-oneplus-bacon` (One), `device-oneplus-billie2` (Nord N100), `device-oneplus-guacamole` (7 Pro), `device-oneplus-instantnoodlep` (**8 Pro**) și `device-oneplus-kebab` (**8T**). OnePlus 8 standard nu e printre ele. Fluxul de instalare din Secțiunea 5 trebuie tratat ca instalare dintr-un fork, nu ca `pmbootstrap init` standard.
 
@@ -356,7 +376,7 @@ Jocurile pe 32 de biți Direct3D 9 (*Fallout: New Vegas*) și titlurile 2D/izome
 | Risc Tehnic Identificat | Mecanism Cauzal | Impact Asupra Sistemului | Protocol Tehnic de Remediere / Mitigare |
 | :---- | :---- | :---- | :---- |
 | **Coruperea Tabelei GPT UFS** | Suprascrierea necorespunzătoare a volumelor dinamice super/userdata; `fastboot flash super` e o scriere brută, fără verificare de dimensiune. | Dispozitiv blocat complet (*Hard-Brick*); lipsă răspuns Fastboot. | Forțare în mod EDL (Qualcomm HS-USB QDLoader 9008) și rescriere GPT via bkerler/edl sau OnePlus MSM Download Tool - transport confirmat funcțional pe acest SoC, dar fără o recuperare completă documentată public. Pasul 0 din Secțiunea 5 (pachet OxygenOS pregătit dinainte) e plasa de siguranță reală. |
-| **Fork-ul cu GPU nu are încărcare (și invers)** | `pm8150b-charger` (5 W) funcționează doar pe fork-ul WuerfelDev, care are `&gpu` dezactivat; fork-ul Xo666 (GPU funcțional) nu are deloc nod de charger. | Pe Xo666 nemodificat, bateria se descarcă normal sub sarcină, fără nicio compensare din priză - nu ~2.7-5.5 ore cu Peltier alimentat, ci durata reală a bateriei neasistate. | Un patch care portează nodurile de charger din WuerfelDev peste DTS-ul Xo666 există acum (`pmaports/linux-oneplus-instantnoodle/0001-port-charger-fg-from-wuerfeldev.patch`) și e verificat că se compilează curat, inclusiv prin `abuild`/`pmbootstrap` real. **Netestat pe hardware** - nu se știe dacă încărcarea chiar funcționează cu acest patch pe un telefon fizic. Vezi `docs/verification-log.md`. |
+| **Fork-ul cu GPU nu are încărcare (și invers)** | `pm8150b-charger` (5 W) funcționează doar pe fork-ul WuerfelDev, care are `&gpu` dezactivat; fork-ul Xo666 (GPU funcțional) nu are deloc nod de charger; fork-ul ObiKeahloa are `&gpu` activat dar fără zap-shader, plus blocuri de override pentru charger/fg care, verificat 2026-08-24, nu se compilau deloc (etichete lipsă în `pm8150b.dtsi`). | Pe Xo666 nemodificat, bateria se descarcă normal sub sarcină, fără nicio compensare din priză - nu ~2.7-5.5 ore cu Peltier alimentat, ci durata reală a bateriei neasistate. | Există acum **două** patch-uri candidate. (1) Nodurile de charger din WuerfelDev portate peste DTS-ul Xo666 (`pmaports/linux-oneplus-instantnoodle/0001-port-charger-fg-from-wuerfeldev.patch`) - compilare curată, inclusiv prin `abuild`/`pmbootstrap` real, dar mux-ul SBU rămâne dezactivat. (2) Zap-shader-ul de la Xo666 portat peste DTS-ul ObiKeahloa, plus definițiile de charger/fg care lipseau din `pm8150b.dtsi`-ul acelui fork (`pmaports/linux-oneplus-instantnoodle-obikeahloa/0001-port-zap-shader-from-xo666.patch`) - compilare curată, DTB-ul confirmă GPU + charger + fuel gauge simultan, tot prin pipeline-ul `abuild`/`pmbootstrap` real, mux-ul SBU tot dezactivat. **Ambele netestate pe hardware** - nu se știe dacă încărcarea sau GPU-ul chiar funcționează cu vreunul din aceste patch-uri pe un telefon fizic, și niciunul nu e kernelul implicit al proiectului. Vezi `docs/verification-log.md`. |
 | **Eșec Handshake USB-PD** | Comportament netestat al mux-ului `fcs,fsa4480` la orientare inversă a conectorului. | Posibilă întrerupere a alimentării coolerului Peltier și revenire la throttling. | Marcat OPEN în log-ul de verificare; necesită testare directă pe dispozitiv. |
 
 #### **Protocolul de Recuperare EDL (Emergency Download Mode)**
@@ -409,6 +429,19 @@ raportate sunt corecte, sau dacă adăugarea acestor noduri interferează la run
 mux-ul USB-C - lucruri pe care o comparație statică de device tree nu le poate dovedi. Problema
 fork-fragmentării din Secțiunea 1 rămâne, în esență, nerezolvată până la testarea pe hardware; ce
 există acum e un candidat de rezolvare, nu o rezolvare confirmată.
+
+**Actualizare 2026-08-24 (mai târziu, aceeași zi):** și direcția inversă a fost încercată - zap-shader-ul
+de la Xo666, portat peste DTS-ul ObiKeahloa. Asta a scos la iveală o eroare reală din acest
+document: secțiunea 1 spunea că ObiKeahloa are "simultan GPU activat și încărcare funcțională",
+concluzie trasă doar din citirea textului DTS. Compilarea reală a arătat că fork-ul ObiKeahloa, așa
+cum e livrat, **nu se compilează deloc** - blocurile de override pentru charger/fg din DTS-ul lui
+țintesc etichete pe care propriul `pm8150b.dtsi` nu le definește nicăieri. Patch-ul rezultat
+(`pmaports/linux-oneplus-instantnoodle-obikeahloa/0001-port-zap-shader-from-xo666.patch`) a
+crescut ca să porteze și acele definiții lipsă, nu doar zap-shader-ul. Rezultatul se compilează
+curat și prin `abuild`/`pmbootstrap` real, iar DTB-ul compilat confirmă GPU zap-shader, charger și
+fuel gauge rezolvate simultan cu `status = "okay"` - o combinație mai bună pe hârtie decât patch-ul
+de mai sus, dar cu aceleași limitări: mux-ul SBU rămâne dezactivat, iar nimic din asta nu a fost
+testat pe un telefon real. Detalii complete în `docs/verification-log.md`.
 
 Prin respectarea corecțiilor din acest document, testarea pe hardware real a patch-ului de mai sus,
 și verificarea necunoscutei rămase (clientul Steam ARM64, Secțiunea 3), OnePlus 8 poate depăși

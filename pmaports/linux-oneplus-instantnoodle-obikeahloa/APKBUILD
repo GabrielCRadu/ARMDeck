@@ -1,0 +1,128 @@
+# Reference: <https://postmarketos.org/vendorkernel>
+# DRAFT - experimental, alternative kernel candidate. This is NOT the
+# default kernel package for this device port (that remains
+# pmaports/linux-oneplus-instantnoodle/, the Xo666-based tree). This
+# package exists to prove that a single kernel source can carry a working
+# GPU, charger, and fuel gauge at once - the combination that led to this
+# separate package is documented in docs/verification-log.md (the
+# ObiKeahloa zap-shader-port entry) and pkgname is deliberately distinct
+# so it cannot be confused with or collide with the default package.
+#
+# Source: ObiKeahloa/linux, branch sm8250/v6.13-instantnoodle. Unlike
+# Xo666's fork, this tree does not ship an OnePlus-8-specific defconfig
+# name - its arch/arm64/configs/ contains only "defconfig", "hardening.config",
+# and "virt.config", so plain `make ARCH=arm64 LLVM=1 defconfig` is used
+# (kbuild's standard convention: this looks for arch/arm64/configs/defconfig,
+# which is this fork's own file, not a generic upstream default).
+#
+# This tree's own board DTS already had &gpu { status = "okay"; } and
+# board-level &pm8150b_charger / &pm8150b_fg override blocks, but two
+# things were broken until 0001-port-zap-shader-from-xo666.patch:
+#   1. &gpu had no zap-shader child node, so the GPU's mandatory signed
+#      firmware (a650_zap.mbn) had nowhere to be declared - same hard
+#      prerequisite documented throughout this project.
+#   2. This tree's own pm8150b.dtsi never actually defined the
+#      pm8150b_charger/pm8150b_fg labels its own board DTS overrides
+#      targeted - confirmed by compiling: the unmodified tree fails
+#      `make dtbs` with "Label or path pm8150b_fg not found" and
+#      "Label or path pm8150b_charger not found". This was not visible
+#      from a source-level DTS diff alone; it only surfaced when this
+#      tree was actually cloned and built for this package. See the
+#      patch file's own header comment for the full explanation.
+# The patch fixes both, porting content from Xo666 (zap-shader) and from
+# WuerfelDev via the already-existing charger patch on the Xo666 package
+# (charger/fg node definitions). See the patch header for exact sourcing.
+#
+# Compile-verified 2026-08-24 in the same WSL2 Ubuntu 24.04 host used for
+# the other kernel packages in this project: `make ARCH=arm64 LLVM=1
+# defconfig` configured cleanly, `make ARCH=arm64 LLVM=1 -j16 dtbs`
+# completed with exit code 0 and zero warnings/errors attached to
+# sm8250-oneplus-instantnoodle.dtb, and decompiling that dtb confirmed all
+# three node types (GPU zap-shader, pm8150b_charger, pm8150b_fg) resolve
+# fully with status = "okay". NOT tested on real hardware - see
+# docs/verification-log.md for the exact verification performed and what
+# it does and does not prove. The USB-C SBU mux / orientation-switch
+# (fcs,fsa4480) remains status = "disabled" on this tree, same as
+# WuerfelDev - this package does not address that, only GPU + charging.
+maintainer=""
+_flavor="oneplus-instantnoodle-obikeahloa"
+pkgname=linux-$_flavor
+pkgver=6.13.0
+pkgrel=0
+pkgdesc="OnePlus 8 (instantnoodle) kernel, ObiKeahloa fork, ported zap-shader (experimental)"
+arch="aarch64"
+_carch="arm64"
+_config="defconfig"
+url="https://gitlab.com/ObiKeahloa/linux"
+license="GPL-2.0-only"
+options="!strip !check !tracedeps pmb:cross-native"
+makedepends="
+	bash
+	bc
+	bison
+	clang
+	findutils
+	flex
+	lld
+	llvm
+	openssl-dev
+	perl
+	postmarketos-installkernel
+	python3
+"
+
+# Source: ObiKeahloa/linux, branch sm8250/v6.13-instantnoodle (see
+# docs/verification-log.md section 1.4 for why this fork - it is the only
+# one of the three known instantnoodle forks whose board DTS carries both
+# an enabled &gpu node and working charger/fg override blocks
+# simultaneously). 0001-port-zap-shader-from-xo666.patch ports the missing
+# zap-shader wiring from Xo666, plus - discovered necessary only once this
+# tree was actually compiled, not from reading the DTS alone - the
+# pm8150b_charger/pm8150b_fg node definitions this tree's own board DTS
+# overrides required but that were missing from this tree's pm8150b.dtsi.
+# See the patch file's header for the full explanation and exact
+# verification performed.
+source="
+	$pkgname-$pkgver.tar.gz::https://gitlab.com/ObiKeahloa/linux/-/archive/sm8250/v6.13-instantnoodle/linux-sm8250-v6.13-instantnoodle.tar.gz
+	0001-port-zap-shader-from-xo666.patch
+"
+builddir="$srcdir/linux-sm8250-v6.13-instantnoodle"
+
+prepare() {
+	default_prepare
+	make ARCH="$_carch" LLVM=1 "$_config"
+}
+
+build() {
+	unset LDFLAGS
+	make ARCH="$_carch" LLVM=1 \
+		KBUILD_BUILD_VERSION="$pkgrel-$_flavor" \
+		Image.gz dtbs modules
+}
+
+package() {
+	mkdir -p "$pkgdir"/boot
+
+	make ARCH="$_carch" LLVM=1 \
+		zinstall modules_install dtbs_install \
+		INSTALL_PATH="$pkgdir"/boot/ \
+		INSTALL_MOD_PATH="$pkgdir" \
+		INSTALL_MOD_STRIP=1 \
+		INSTALL_DTBS_PATH="$pkgdir"/boot/dtbs
+	rm -f "$pkgdir"/lib/modules/*/build "$pkgdir"/lib/modules/*/source
+
+	# mkinitfs scans /usr/share/kernel/*/kernel.release to find installed
+	# kernels - without this file it reports "found: []" and fails, even
+	# though the actual vmlinuz/modules are present under boot/ and
+	# lib/modules/. This bug was found and fixed once already for the
+	# Xo666 package (see pmaports/linux-oneplus-instantnoodle/APKBUILD and
+	# docs/verification-log.md) - carried over here from the start rather
+	# than rediscovering it.
+	install -D "$builddir"/include/config/kernel.release \
+		"$pkgdir"/usr/share/kernel/$_flavor/kernel.release
+}
+
+sha512sums="
+64dfc20c2ccc1698b088f0bd930c168549c890d90453225de01a49f93e416ce49314d5b177f0da309cfc40cd42306d24d96b9efaf1ca5e907904ff9e8a090ff7  linux-oneplus-instantnoodle-obikeahloa-6.13.0.tar.gz
+fd235837eec27e78063272b85bc891fcaa70ea3d4fdeecd55623f5b410eef14d1a766a227296e3406fc160623a26f036d918e31a0e7ab90f6026ec15c9c9d81f  0001-port-zap-shader-from-xo666.patch
+"
