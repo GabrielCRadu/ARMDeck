@@ -358,6 +358,10 @@ rău fizic, ce s-a verificat deja și testul precis de făcut pe telefon.
   configurat după ce sunetul funcționează. Până atunci: nu urca peste ~50%, iar pentru jocuri
   folosește căști (USB-C sau Bluetooth). Dacă auzi distorsiuni, scazi imediat.
 - **Test:** `dmesg | grep -i tfa` trebuie să arate două cipuri cu revizia `0x0c74`.
+- **Rezultat 2026-10-01:** ton de 1 kHz la -30 dBFS, curat, fără pocnituri; canalul stâng iese
+  sus (cască), dreptul jos (difuzorul principal). Pe această cale nu există control de volum
+  hardware, deci nivelul depinde doar de semnalul digital. Difuzorul de sus e cel mai mic și mai
+  vulnerabil: la configurarea PipeWire, limitator obligatoriu înainte de volume mari.
 
 ### 4.5 Regulatoare (PM8150, PM8150L, PM8009 prin RPMh)
 

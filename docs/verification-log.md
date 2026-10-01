@@ -955,5 +955,13 @@ OnePlus 8 IN2013, OxygenOS 13.1.0.590(EX01) firmware, slot b. Wrote only `dtbo_b
 - **Regulators:** all 39 within their DTS limits (which match the OnePlus vendor limits); rear
   camera rails unused and off, front camera L3F/L7F on.
 
+- **Speaker test (later the same evening):** a 1 kHz tone at -30 dBFS (peak 1036/32767, 2 s, fades)
+  through `TERT_MI2S_RX Audio Mixer MultiMedia1` on `hw:0,0` played cleanly, no pops. Left channel
+  came out of the top (earpiece, TFA9874 @ 0x34), right channel out of the bottom (main speaker,
+  @ 0x35), matching the DTS. There is no hardware volume control on this path, so loudness depends
+  only on the digital level; any future PipeWire setup needs a limiter before going louder.
+- **Firewall hardening applied:** SSH dropped on `wlan*` (`/etc/nftables.d/40_ssh_usb_only.nft`),
+  verified unreachable from the LAN and reachable over USB.
+
 Still to do on hardware: charging test from partial charge (voltage must stay below 4.45 V),
-speaker test at low volume, Bluetooth with firmware.
+Bluetooth check after a reboot (firmware now installed).
