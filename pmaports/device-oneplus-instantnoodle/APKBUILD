@@ -7,7 +7,7 @@ maintainer=""
 pkgname=device-oneplus-instantnoodle
 pkgdesc="OnePlus 8"
 pkgver=0.1
-pkgrel=2
+pkgrel=3
 url="https://postmarketos.org"
 license="MIT"
 arch="aarch64"
@@ -21,6 +21,13 @@ options="!check !archcheck"
 # linux-firmware-qca: QCA6390 Bluetooth firmware (qca/htbtfw20.tlv,
 # qca/htnv20.bin) from official linux-firmware. Without it the first boot
 # logged "QCA Failed to request file: qca/htbtfw20.tlv".
+# qbootctl: marks the booted A/B slot successful on every boot (with
+# qbootctl-systemd, pulled in by install_if, it runs "qbootctl -m" at
+# multi-user.target). Without it the bootloader decrements the slot's retry
+# count on each boot; after about 7 boots slot b became unbootable and the
+# phone stopped at "the current image (boot/recovery) have been destroyed"
+# (2026-10-02, fixed with fastboot --set-active=b). The packaged OnePlus 6
+# port gets the same tool through soc-qcom-qbootctl.
 depends="
 	alsa-ucm-conf-oneplus-instantnoodle
 	firmware-oneplus-instantnoodle-adsp
@@ -32,6 +39,7 @@ depends="
 	linux-oneplus-instantnoodle
 	mkbootimg
 	postmarketos-base
+	qbootctl
 "
 makedepends="
 	devicepkg-dev

@@ -11,14 +11,21 @@
 # pmaports CI also rejects an unversioned alsa-ucm-conf provider
 # (.ci/testcases/test_provides.py). It depends on the real package instead.
 #
+# ALSA finds a card's UCM config through conf.d/<driver>/<card longname>.conf.
+# The card here is driver "sm8250", longname "OnePlus8", so without the
+# conf.d/sm8250/OnePlus8.conf link the files in ucm2/OnePlus/ are never
+# loaded and PipeWire creates no output at all (found on hardware 2026-10-02).
+#
 # Speaker safety: HiFi.conf defines no hardware volume control for the two
 # TFA9874 speaker amplifiers, and the kernel driver runs them without any
 # speaker protection. Keep software volume moderate; see
-# docs/hardware-safety.md.
+# docs/hardware-safety.md and userspace/audio/ (PipeWire must open the PCM as
+# S16LE without mmap: with S24LE or mmap the stream runs but the amps stay
+# silent).
 maintainer=""
 pkgname=alsa-ucm-conf-oneplus-instantnoodle
 pkgver=1
-pkgrel=1
+pkgrel=2
 pkgdesc="ALSA UCM configuration for OnePlus 8 (instantnoodle)"
 url="https://github.com/Xo666/linux-oneplus-instantnoodle"
 arch="aarch64"
@@ -33,6 +40,9 @@ package() {
 	mkdir -p "$pkgdir"/usr/share/alsa/ucm2
 	cp -r "$builddir/alsa-oneplus-instantnoodle/usr/share/alsa/ucm2/OnePlus" \
 		"$pkgdir"/usr/share/alsa/ucm2/
+	mkdir -p "$pkgdir"/usr/share/alsa/ucm2/conf.d/sm8250
+	ln -s ../../OnePlus/OnePlus8.conf \
+		"$pkgdir"/usr/share/alsa/ucm2/conf.d/sm8250/OnePlus8.conf
 }
 
 sha512sums="
