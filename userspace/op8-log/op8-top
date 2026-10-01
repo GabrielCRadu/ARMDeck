@@ -1,0 +1,13 @@
+#!/bin/sh
+# op8-log (steamed-noodle): procesele care folosesc cel mai mult CPU, la ~2 s, scrise imediat pe
+# disc. Pentru teste de reset. Folosire: op8-top [fisier]   (implicit ~/op8-top.log)
+F=${1:-$HOME/op8-top.log}
+while :; do
+	{
+		echo "== up $(cut -d' ' -f1 /proc/uptime)"
+		# a doua iteratie a lui top are procentele de CPU corecte (prima nu are referinta)
+		top -b -n 2 -d 1 | awk '/^Mem:/ { n++ } n == 2' | head -16
+	} >> "$F"
+	sync "$F"
+	sleep 1
+done

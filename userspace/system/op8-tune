@@ -1,0 +1,22 @@
+#!/bin/sh
+# op8-tune (steamed-noodle, OnePlus 8): setari de performanta aplicate la fiecare pornire.
+# Toate sunt reversibile: systemctl disable op8-tune si repornire.
+# Vezi docs/performance-crash-audit.md, P3, P4, P7.
+G=/sys/class/devfreq/3d00000.gpu
+
+# P3: GPU-ul isi reevalueaza frecventa la 16 ms in loc de 50 ms; limitele raman 305-587 MHz
+[ -w "$G/polling_interval" ] && echo 16 > "$G/polling_interval"
+
+# P7: transparent huge pages doar la cerere (mai putine sacadari din compactarea memoriei)
+echo madvise > /sys/kernel/mm/transparent_hugepage/enabled
+
+# P4: gamescope poate ridica prioritatea firelor lui, ca pe SteamOS. Se reaplica la fiecare
+# pornire, pentru ca un update al pachetului gamescope inlocuieste fisierul si pierde capabilitatea.
+SETCAP=$(command -v setcap)
+if [ -x /usr/bin/gamescope ] && [ -n "$SETCAP" ]; then
+	"$SETCAP" cap_sys_nice+ep /usr/bin/gamescope
+fi
+
+echo "op8-tune: gpu_polling=$(cat "$G/polling_interval" 2>/dev/null) ms," \
+	"thp=$(cat /sys/kernel/mm/transparent_hugepage/enabled)," \
+	"gamescope=$(getcap /usr/bin/gamescope 2>/dev/null)"

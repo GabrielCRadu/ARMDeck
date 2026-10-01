@@ -1,0 +1,13 @@
+[Unit]
+Description=op8-volbtn: butoanele de volum (+/-5% pe Difuzoare (protejat), limita 100%)
+After=pipewire.service wireplumber.service
+
+[Service]
+# background.slice: op8-standby ingheata doar app.slice si user.slice
+Slice=background.slice
+ExecStart=/home/gabriel/op8-volbtn
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=default.target

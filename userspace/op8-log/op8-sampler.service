@@ -1,0 +1,12 @@
+[Unit]
+Description=op8-log: esantion la 2 s (baterie, temperaturi, frecvente, I/O), scris imediat pe disc
+After=local-fs.target
+
+[Service]
+ExecStart=/usr/local/bin/op8-sampler
+Restart=always
+RestartSec=5
+Nice=10
+
+[Install]
+WantedBy=multi-user.target

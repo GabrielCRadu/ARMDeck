@@ -1,0 +1,112 @@
+#!/bin/sh
+# op8-log (steamed-noodle, OnePlus 8): un esantion la fiecare $OP8_INTERVAL secunde (implicit 2),
+# o linie CSV scrisa imediat pe disc (sync), ca dupa un reset sa stim ce facea telefonul in
+# ultimele secunde. Doar citire din sysfs/proc. OP8_ONCE=1 = un singur esantion (pentru test).
+set -u
+D=${OP8_DIR:-/var/log/op8}
+I=${OP8_INTERVAL:-2}
+mkdir -p "$D" /run/op8 2>/dev/null
+chmod 1777 /run/op8 2>/dev/null
+BID=$(cut -c1-8 /proc/sys/kernel/random/boot_id)
+
+# Numarul pornirii (0001, 0002, ...): ordinea fisierelor nu depinde de ceas, care dupa pornire
+# arata 1970 pana la sincronizarea prin retea. Primul script op8 care ruleaza dupa boot il creste.
+bootnum() {
+	R=${OP8_RUN:-/run/op8}
+	mkdir -p "$R"
+	until mkdir "$R/.lock" 2>/dev/null; do sleep 1; done
+	if [ ! -s "$R/bootnum" ]; then
+		n=$(cat "$D/bootcount" 2>/dev/null)
+		case "$n" in ''|*[!0-9]*) n=0 ;; esac
+		n=$((n + 1))
+		echo "$n" > "$D/bootcount"
+		sync "$D/bootcount"
+		printf '%04d\n' "$n" > "$R/bootnum"
+	fi
+	rmdir "$R/.lock"
+	cat "$R/bootnum"
+}
+NUM=$(bootnum)
+# un fisier nou la fiecare (re)pornire a serviciului: numar pornire, boot_id, uptime
+F="$D/sample-$NUM-$BID-u$(printf '%06d' "$(cut -d. -f1 /proc/uptime)").csv"
+
+# caile se rezolva o singura data
+zone() {
+	for z in /sys/class/thermal/thermal_zone*; do
+		[ "$(cat "$z/type")" = "$1" ] && { echo "$z/temp"; return; }
+	done
+	echo /dev/null
+}
+Z_GT=$(zone gpu-top-thermal); Z_GB=$(zone gpu-bottom-thermal)
+Z_P0=$(zone pm8150-thermal); Z_PB=$(zone pm8150b-thermal); Z_PL=$(zone pm8150l-thermal)
+Z_WL=$(zone wlan-thermal); Z_MEM=$(zone mem-thermal)
+CPUZ=""
+for z in /sys/class/thermal/thermal_zone*; do
+	case "$(cat "$z/type")" in cpu*|cluster*) CPUZ="$CPUZ $z/temp" ;; esac
+done
+B=/sys/class/power_supply/bq27411-0
+USBV=$(ls /sys/class/power_supply/tcpm-source-psy-*/voltage_now 2>/dev/null | head -1)
+[ -n "$USBV" ] || USBV=/dev/null
+CF=/sys/devices/system/cpu/cpufreq
+NET=/sys/class/net/wlan0/statistics
+
+# citeste prima linie dintr-un fisier intr-o variabila, fara proces nou ($1 = variabila, $2 = fisier).
+# Variabila se goleste inainte: read din busybox intoarce eroare pe unele fisiere din /proc
+# chiar daca a citit valoarea (ex. /proc/sys/kernel/tainted), deci codul de iesire nu conteaza.
+rd() { eval "$1="; read -r "$1" < "$2" 2>/dev/null; return 0; }
+
+# pastreaza ultimele 30 de fisiere de esantioane (numele se sorteaza cronologic)
+ls "$D"/sample-*.csv 2>/dev/null | sort -r | tail -n +31 | xargs -r rm -f
+
+echo "t_up_s,t_unix,bat_mv,bat_ma,bat_pct,bat_dC,usb_mv,cpu_max_mC,gpu_top_mC,gpu_bot_mC,pm8150_mC,pm8150b_mC,pm8150l_mC,wlan_mC,mem_mC,f_cpu0_khz,f_cpu4_khz,f_cpu7_khz,f_gpu_hz,f_ufs_hz,load1,psi_cpu,psi_mem,psi_io,mem_avail_kb,swap_used_kb,wlan_rx_b,wlan_tx_b,ufs_wr_sect,usb_data,usb_power,tainted,mark" > "$F"
+# current.csv arata mereu spre fisierul activ (op8-live.sh de pe PC il urmareste dupa nume)
+ln -sfn "$(basename "$F")" "$D/current.csv"
+
+while :; do
+	read -r up _ < /proc/uptime
+	now=$(date +%s)
+	rd bv "$B/voltage_now"; rd bi "$B/current_now"; rd bp "$B/capacity"; rd bt "$B/temp"
+	rd uv "$USBV"
+	cmax=0
+	for z in $CPUZ; do
+		rd t "$z"
+		[ -n "$t" ] && [ "$t" -gt "$cmax" ] && cmax=$t
+	done
+	rd gt "$Z_GT"; rd gb "$Z_GB"; rd p0 "$Z_P0"; rd pb "$Z_PB"; rd pl "$Z_PL"; rd wl "$Z_WL"; rd mt "$Z_MEM"
+	rd f0 "$CF/policy0/scaling_cur_freq"; rd f4 "$CF/policy4/scaling_cur_freq"; rd f7 "$CF/policy7/scaling_cur_freq"
+	rd fg /sys/class/devfreq/3d00000.gpu/cur_freq; rd fu /sys/class/devfreq/1d84000.ufshc/cur_freq
+	read -r l1 _ < /proc/loadavg
+	read -r _ pc _ < /proc/pressure/cpu; read -r _ pm _ < /proc/pressure/memory; read -r _ pio _ < /proc/pressure/io
+	ma=; stt=0; sf=0
+	while read -r k v _; do
+		case "$k" in
+			MemAvailable:) ma=$v ;;
+			SwapTotal:) stt=$v ;;
+			SwapFree:) sf=$v ;;
+		esac
+	done < /proc/meminfo
+	rd rx "$NET/rx_bytes"; rd tx "$NET/tx_bytes"
+	read -r _ _ _ _ _ _ ws _ < /sys/block/sda/stat
+	rd dr /sys/class/typec/port0/data_role; rd pr /sys/class/typec/port0/power_role
+	case "$dr" in *"[host]"*) dr=host ;; *"[device]"*) dr=device ;; *) dr=- ;; esac
+	case "$pr" in *"[source]"*) pr=source ;; *"[sink]"*) pr=sink ;; *) pr=- ;; esac
+	rd tn /proc/sys/kernel/tainted
+	# Marcajul il scrie op8-mark ca userul normal. Root nu-l poate goli (fs.protected_regular
+	# interzice O_CREAT pe fisierul altui user intr-un folder public), iar in busybox o
+	# redirectare esuata pe ":" opreste scriptul. Deci se citeste si se sterge.
+	mk=
+	if [ -s /run/op8/mark ]; then
+		read -r mk < /run/op8/mark 2>/dev/null || true
+		rm -f /run/op8/mark
+		mk=$(echo "$mk" | tr ',' ';')
+	fi
+	printf '%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s\n' \
+		"$up" "$now" "$((${bv:-0} / 1000))" "$((${bi:-0} / 1000))" "$bp" "$bt" "$((${uv:-0} / 1000))" \
+		"$cmax" "$gt" "$gb" "$p0" "$pb" "$pl" "$wl" "$mt" \
+		"$f0" "$f4" "$f7" "$fg" "$fu" \
+		"$l1" "${pc#avg10=}" "${pm#avg10=}" "${pio#avg10=}" "$ma" "$((stt - sf))" \
+		"$rx" "$tx" "$ws" "$dr" "$pr" "$tn" "$mk" >> "$F"
+	sync "$F"
+	[ "${OP8_ONCE:-0}" = 1 ] && break
+	sleep "$I"
+done

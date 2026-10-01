@@ -1,0 +1,148 @@
+#!/bin/sh
+# op8-log (steamed-noodle, OnePlus 8): raport la fiecare pornire. Doar citire.
+# Scrie $OP8_DIR/boot-<data>-<boot_id>.txt cu:
+#   - motivele de pornire/oprire din PMIC-ul principal PM8150 (PON gen2, registrele 0x08C0-0x08CB;
+#     la gen2 adresele de gen1 0x0808-0x080D NU sunt motivele)
+#   - registrele de incarcare PM8150B (tensiune maxima, curenti, stare)
+#   - modul de pornire dat de bootloader, pstore, sfarsitul jurnalului din pornirea anterioara
+set -u
+D=${OP8_DIR:-/var/log/op8}
+mkdir -p "$D"
+BID=$(cut -c1-8 /proc/sys/kernel/random/boot_id)
+
+# Numarul pornirii (0001, 0002, ...): ordinea fisierelor nu depinde de ceas, care dupa pornire
+# arata 1970 pana la sincronizarea prin retea. Primul script op8 care ruleaza dupa boot il creste.
+bootnum() {
+	R=${OP8_RUN:-/run/op8}
+	mkdir -p "$R"
+	until mkdir "$R/.lock" 2>/dev/null; do sleep 1; done
+	if [ ! -s "$R/bootnum" ]; then
+		n=$(cat "$D/bootcount" 2>/dev/null)
+		case "$n" in ''|*[!0-9]*) n=0 ;; esac
+		n=$((n + 1))
+		echo "$n" > "$D/bootcount"
+		sync "$D/bootcount"
+		printf '%04d\n' "$n" > "$R/bootnum"
+	fi
+	rmdir "$R/.lock"
+	cat "$R/bootnum"
+}
+NUM=$(bootnum)
+F="$D/boot-$NUM-$BID.txt"
+R=/sys/kernel/debug/regmap
+
+# registrele cerute dintr-un regmap SPMI, intr-o singura citire ($1 = regmap, $2 = adrese)
+regs() { grep -E "^0*($2):" "$R/$1/registers" 2>/dev/null; }
+# valoarea unui registru din ce a intors regs ($1 = text, $2 = adresa)
+val() { echo "$1" | grep -m1 "^0*$2:" | cut -d' ' -f2; }
+# numele bitilor setati; $1 = valoare hex, apoi numele bitilor 0..7
+bits() {
+	case "$1" in
+		[0-9a-f][0-9a-f]) ;;
+		*) echo " (necitit: '$1')"; return ;;
+	esac
+	v=$((0x$1)); shift; out=""; i=0
+	for n in "$@"; do
+		[ $((v >> i & 1)) -eq 1 ] && out="$out $n"
+		i=$((i + 1))
+	done
+	echo "${out:- (niciun bit)}"
+}
+# un registru numeric ($1 = valoare hex) sau -1 daca nu s-a citit
+num() {
+	case "$1" in
+		[0-9a-f][0-9a-f]) echo $((0x$1)) ;;
+		*) echo -1 ;;
+	esac
+}
+
+RST="SOFT PS_HOLD PMIC_WD GP1 GP2 KPDPWR_AND_RESIN RESIN KPDPWR"
+
+{
+	echo "== op8 raport de pornire"
+	echo "data: $(date)   uptime: $(cut -d' ' -f1 /proc/uptime) s"
+	echo "boot_id: $(cat /proc/sys/kernel/random/boot_id)   kernel: $(uname -r)"
+	echo "bootloader: $(tr ' ' '\n' < /proc/cmdline | grep -E '^androidboot\.(startupmode|mode)=' | tr '\n' ' ')"
+
+	P=$(regs 0-00 '0805|08c[0-9a-b]')
+	echo
+	echo "== PM8150 PON (subtip $(val "$P" 0805); 04 = gen2)"
+	v=$(val "$P" 08c0); echo "PON_REASON1   0xC0 = $v:$(bits "$v" HARD_RESET SMPL RTC DC_CHG USB_CHG PON1 CBL KPDPWR)"
+	v=$(val "$P" 08c2); echo "WARM_RESET1   0xC2 = $v:$(bits "$v" $RST)"
+	v=$(val "$P" 08c5); echo "POFF_REASON1  0xC5 = $v:$(bits "$v" $RST)"
+	echo "POFF_REASON2  0xC6 = $(val "$P" 08c6)"
+	v=$(val "$P" 08c7); echo "OFF_REASON    0xC7 = $v:$(bits "$v" b0 b1 b2 b3 b4 S3_RESET_SEQ FAULT_SEQ POFF_SEQ)"
+	v=$(val "$P" 08c8); echo "FAULT_REASON1 0xC8 = $v:$(bits "$v" GP_FAULT0 GP_FAULT1 GP_FAULT2 GP_FAULT3 MBG_FAULT OVLO UVLO AVDD_RB)"
+	v=$(val "$P" 08c9); echo "FAULT_REASON2 0xC9 = $v:$(bits "$v" b0 b1 b2 FAULT_N PBS_WATCHDOG_TO PBS_NACK RESTART_PON OTST3)"
+	v=$(val "$P" 08ca); echo "S3_RESET      0xCA = $v:$(bits "$v" b0 b1 b2 b3 FAULT_N PBS_WATCHDOG_TO PBS_NACK KPDPWR_ANDOR_RESIN)"
+	echo "SOFT_RESET1   0xCB = $(val "$P" 08cb)"
+	echo "(motivele de oprire si FAULT raman memorate de la evenimente vechi; conteaza OFF_REASON:"
+	echo " POFF_SEQ = oprire normala, FAULT_SEQ = eroare electrica, S3_RESET_SEQ = reset fortat din butoane)"
+
+	C=$(regs 0-02 '1006|1061|1070|1370')
+	fv=$(num "$(val "$C" 1070)"); fcc=$(num "$(val "$C" 1061)"); icl=$(num "$(val "$C" 1370)")
+	st=$(num "$(val "$C" 1006)")
+	echo
+	echo "== PM8150B incarcare"
+	if [ "$fv" -ge 0 ]; then
+		mv=$((3600 + fv * 10))
+		echo "tensiune maxima 0x1070 = $fv -> $mv mV"
+		[ "$mv" -gt 4400 ] && echo "ATENTIE: tensiunea maxima e peste 4.40 V"
+	else
+		echo "tensiune maxima 0x1070: necitita"
+	fi
+	[ "$fcc" -ge 0 ] && echo "curent incarcare 0x1061 = $fcc -> $((fcc * 50)) mA"
+	[ "$icl" -ge 0 ] && echo "curent intrare 0x1370 = $icl -> $((icl * 50)) mA"
+	if [ "$st" -ge 0 ]; then
+		set -- INHIBIT TRICKLE PRE FULLON TAPER TERMINATE PAUSE DISABLE
+		shift $((st & 7))
+		echo "stare 0x1006 = $st -> $1"
+	fi
+
+	echo
+	echo "== baterie (bq27411)"
+	for a in voltage_now current_now capacity status temp; do
+		printf '%s=%s ' "$a" "$(cat /sys/class/power_supply/bq27411-0/$a 2>/dev/null)"
+	done
+	echo
+
+	echo
+	echo "== WiFi"
+	echo "adresa wlan0: $(cat /sys/class/net/wlan0/address 2>/dev/null)   stare: $(cat /sys/class/net/wlan0/operstate 2>/dev/null)"
+	dmesg 2>/dev/null | grep -m1 "ath11k.*fw_version" | cut -c1-160
+
+	echo
+	echo "== pstore"
+	ls -la /sys/fs/pstore/ 2>&1
+	if [ -n "$(ls /sys/fs/pstore/ 2>/dev/null)" ]; then
+		mkdir -p "$D/pstore-$BID"
+		cp /sys/fs/pstore/* "$D/pstore-$BID/" 2>&1
+		echo "copiat in $D/pstore-$BID"
+	fi
+
+	echo
+	# mesajele repetate ale codecului audio wcd938x (problema cunoscuta) ar ineca restul
+	W=$(journalctl -b -1 -k -p warning --no-pager -o short-monotonic 2>&1)
+	echo "== pornirea anterioara: avertismente kernel (ultimele 60, fara wcd938x)"
+	echo "(mesaje wcd938x ascunse: $(echo "$W" | grep -c wcd938x_codec))"
+	echo "$W" | grep -v wcd938x_codec | tail -60
+	echo
+	echo "== pornirea anterioara: ultimele 80 de mesaje"
+	journalctl -b -1 -n 80 --no-pager -o short-monotonic 2>&1
+	echo
+	echo "== pornirea anterioara: ultimele esantioane op8-sampler"
+	prev=$(ls "$D"/sample-*.csv 2>/dev/null | grep -v -- "-$BID-" | sort | tail -1)
+	if [ -n "$prev" ]; then
+		echo "$prev"
+		head -1 "$prev"
+		tail -8 "$prev"
+	else
+		echo "(niciun fisier)"
+	fi
+} > "$F" 2>&1
+
+# pastreaza ultimele 50 de rapoarte (numele se sorteaza cronologic)
+ls "$D"/boot-*.txt 2>/dev/null | sort -r | tail -n +51 | xargs -r rm -f
+# pe disc imediat: un reset in urmatoarele 30 s nu trebuie sa lase un raport gol
+sync "$F"
+echo "$F"

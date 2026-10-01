@@ -1,0 +1,11 @@
+[Unit]
+Description=op8-log: raport la pornire (motive PON/POFF, incarcare, pstore, pornirea anterioara)
+After=sys-kernel-debug.mount systemd-journal-flush.service local-fs.target
+Wants=sys-kernel-debug.mount
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/op8-bootreport
+
+[Install]
+WantedBy=multi-user.target

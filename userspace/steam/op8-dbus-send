@@ -1,0 +1,30 @@
+#!/bin/sh
+# steamed-noodle: adaptor pentru dbus-send in containerul Steam (/usr/local/bin/dbus-send).
+# Steam suspenda/opreste/reporneste cu "dbus-send --system ... login1.Manager.Suspend boolean:true".
+# logind refuza simplul Suspend cat timp exista blocaje (pe postmarketOS fiecare sesiune SSH tine
+# "inhibit=sleep"): BlockedByInhibitorLock, iar Steam ramane cu ecranul negru. Aici Suspend,
+# PowerOff si Reboot devin ...WithFlags cu SD_LOGIND_SKIP_INHIBITORS (16); polkit permite asta
+# userului gabriel. Orice alt apel trece neschimbat. Jurnal: ~/op8-dbus-send.log
+REAL=/usr/bin/dbus-send
+L="$HOME/op8-dbus-send.log"
+case " $* " in
+	*" org.freedesktop.login1.Manager.Suspend "*|*" org.freedesktop.login1.Manager.PowerOff "*|*" org.freedesktop.login1.Manager.Reboot "*)
+		echo "$(date '+%F %T') primit: $*" >> "$L"
+		for a do
+			shift
+			case "$a" in
+				org.freedesktop.login1.Manager.Suspend|org.freedesktop.login1.Manager.PowerOff|org.freedesktop.login1.Manager.Reboot)
+					a="${a}WithFlags" ;;
+				boolean:true|boolean:false)
+					a="uint64:16" ;;
+			esac
+			set -- "$@" "$a"
+		done
+		echo "$(date '+%F %T') trimis: $*" >> "$L"
+		"$REAL" "$@" >> "$L" 2>&1
+		rc=$?
+		echo "$(date '+%F %T') cod iesire: $rc" >> "$L"
+		exit $rc
+		;;
+esac
+exec "$REAL" "$@"

@@ -1,0 +1,50 @@
+#!/bin/sh
+# op8-powerbtn (steamed-noodle): butonul de pornire ca pe Steam Deck (steamos-powerbuttond):
+# apasare scurta = steam://shortpowerpress (Steam face sleep), apasare lunga (>= 1 s) =
+# steam://longpowerpress (meniul de alimentare). In standby, de trezire se ocupa op8-standby;
+# 3 secunde dupa trezire butonul se ignora, ca apasarea de trezire sa nu ceara alt sleep.
+# Ruleaza ca serviciu al userului in background.slice (nu e inghetat de op8-standby).
+# Jurnal: journalctl -t op8-powerbtn
+EV=
+for e in /sys/class/input/event*; do
+	[ "$(cat "$e/device/name" 2>/dev/null)" = pm8941_pwrkey ] && EV=/dev/input/$(basename "$e")
+done
+log() { logger -t op8-powerbtn -- "$*"; }
+[ -n "$EV" ] || { log "nu gasesc butonul de pornire (pm8941_pwrkey)"; exit 1; }
+T=${XDG_RUNTIME_DIR:-/tmp}/op8-powerbtn-ev
+log "pornit, citesc $EV"
+
+steam_url() {
+	podman exec --user gabriel steam sh -c "cd \$HOME/.local/share/Steam/steamrtarm64 && LD_LIBRARY_PATH=\$PWD:\$HOME/.local/share/Steam/lib/aarch64-linux-gnu ./steam -ifrunning $1" >/dev/null 2>&1 &
+}
+
+down=0
+while :; do
+	dd if="$EV" bs=24 count=1 of="$T" 2>/dev/null || { sleep 1; continue; }
+	set -- $(od -An -tu2 -j16 -N4 "$T") 0 0
+	[ "$1" = 1 ] && [ "$2" = 116 ] || continue
+	val=$(od -An -td4 -j20 -N4 "$T" | tr -d ' ')
+	# momentul evenimentului in ms, din timestamp-ul kernelului (tv_sec, tv_usec)
+	set -- $(od -An -tu8 -N16 "$T")
+	ms=$(($1 * 1000 + $2 / 1000))
+	if [ "$val" = 1 ]; then
+		down=$ms
+		continue
+	fi
+	[ "$val" = 0 ] && [ "$down" -gt 0 ] || continue
+	dur=$((ms - down))
+	down=0
+	now=$(date +%s)
+	res=$(stat -c %Y /run/op8-standby.resumed 2>/dev/null || echo 0)
+	if [ -e /run/op8-standby.active ]; then
+		log "apasare de ${dur} ms ignorata: standby activ"
+	elif [ $((now - res)) -lt 3 ]; then
+		log "apasare de ${dur} ms ignorata: trezire acum $((now - res)) s"
+	elif [ "$dur" -lt 1000 ]; then
+		log "apasare scurta (${dur} ms) -> steam://shortpowerpress"
+		steam_url steam://shortpowerpress
+	else
+		log "apasare lunga (${dur} ms) -> steam://longpowerpress"
+		steam_url steam://longpowerpress
+	fi
+done

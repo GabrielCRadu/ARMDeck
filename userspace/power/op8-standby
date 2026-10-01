@@ -1,0 +1,83 @@
+#!/bin/sh
+# op8-standby (steamed-noodle, OnePlus 8): "sleep" sigur, FARA suspendarea kernelului (s2idle
+# nu e testat pe kernelul nostru; daca nu se trezeste, ramane doar un reset fortat).
+# Steam -> dbus-send login1 Suspend -> systemd-suspend.service -> acest script (in locul
+# systemd-sleep). Ecran negru, aplicatiile userului inghetate, nucleele mari la frecventa
+# minima; asteapta butonul de pornire, apoi restaureaza totul. Steam vede un ciclu normal de
+# sleep/wake. Dupa modelul konkr-standby din SteamOS-ARM-Handhelds.
+# Jurnal: journalctl -t op8-standby. Marcaje pentru op8-powerbtn: /run/op8-standby.active
+# (cat timp ruleaza) si /run/op8-standby.resumed (momentul iesirii).
+U=/sys/fs/cgroup/user.slice/user-10000.slice/user@10000.service
+CF=/sys/devices/system/cpu/cpufreq
+BL=$(ls -d /sys/class/backlight/* 2>/dev/null | head -1)
+EV=
+for e in /sys/class/input/event*; do
+	[ "$(cat "$e/device/name" 2>/dev/null)" = pm8941_pwrkey ] && EV=/dev/input/$(basename "$e")
+done
+log() { logger -t op8-standby -- "$*"; }
+
+touch /run/op8-standby.active
+old_bl=$(cat "$BL/brightness" 2>/dev/null)
+log "intrare in standby: luminozitate $old_bl, buton $EV, uptime $(cut -d' ' -f1 /proc/uptime)"
+
+restore() {
+	trap - EXIT INT TERM
+	for p in policy4 policy7; do
+		[ -s "/run/op8-standby-$p" ] && cat "/run/op8-standby-$p" > "$CF/$p/scaling_max_freq"
+	done
+	for c in "$U/app.slice" "$U/user.slice"; do
+		[ -w "$c/cgroup.freeze" ] && echo 0 > "$c/cgroup.freeze"
+	done
+	[ -n "$old_bl" ] && echo "$old_bl" > "$BL/brightness"
+	rm -f /run/op8-standby.active
+	touch /run/op8-standby.resumed
+	log "iesire din standby: luminozitate $(cat "$BL/brightness"), app.slice inghetat=$(cat "$U/app.slice/cgroup.freeze"), max cpu4=$(cat "$CF/policy4/scaling_max_freq") cpu7=$(cat "$CF/policy7/scaling_max_freq")"
+}
+trap restore EXIT INT TERM
+
+# 1. ecran negru
+[ -n "$BL" ] && echo 0 > "$BL/brightness"
+log "pas 1: luminozitate $(cat "$BL/brightness")"
+# 2. Steam, gamescope, jocul si containerul inghetate; PipeWire (session.slice) ramane pornit
+for c in "$U/app.slice" "$U/user.slice"; do
+	[ -w "$c/cgroup.freeze" ] && echo 1 > "$c/cgroup.freeze"
+done
+sleep 1
+log "pas 2: app.slice $(grep frozen "$U/app.slice/cgroup.events"), user.slice $(grep frozen "$U/user.slice/cgroup.events" 2>/dev/null)"
+# 3. nucleele mari la frecventa minima
+for p in policy4 policy7; do
+	cat "$CF/$p/scaling_max_freq" > "/run/op8-standby-$p"
+	cat "$CF/$p/scaling_min_freq" > "$CF/$p/scaling_max_freq"
+done
+log "pas 3: max cpu4=$(cat "$CF/policy4/scaling_max_freq") cpu7=$(cat "$CF/policy7/scaling_max_freq"); astept butonul de pornire"
+
+# 4. asteapta butonul de pornire: input_event pe 64 de biti = 24 de octeti,
+#    tip la octetul 16 (EV_KEY = 1), cod la 18 (KEY_POWER = 116), valoare la 20 (1 = apasat).
+#    Apasarile din primele 2 secunde se ignora (aceeasi apasare care a cerut sleep).
+#    Iesire de rezerva: fisierul /run/op8-wake (sudo touch /run/op8-wake, prin SSH).
+start=$(cut -d. -f1 /proc/uptime)
+while :; do
+	if [ -e /run/op8-wake ]; then
+		rm -f /run/op8-wake
+		log "trezire prin /run/op8-wake"
+		break
+	fi
+	if [ -n "$EV" ]; then
+		if ! dd if="$EV" bs=24 count=1 of=/run/op8-standby-ev 2>/dev/null; then
+			log "citire esuata din $EV"
+			sleep 1
+			continue
+		fi
+		set -- $(od -An -tu2 -j16 -N4 /run/op8-standby-ev) 0 0
+		val=$(od -An -td4 -j20 -N4 /run/op8-standby-ev | tr -d ' ')
+		now=$(cut -d. -f1 /proc/uptime)
+		[ "$1" = 1 ] && log "eveniment tip=$1 cod=$2 valoare=$val la +$((now - start)) s"
+		if [ "$1" = 1 ] && [ "$2" = 116 ] && [ "$val" = 1 ] && [ $((now - start)) -ge 2 ]; then
+			log "trezire prin butonul de pornire"
+			break
+		fi
+	else
+		sleep 1
+	fi
+done
+exit 0

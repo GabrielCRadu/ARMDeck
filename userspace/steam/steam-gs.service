@@ -1,0 +1,19 @@
+[Unit]
+Description=steamed-noodle: Steam (container Fedora) in gamescope pe ecranul telefonului
+# cel mult 5 porniri pe minut, ca o eroare permanenta sa nu intre in bucla
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+[Service]
+# la o repornire, containerul poate fi inca in curs de oprire; podman esueaza atunci la
+# /etc/passwd din overlay, gamescope iese curat si sesiunea ramane oprita
+ExecStartPre=/bin/sh -c 'for i in $(seq 1 30); do [ "$(podman inspect -f "{{.State.Status}}" steam 2>/dev/null)" = stopping ] || break; sleep 1; done; true'
+# biblioteca Steam e montata (bind) de pe partitia de jocuri; asteapta pana la 30 s
+ExecStartPre=/bin/sh -c 'for i in $(seq 1 30); do grep -q " /home/gabriel/.local/share/Steam/steamapps " /proc/mounts && break; sleep 1; done; [ -f /home/gabriel/steam-gs.log ] && mv -f /home/gabriel/steam-gs.log /home/gabriel/steam-gs.prev.log; true'
+ExecStart=/bin/sh -c '/home/gabriel/steam-gamescope.sh > /home/gabriel/steam-gs.log 2>&1'
+# sesiunea Steam e "ecranul" consolei: daca se inchide din orice motiv, porneste din nou
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=default.target

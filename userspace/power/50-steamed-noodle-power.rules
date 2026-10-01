@@ -1,0 +1,20 @@
+// steamed-noodle: userul gabriel (Steam ruleaza in container, fara sesiune logata pe ecran)
+// poate suspenda (la noi: op8-standby, nu suspendarea kernelului), opri si reporni telefonul
+// fara parola, chiar daca sesiunile SSH tin blocaje de sleep. Fara regula, logind raspunde
+// "challenge" si Steam ramane blocat in "suspend operation in progress".
+polkit.addRule(function(action, subject) {
+	var ids = [
+		"org.freedesktop.login1.suspend",
+		"org.freedesktop.login1.suspend-multiple-sessions",
+		"org.freedesktop.login1.suspend-ignore-inhibit",
+		"org.freedesktop.login1.power-off",
+		"org.freedesktop.login1.power-off-multiple-sessions",
+		"org.freedesktop.login1.power-off-ignore-inhibit",
+		"org.freedesktop.login1.reboot",
+		"org.freedesktop.login1.reboot-multiple-sessions",
+		"org.freedesktop.login1.reboot-ignore-inhibit"
+	];
+	if (subject.user == "gabriel" && ids.indexOf(action.id) >= 0) {
+		return polkit.Result.YES;
+	}
+});

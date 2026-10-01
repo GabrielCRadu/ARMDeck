@@ -1,0 +1,33 @@
+#!/bin/sh
+# op8-touchmode (steamed-noodle): touch ca pe Steam Deck fara controler conectat.
+# Steam comuta modul touch al gamescope (STEAM_TOUCH_CLICK_MODE pe radacina Xwayland) doar din
+# Steam Input, adica doar cand are un controler. Aici urmarim aplicatia din fata
+# (GAMESCOPE_FOCUSED_APP): interfata Steam (769) sau nimic = 4 (touch real: glisare = scroll,
+# fara cursor), orice joc = 1 (atingere = click stanga).
+# Pornit de steam-in-container.sh, in container, cu DISPLAY-ul lui gamescope.
+# Jurnal: ~/op8-touchmode.log
+L="$HOME/op8-touchmode.log"
+P="${XDG_RUNTIME_DIR:-/tmp}/op8-touchmode.pid"
+# o singura instanta: opreste-o pe cea veche (ramasa de la o sesiune Steam anterioara)
+[ -s "$P" ] && kill "$(cat "$P")" 2>/dev/null
+echo $$ > "$P"
+
+set_mode() {
+	xprop -root -f STEAM_TOUCH_CLICK_MODE 32c -set STEAM_TOUCH_CLICK_MODE "$1" 2>> "$L"
+	echo "$(date '+%F %T') aplicatie $2 -> mod touch $1" >> "$L"
+}
+
+# asteapta Xwayland (pana la 60 s)
+for i in $(seq 1 60); do xprop -root >/dev/null 2>&1 && break; sleep 1; done
+echo "$(date '+%F %T') pornit pe DISPLAY=$DISPLAY" >> "$L"
+set_mode 4 start
+
+last=
+xprop -root -spy GAMESCOPE_FOCUSED_APP 2>> "$L" | while read -r line; do
+	app=${line##*= }
+	case "$app" in *[!0-9]*|'') app=0 ;; esac
+	if [ "$app" = 769 ] || [ "$app" = 0 ]; then mode=4; else mode=1; fi
+	[ "$mode" = "$last" ] && continue
+	set_mode "$mode" "$app"
+	last=$mode
+done

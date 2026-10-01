@@ -1,0 +1,11 @@
+[Unit]
+Description=op8-tune: setari de performanta (polling GPU, THP, prioritate gamescope)
+After=local-fs.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/bin/op8-tune
+
+[Install]
+WantedBy=multi-user.target
