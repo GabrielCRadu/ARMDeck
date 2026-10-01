@@ -353,6 +353,12 @@ must be packaged. Nearest shipped gaming UIs are `retroarch` and `moonlight`.
 There are also **no `fex`, `proton`, `steam`, or `box64` packages** anywhere in pmaports.
 The entire userspace gaming stack is unpackaged work.
 
+*(Partly corrected - see §7.6.1. The missing UI package is real, but "gamescope must be
+packaged" is not: Alpine `community` already ships `gamescope` built for `aarch64`, and
+pmaports layers on top of Alpine. Only the thin UI wrapper has to be written. The `fex` /
+`proton` / `steam` / `box64` half of this paragraph still holds, in Alpine as well as
+pmaports.)*
+
 ---
 
 ## 6. Recovered figures
@@ -731,6 +737,215 @@ tree text is not a substitute for compiling it, a lesson this project has now pa
 
 ---
 
+## 7.6. Userspace gaming stack - survey and FEX feasibility audit
+
+Performed 2026-09-02. No hardware involved; everything here is package indexes, upstream
+source, upstream issue history, and the Xo666 defconfig.
+
+### 7.6.1 Alpine already ships the native half - partially corrects §5.4
+
+§5.4 concluded that "Gamescope must be packaged" and that there are no `fex`, `proton`,
+`steam` or `box64` packages. Both statements were checked against **pmaports only**.
+postmarketOS layers its own aports on top of Alpine's repositories, so pmaports being empty
+does not mean the package is unavailable.
+
+Pulled the real `APKINDEX` for Alpine edge `aarch64` (`main`, `community`, `testing`, 35976
+package entries total) from `dl-cdn.alpinelinux.org` and read it directly:
+
+| Package | Version | Repo | Relevance |
+|---|---|---|---|
+| `gamescope` | 3.16.24-r1 | community | The SteamOS session compositor. **Already built for aarch64.** |
+| `mesa-vulkan-freedreno` | 26.1.6-r1 | main | Turnip, the Vulkan driver for Adreno (§5.3) |
+| `vulkan-loader` | 1.4.360-r0 | main | ICD loader |
+| `mangohud` | 0.7.1-r2 | community | FPS/thermal overlay |
+| `gamemode`, `wlroots0.20`, `seatd`, `libliftoff`, `xwayland` | | community | gamescope's runtime dependencies |
+| `distrobox`, `podman`, `docker-engine` | | community | container tooling, see §7.6.3 |
+| `squashfs-tools`, `squashfuse`, `erofs-utils` | | main/community | for mounting an x86_64 rootfs |
+
+**So gamescope does not need porting.** What §5.4 got right is that there is no
+`postmarketos-ui-gamescope`: the UI package that starts it at boot still has to be written.
+That is a wrapper around an existing binary, not a port.
+
+Genuinely absent from **both** Alpine and pmaports: `fex`, `box64`, `box86`, `wine`,
+`proton`, and the Steam client itself. Alpine's `steam-devices` is only the udev rules for
+controllers, not the client. The postmarketOS `master` `aarch64` repo (1051 packages)
+contains none of them either.
+
+*Source:* `APKINDEX.tar.gz` from `dl-cdn.alpinelinux.org/alpine/edge/{main,community,testing}/aarch64/`
+and `mirror.postmarketos.org/postmarketos/master/aarch64/`, read locally.
+
+### 7.6.2 FEX on musl - real progress upstream, but untested and unsupported
+
+The question asked: can FEX be built as a native Alpine/musl `aarch64` package?
+
+**Evidence that it is getting closer.** There was an actual musl porting effort. Issue
+[#5106](https://github.com/FEX-Emu/FEX/issues/5106) ("FEX Emu fails to build on Alpine Linux
+aarch64", opened 2025-12-06) collected the first wave of failures, and a cluster of about ten
+follow-up issues filed 2026-05-03 (#5457, #5459, #5461, #5463, #5465, #5467, #5469, #5471,
+#5476, plus #5456 and #5513) are all **closed**. Spot-checked two of the specific errors
+against current `main` and both are fixed:
+
+- `ThreadManager.h` no longer includes `<bits/types/sigset_t.h>`, a glibc-internal header
+  that does not exist on musl. It now uses plain `<signal.h>`.
+- `AllocatorHooks.cpp` now includes `<unistd.h>`, which is what made `off_t` undefined.
+
+FEX also carries `FEXCore/Utils/LongJump.h`, a hand-rolled `longjmp` whose own comment says it
+exists partly for "a libc implementation that does not implement `std::longjmp`". Somebody
+upstream is thinking about non-glibc hosts.
+
+**Evidence that it is still not a supported configuration.**
+
+- **No CI.** FEX's `.github/workflows` contains no Alpine or musl job at all (checked every
+  workflow file). The musl fixes landed from bug reports; nothing guards against regression.
+- **#5106 is still open**, last updated 2025-12-10. FEX's lead developer (Sonicadvance1)
+  commented on 2025-12-07: *"Took a peek at this but there are significantly more compile
+  problems than just the things described here. Supporting building on Alpine will take some
+  significant work."*
+- **A known unfixed blocker in that thread:** FEX's bundled jemalloc ships pre-generated
+  headers that assume the GNU `strerror_r` signature, so `External/jemalloc/src/malloc_io.c`
+  fails on musl. Sonicadvance1's own diagnosis: *"We would probably need to actually generate
+  these headers at cmake configuration time rather than pre-generated."* Not done.
+- **FEX's README lists its tested distributions** as Arch, Fedora, openSUSE and Ubuntu
+  22.04/24.04/24.10/25.04. No musl distribution appears.
+- **The allocator is glibc-shaped by design.** Per `docs/allocator_usage.md`, FEX runs two
+  heap allocators, and the second one, `jemalloc_glibc`, *"replaces the host glibc's allocator
+  using weak symbol overriding"* and exists to give thunks (`ThunkLibs`, the mechanism that
+  forwards guest x86 Vulkan/GL/ALSA calls to the **native ARM64** host libraries) a way to
+  tell which heap a pointer came from. `CMakeLists.txt` disables it only for MinGW, and warns
+  for every other target: *"jemalloc glibc allocator disabled! This is not a recommended
+  configuration! This will very explicitly break thunk execution!"* For a gaming handheld the
+  thunks are the whole point, since they are what lets guest x86 Vulkan calls reach native
+  Turnip instead of being emulated.
+
+### 7.6.3 What the postmarketOS community actually does: a glibc container
+
+This is the finding that makes §7.6.2 mostly moot. The pmOS wiki has two guides for exactly
+this problem, and **neither builds FEX or box64 on musl**. Both run a glibc distribution in a
+container on top of postmarketOS:
+
+- **[Steam in FEX](https://wiki.postmarketos.org/wiki/Steam_in_FEX)** - `apk add distrobox`,
+  create an Ubuntu 24.04 arm64 container, install FEX from its official Ubuntu PPA inside it,
+  fetch an x86_64 rootfs with `FEXRootFSFetcher`. A second variant in the same page builds a
+  Fedora container under `docker-engine` and compiles FEX from git inside it, installing
+  `gamescope` in the container too.
+- **[Steam in box86](https://wiki.postmarketos.org/wiki/Steam_in_box86)** - a Debian container
+  with `dpkg --add-architecture armhf`, then box86 and box64 from Ryan Fortner's Debian repo,
+  then Valve's own `steam-launcher_latest_all.deb`. Note that box86 ships **SoC-specific
+  builds** (`box86-sd845` in the guide), which is a sign that project actively targets older
+  Snapdragons.
+
+Every piece of tooling either guide needs is already packaged for Alpine `aarch64`
+(`distrobox`, `podman`, `docker-engine`, `squashfuse`, `erofs-utils`), per the table in
+§7.6.1. FEX's own issue tracker corroborates that this is the normal path: issue #4111 is
+titled *"[Steam]: [Segfault on Ubuntu 24.04, PPA inside Distrobox on postmarketOS]"*.
+
+**Practical constraints stated in the guide, worth recording before anyone plans around them:**
+
+- **At least 4 GB of swap is recommended.** The author reports *"frequent OOM crashes without,
+  even on an 8GB RAM device"*. The OnePlus 8 has 8 or 12 GB depending on SKU.
+- **Wayland-native games did not work**; Source engine titles needed
+  `SDL_VIDEODRIVER=x11 %command%` in the launch options.
+- The x86_64 rootfs has to be **extracted, not mounted as SquashFS**, inside distrobox.
+- `steamwebhelper` crashes on startup are reported as a recurring, unresolved annoyance.
+
+### 7.6.4 The real risk is the CPU, not the libc - **OPEN, and it is the biggest one**
+
+FEX issue [#4120](https://github.com/FEX-Emu/FEX/issues/4120), *"Preparation plan for
+increasing minimum requirements to require FEAT_FLAGM/ARMv8.4-a"*, filed by FEX's lead
+developer on 2024-10-15. It proposes raising FEX's minimum from ARMv8.0-a to ARMv8.4-a and
+**lists the hardware that would lose support**, verbatim:
+
+> - CPUs: ARM: Cortex-A57 through Cortex-A78
+> - SoCs: [...] Qualcomm mobile: Snapdragon 888 and older
+
+The Snapdragon 865 in this phone is Cortex-A77 based. It is on that list twice. The list of
+what survives begins at "Snapdragon mobile: Snapdragon 8 Gen 1 and newer".
+
+The same issue also explains why performance on this class of hardware is mediocre even
+today, independent of the drop plan: without `FEAT_LRCPC`/`FEAT_LSE2`, *"x86 emulation is
+either slow (atomics) or buggy (TSO emulation disabled)"*. TSO is x86's memory ordering model;
+emulating it on ARM is expensive, and turning it off is what breaks multithreaded games.
+
+**Current status of the threat, checked against `main` on 2026-09-02:**
+
+- The change has **not happened**. FEX's README still says *"FEX requires ARMv8.0+ hardware"*,
+  and `Source/Common/HostFeatures.cpp` still runtime-detects `FlagM`, `LRCPC`, `LSE2` and
+  friends, with `SupportsFlagM` codepaths alive in the JIT (`ALUOps.cpp`,
+  `OpcodeDispatcher.cpp`).
+- The issue is still open, was last updated 2025-04-04, and predicted itself for "the middle
+  of 2025". It is more than a year overdue, which is weak evidence it is not imminent.
+- Asked directly whether old FEX would remain usable, Sonicadvance1 answered: *"Old FEX will
+  always remain available. We're an open source project after all."* So the fallback if this
+  lands is pinning a known-good FEX release rather than losing the capability outright.
+
+**One direct positive datapoint on this exact SoC.** In the same issue thread,
+CalcProgrammer1 writes: *"I've been experimenting with FEX on postmarketOS devices and quite a
+few games are playable on it (SDM845, SM8250)."* SM8250 is this phone's SoC. That is a
+second-hand report, not a measurement, and it does not say which device or what framerate, but
+it is the only evidence in this log that FEX runs on this silicon at all.
+
+**box86/box64 is not exposed to this risk.** It has no comparable minimum-spec plan and ships
+per-SoC builds for older Snapdragons. If #4120 ever lands, box64 becomes the fallback
+translator rather than the second choice.
+
+### 7.6.5 Kernel readiness for containers and binfmt - **CONFIRMED, one gap**
+
+Both routes in §7.6.3 depend on kernel features: `binfmt_misc` to auto-dispatch x86 binaries
+to the translator, and the usual container primitives. Checked `op8_defconfig` (8647 lines)
+from the Xo666 tree, branch `6.16.7`, the same config §7.5 built with:
+
+| Option | Value | Why it matters |
+|---|---|---|
+| `CONFIG_BINFMT_MISC` | `=y` | **Required** by both FEX and box86/box64 to run x86 binaries transparently |
+| `CONFIG_ARM64_4K_PAGES` | `=y` | FEX expects 4 KB pages; 16 KB is not set |
+| `CONFIG_ARM64_VA_BITS_48` | `=y` | 48-bit address space, what FEX's VMA allocator is written against |
+| `CONFIG_OVERLAY_FS`, `CONFIG_FUSE_FS` | `=y` | container image layers; FUSE also covers `squashfuse`/`erofs-fuse` |
+| `CONFIG_NAMESPACES`, `CONFIG_USER_NS`, `CONFIG_PID_NS` | `=y` | distrobox/podman/docker |
+| `CONFIG_CGROUPS`, `CONFIG_MEMCG`, `CONFIG_SECCOMP` | `=y` | same |
+| `CONFIG_SQUASHFS` | `=y` | FEX rootfs images |
+| `CONFIG_SWAP` `=y`, `CONFIG_ZRAM` `=m` | | the 4 GB swapfile the guide insists on is achievable |
+| `CONFIG_BRIDGE`, `CONFIG_VETH`, `CONFIG_NF_NAT` | `=m` | docker networking, modules are fine |
+| `CONFIG_EROFS_FS` | **not set** | the one gap, see below |
+
+**The only gap is `CONFIG_EROFS_FS`.** Newer FEX rootfs images are distributed as EroFS, and
+the Fedora/Docker variant of the pmOS guide installs `erofs-fuse`/`erofs-utils`. With
+`CONFIG_FUSE_FS=y` the userspace `erofs-fuse` path still works, and SquashFS rootfs images
+remain available, so this is a convenience fix rather than a blocker: one line in the
+defconfig if we want it in-kernel.
+
+*Source:* `arch/arm64/configs/op8_defconfig` at `Xo666/mainline-instantnoodle@6.16.7`, fetched
+raw and grepped.
+
+### 7.6.6 Verdict
+
+**Do not package FEX for musl.** It is neither supported, tested, nor how anybody actually
+runs this. The two documented postmarketOS routes both put a glibc distribution in a container
+on top of the musl host, and every container tool needed is already in Alpine `aarch64`. That
+turns "port a large C++ emulator to a libc it does not support" into "install a package inside
+a container", which is not project work at all.
+
+**The genuinely open risk is FEX issue #4120**, not musl. If FEX raises its minimum to
+ARMv8.4-a, this phone's Snapdragon 865 is explicitly on the drop list. It has not happened and
+is over a year past its own predicted date, old releases stay available, and box64 is an
+unaffected fallback, so this is a risk to track rather than a reason to stop. But it is now
+the largest known threat to the Windows-games half of this project, ahead of the Steam client
+plumbing in §5.2.
+
+**What this changes for the build order.** The native layer is worth doing first and is mostly
+assembly, not porting: a `postmarketos-ui-gamescope`-style UI package wiring Alpine's existing
+`gamescope` and `mesa-vulkan-freedreno` into the device port. The container layer needs a
+working host compositor and a working Vulkan driver to render into regardless of which
+translator ends up inside it, so nothing about §7.6.4's uncertainty argues for doing it in a
+different order.
+
+**What is NOT established here.** Nothing in this section was run. No FEX build was attempted
+on musl or anywhere else, no container was started, and no game was launched. The kernel
+config check is a text check on a defconfig, not a booted kernel. The SM8250 datapoint in
+§7.6.4 is one sentence in a GitHub comment by a third party, and the performance figures in §6
+remain projections.
+
+---
+
 ## 8. Summary
 
 > Corrected by section 9: the "GPU + charger + fg resolved" results below are compile-time
@@ -764,6 +979,18 @@ content already proven on Xo666. **Both patches remain compile-verified only, no
 demonstrated to boot with 3D on the postmarketOS wiki's own device page; both patches are
 candidates layered on top of what compiles cleanly, not confirmations of what boots. The
 Steam/FEX plumbing (§5.2) is the next-biggest source of uncertainty after the fork-merge problem.
+
+**New as of 2026-09-02 (§7.6).** Two things moved. The native half of the userspace stack is
+in better shape than §5.4 claimed: `gamescope` and `mesa-vulkan-freedreno` are already built
+for `aarch64` in Alpine, so that layer is assembly rather than porting, and `op8_defconfig`
+already carries `CONFIG_BINFMT_MISC` plus every container primitive the x86 translation layer
+needs. The x86 half got a new named risk instead: FEX issue #4120, written by FEX's own lead
+developer, plans to raise the minimum CPU requirement to ARMv8.4-a and explicitly lists
+"Snapdragon 888 and older" and "Cortex-A57 through Cortex-A78" as hardware that would be
+dropped. This phone's Snapdragon 865 is on both lines. The change is over a year past its own
+predicted date and old FEX releases stay available, with box64 as an unaffected fallback, so
+this is a tracked risk rather than a stop - but it now sits ahead of §5.2 as the largest
+threat to running Windows games on this device.
 
 ---
 

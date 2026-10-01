@@ -48,6 +48,9 @@ claims turned out to only be partially correct.
 - `docs/hardware-safety.md` - preparation, backups, the exact flashing procedure, and a
   component-by-component list of what the Linux kernel touches on this phone, what could
   physically go wrong, and how to test it (in Romanian).
+- `docs/build-environment.md` - how to set up a machine to build this (WSL2/Ubuntu, the
+  toolchain, the recorded traps) and how to reproduce the verified package and image builds.
+  Also has the current work queue and the list of things that must not be done yet.
 - `reference/dts/` - the three known community device trees for this phone (from three
   different forks), pulled for direct comparison. They disagree with each other on
   several points, including which one has a working GPU versus a working battery
