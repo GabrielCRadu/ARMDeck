@@ -1198,5 +1198,10 @@ OnePlus 8 IN2013, OxygenOS 13.1.0.590(EX01) firmware, slot b. Wrote only `dtbo_b
   discharge/recharge test is not needed to know the ceiling. The community driver also gets this
   status enum wrong (it starts at TRICKLE = 0, the PMI8998 layout).
 
-Still to do on hardware: re-read the same registers after a full power-off (cold boot), and
-check Bluetooth after a reboot (firmware now installed).
+- **Cold boot re-check:** after `systemctl poweroff` with USB connected, the bootloader started
+  off-mode charging (`androidboot.mode=charger`, `startupmode=dc_charger`), which now boots pmOS
+  from `boot_b`. The PM8150B registers read back identical (`1070=4d` 4.37 V, `1061=28` 2.0 A,
+  `1370=20` 1.6 A, TERMINATE), so the bootloader sets them at every power-on; they are not
+  leftovers from OxygenOS. Bluetooth firmware loaded ("QCA setup on UART is completed").
+- Side effect worth knowing: a powered-off phone now boots straight into pmOS when a charger is
+  plugged in. To keep it off, unplug first, then power off.

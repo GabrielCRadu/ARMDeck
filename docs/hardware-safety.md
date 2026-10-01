@@ -312,8 +312,8 @@ rău fizic, ce s-a verificat deja și testul precis de făcut pe telefon.
   **Verificat 2026-10-01** prin citirea directă a PMIC-ului (regmap debugfs `0-02`, doar citire, script
   `/tmp/pmic.sh`): `0x1070 = 0x4d` = **4.37 V** tensiune maximă, `0x1061 = 0x28` = 2.0 A curent de
   încărcare, `0x1370 = 0x20` = 1.6 A limită de intrare, stare TERMINATE (plin), fără bit BAT_OV. Cu
-  kernelul nostru (fără driver de încărcare) nimic nu schimbă aceste valori. De repetat citirea o dată
-  după o oprire completă, ca să confirmăm că bootloader-ul setează la fel la pornirea la rece.
+  kernelul nostru (fără driver de încărcare) nimic nu schimbă aceste valori. Repetat după o pornire
+  la rece: valori identice, deci le setează bootloader-ul la fiecare pornire.
 
 ### 4.2 Bootloader, sloturi A/B, vbmeta, fuzibile
 
