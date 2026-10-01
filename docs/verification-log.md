@@ -793,7 +793,7 @@ Nothing binds to them:
   (`soc/qualcomm-sm8250/linux`, tags `sm8250-6.17.0` through `sm8250-7.2.0`).
 
 "Compiles, and the decompiled DTB shows the nodes with `status = "okay"`" was true and proved
-nothing about charging. The patch was removed from `linux-oneplus-instantnoodle` (pkgrel 3);
+nothing about charging. The patch was removed from `linux-oneplus-instantnoodle` (pkgrel 4);
 the ObiKeahloa package is now marked do-not-flash with the correction in its header.
 
 ### 9.2 The community PM8150B charger driver is unsafe as written - **NEW, critical**
