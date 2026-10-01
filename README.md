@@ -29,6 +29,10 @@ driver for this PMIC programs the battery to about 4.87 V. Read
 `docs/hardware-safety.md` before flashing anything; the audit trail is in
 `docs/verification-log.md` section 9.
 
+Since 2026-10-01 the phone runs postmarketOS with the Steam ARM64 client in Game Mode, and
+Windows games (Unity, 2D) run through Proton 11 ARM64. Sleep, sound (behind a fixed volume
+ceiling), buttons and touch work; see `docs/gaming-stack.md` section 9 and `userspace/`.
+
 ## Why this exists
 
 Mainline Linux support for this exact phone does not exist upstream, and is not
@@ -51,6 +55,16 @@ claims turned out to only be partially correct.
 - `docs/build-environment.md` - how to set up a machine to build this (WSL2/Ubuntu, the
   toolchain, the recorded traps) and how to reproduce the verified package and image builds.
   Also has the current work queue and the list of things that must not be done yet.
+- `docs/gaming-stack.md` - research on SteamOS, Bazzite, Armada OS, pocknix-os and
+  SteamOS-ARM-Handhelds for this phone, then the results of running Steam on it: Steam ARM64
+  in a Fedora container on postmarketOS, Windows games through Proton 11 ARM64 + FEX, and the
+  TODO list (in Romanian).
+- `docs/performance-crash-audit.md` - performance and crash-prevention audit after the first
+  unexplained resets, read from the phone (in Romanian).
+- `userspace/` - the scripts and configs that turn the flashed image into a Steam handheld:
+  Steam session in gamescope, safe sleep (no kernel suspend), power and volume buttons,
+  speakers behind a volume ceiling, Deck-style touch, A/B slot marking, diagnostic logging.
+  Start with `userspace/README.md`.
 - `reference/dts/` - the three known community device trees for this phone (from three
   different forks), pulled for direct comparison. They disagree with each other on
   several points, including which one has a working GPU versus a working battery
