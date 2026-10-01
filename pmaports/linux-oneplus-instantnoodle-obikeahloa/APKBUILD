@@ -1,12 +1,19 @@
 # Reference: <https://postmarketos.org/vendorkernel>
-# DRAFT - experimental, alternative kernel candidate. This is NOT the
-# default kernel package for this device port (that remains
-# pmaports/linux-oneplus-instantnoodle/, the Xo666-based tree). This
-# package exists to prove that a single kernel source can carry a working
-# GPU, charger, and fuel gauge at once - the combination that led to this
-# separate package is documented in docs/verification-log.md (the
-# ObiKeahloa zap-shader-port entry) and pkgname is deliberately distinct
-# so it cannot be confused with or collide with the default package.
+# DO NOT FLASH. Experimental build-only candidate, kept for reference.
+#
+# Correction (2026-10-01): this package does NOT give "GPU + charger + fuel
+# gauge at once". The ObiKeahloa tree has no driver for qcom,pm8150b-charger
+# or qcom,pm8150b-fg, so the charger/fg nodes in the patch bind to nothing.
+# Also unresolved: its remoteproc firmware-name entries use
+# qcom/sm8250/oneplus/*.mdt, which firmware-oneplus-instantnoodle does not
+# ship, its branch head (2025-10-28) does not even build its own DTS without
+# this patch, and device-oneplus-instantnoodle does not depend on it. See
+# docs/verification-log.md section 9.
+#
+# Original description: alternative kernel candidate, NOT the default kernel
+# package for this device port (that remains
+# pmaports/linux-oneplus-instantnoodle/, the Xo666-based tree). pkgname is
+# deliberately distinct so it cannot collide with the default package.
 #
 # Source: ObiKeahloa/linux, branch sm8250/v6.13-instantnoodle. Unlike
 # Xo666's fork, this tree does not ship an OnePlus-8-specific defconfig
@@ -43,7 +50,8 @@
 # docs/verification-log.md for the exact verification performed and what
 # it does and does not prove. The USB-C SBU mux / orientation-switch
 # (fcs,fsa4480) remains status = "disabled" on this tree, same as
-# WuerfelDev - this package does not address that, only GPU + charging.
+# WuerfelDev - this package does not address that. (It does not address
+# charging either: see the correction at the top of this file.)
 maintainer=""
 _flavor="oneplus-instantnoodle-obikeahloa"
 pkgname=linux-$_flavor
@@ -72,10 +80,10 @@ makedepends="
 "
 
 # Source: ObiKeahloa/linux, branch sm8250/v6.13-instantnoodle (see
-# docs/verification-log.md section 1.4 for why this fork - it is the only
-# one of the three known instantnoodle forks whose board DTS carries both
-# an enabled &gpu node and working charger/fg override blocks
-# simultaneously). 0001-port-zap-shader-from-xo666.patch ports the missing
+# docs/verification-log.md section 1.4 for why this fork - its board DTS
+# carries both an enabled &gpu node and charger/fg override blocks, but the
+# latter have no driver behind them in this tree, see the correction at the
+# top of this file). 0001-port-zap-shader-from-xo666.patch ports the missing
 # zap-shader wiring from Xo666, plus - discovered necessary only once this
 # tree was actually compiled, not from reading the DTS alone - the
 # pm8150b_charger/pm8150b_fg node definitions this tree's own board DTS
@@ -124,5 +132,5 @@ package() {
 
 sha512sums="
 64dfc20c2ccc1698b088f0bd930c168549c890d90453225de01a49f93e416ce49314d5b177f0da309cfc40cd42306d24d96b9efaf1ca5e907904ff9e8a090ff7  linux-oneplus-instantnoodle-obikeahloa-6.13.0.tar.gz
-fd235837eec27e78063272b85bc891fcaa70ea3d4fdeecd55623f5b410eef14d1a766a227296e3406fc160623a26f036d918e31a0e7ab90f6026ec15c9c9d81f  0001-port-zap-shader-from-xo666.patch
+b11d8ae60b467ddafc7285d3b00788c5fd642e630b176b632835048176ccf8771ce2a821aff64a9b7f73ec736872f14aa603bcbc1c751dc8863d83cd86301808  0001-port-zap-shader-from-xo666.patch
 "

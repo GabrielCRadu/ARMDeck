@@ -16,13 +16,18 @@ for you; no need to spend your time on it.
 
 ## Status
 
-Nothing has been flashed to real hardware yet. Everything below has been verified as far
-as it can be without the phone in hand: the kernel source compiles, the full device
-package set builds through the real postmarketOS packaging pipeline, and a bootable
-image has been assembled. None of that proves the phone actually boots it. A pre-flight
-review turned up real gaps in the flashing procedure itself (verified boot handling,
-no backup step before overwriting the rootfs partition) that still need resolving before
-anyone flashes anything - see `docs/verification-log.md` for what is tracked there.
+Nothing has been flashed to real hardware yet. The kernel source compiles, the full device
+package set builds through the real postmarketOS packaging pipeline, and a bootable image
+has been assembled. None of that proves the phone actually boots it.
+
+A pre-flash audit on 2026-10-01 (phone in hand) found and fixed real problems before
+anything touched the device: a broken install procedure, firmware that never made it into
+the image, a speaker-amplifier driver configured from uninitialized memory, camera power
+rails forced on (one above the OnePlus voltage), and "charger support" patches that could not
+work because no driver existed for them. It also found that the only community charger
+driver for this PMIC programs the battery to about 4.87 V. Read
+`docs/hardware-safety.md` before flashing anything; the audit trail is in
+`docs/verification-log.md` section 9.
 
 ## Why this exists
 
@@ -40,6 +45,9 @@ claims turned out to only be partially correct.
 - `docs/verification-log.md` - the actual audit trail. Every claim in the main document,
   checked against pmaports, the kernel forks, and a real build, with sources. This is
   the file to read if you want to know what is actually confirmed versus assumed.
+- `docs/hardware-safety.md` - preparation, backups, the exact flashing procedure, and a
+  component-by-component list of what the Linux kernel touches on this phone, what could
+  physically go wrong, and how to test it (in Romanian).
 - `reference/dts/` - the three known community device trees for this phone (from three
   different forks), pulled for direct comparison. They disagree with each other on
   several points, including which one has a working GPU versus a working battery
@@ -53,10 +61,12 @@ claims turned out to only be partially correct.
 
 ## Key finding so far
 
-No single kernel fork currently has a working GPU, a working battery charger, and clean
-USB-C orientation switching all at the same time. Picking a fork means picking which of
-those to give up, unless someone does the work of porting the missing pieces across.
-Details and sources are in `docs/verification-log.md`.
+No single kernel fork currently has a working GPU, battery charging, and clean USB-C
+orientation switching all at the same time. Only the WuerfelDev tree (and the official
+postmarketOS SM8250 kernel) has a PM8150B charger driver at all, and that driver currently
+programs an unsafe float voltage. The default kernel here is Xo666 (working GPU) with no
+charger driver, so charging is left to the PMIC hardware defaults. Details and sources are
+in `docs/verification-log.md` and `docs/hardware-safety.md`.
 
 ## Target device
 

@@ -1,19 +1,29 @@
 # Reference: <https://postmarketos.org/devicepkg>
-# DRAFT - adapted from device-oneplus-instantnoodlep (pmaports, packaged),
-# not yet built or tested. See docs/verification-log.md for the sourcing
-# and cross-checks behind every value here.
+# DRAFT, not yet booted on hardware. Adapted from device-oneplus-instantnoodlep
+# (pmaports, packaged). See docs/verification-log.md for the sourcing and
+# cross-checks behind every value here.
 maintainer=""
 pkgname=device-oneplus-instantnoodle
 pkgdesc="OnePlus 8"
 pkgver=0.1
-pkgrel=0
+pkgrel=1
 url="https://postmarketos.org"
 license="MIT"
 arch="aarch64"
 options="!check !archcheck"
+# The firmware lives in subpackages of firmware-oneplus-instantnoodle; its
+# main package is empty, and apk never installs subpackages on its own. An
+# earlier draft depended only on the empty main package, so the rootfs got
+# no GPU zap shader, no DSP firmware and no WiFi firmware at all.
+# slpi (sensor DSP) is left out on purpose: sensors do not work on any of
+# the kernels yet, so there is no reason to start that DSP.
 depends="
 	alsa-ucm-conf-oneplus-instantnoodle
-	firmware-oneplus-instantnoodle
+	firmware-oneplus-instantnoodle-adsp
+	firmware-oneplus-instantnoodle-cdsp
+	firmware-oneplus-instantnoodle-gpu
+	firmware-oneplus-instantnoodle-venus
+	firmware-oneplus-instantnoodle-wifi
 	linux-oneplus-instantnoodle
 	mkbootimg
 	postmarketos-base
@@ -41,7 +51,7 @@ package() {
 }
 
 sha512sums="
-9acd3c970deb986a9a39b74b9e809ec6e0ea7c363dfe6b96dc6af264d52f58dfb60b31f31506f177978df72974704dcb3973fd5eda92dfdff8122b7a2125bab3  deviceinfo
+acd7f513ae87d2e3894e191e759ce55be45af62e44f8b431d4f5941cd59d48cbb283b6ff7a5ecc8dd5225267c2954eda88fb7e7c3c0cc079a25d87e83e56a972  deviceinfo
 04cc87ed6b0041ede7edb2693ee4dd58d6ac8f1b036a0b37e1a86cce57b66e35d9f400a3ea75d75278b028132535033915f3a2fff919866e85336c5f92a68ffe  kernel-cmdline.conf
 2792e636543b38e769ed0fc21fcb83341aeb68b1979d80c05b00266b4ec7d1103ee69b9b7343026abcb41dff0e0c5fc56fd075d687ee2f9bb80999145ae5a282  sm8250-oneplus-instantnoodle-empty.dts
 "

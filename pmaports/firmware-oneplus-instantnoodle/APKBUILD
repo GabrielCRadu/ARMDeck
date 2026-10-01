@@ -1,5 +1,12 @@
 # Reference: <https://postmarketos.org/devicepkg>
-# DRAFT - not yet built. Sourced from github.com/Xo666/linux-oneplus-instantnoodle,
+# DRAFT, builds through pmbootstrap (2026-08-24), not yet tested on hardware.
+# The main package is intentionally empty: device-oneplus-instantnoodle
+# depends on the subpackages it needs by name, because apk does not install
+# subpackages on its own. The upstream repo also ships SDX55 modem firmware
+# (qcom/sdx55m/, including efs1-3.bin); none of it is packaged here, and it
+# should stay that way while the modem is unsupported.
+#
+# Sourced from github.com/Xo666/linux-oneplus-instantnoodle,
 # the same author as the linux-oneplus-instantnoodle kernel package, whose
 # firmware-name properties (verified directly in reference/dts/) expect
 # "qcom/sm8250/OnePlus/<file>" - capital O, single .mbn files, no PIL

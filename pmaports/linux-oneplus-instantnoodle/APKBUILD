@@ -1,21 +1,13 @@
 # Reference: <https://postmarketos.org/vendorkernel>
-# DRAFT - not yet built through abuild/pmbootstrap. A plain cross-compile of
-# this exact source+defconfig combination (op8_defconfig, GCC 13 aarch64
-# cross toolchain via gcc-aarch64-linux-gnu, Ubuntu 24.04 host) was verified
-# to succeed outside the packaging system on 2026-08-24; see
-# docs/verification-log.md. This APKBUILD wraps that into the pmaports/abuild
-# convention, but uses LLVM/clang (ARCH=arm64 LLVM=1) instead of a GCC cross
-# toolchain package, matching the makedepends/build() convention of the
-# packaged device/community/linux-postmarketos-qcom-sm8250 kernel - there is
-# no "gcc-aarch64-linux-gnu-cross-toolchain" package in Alpine/pmaports (a
-# first attempt using that name failed with "dependency not found"). Not
-# re-verified with LLVM specifically yet, only that the source is buildable
-# in general.
+# DRAFT, not yet booted on hardware. Builds through the real
+# abuild/pmbootstrap pipeline with LLVM/clang (ARCH=arm64 LLVM=1), the same
+# convention as device/community/linux-postmarketos-qcom-sm8250. See
+# docs/verification-log.md for the build history.
 maintainer=""
 _flavor="oneplus-instantnoodle"
 pkgname=linux-$_flavor
 pkgver=6.16.7
-pkgrel=2
+pkgrel=3
 pkgdesc="OnePlus 8 (instantnoodle) mainline kernel, Xo666 fork"
 arch="aarch64"
 _carch="arm64"
@@ -38,21 +30,32 @@ makedepends="
 	python3
 "
 
-# Source: Xo666/mainline-instantnoodle, branch 6.16.7 (see verification-log.md
-# section 1.4 for why this fork and not ObiKeahloa's or WuerfelDev's - this is
-# the only one of the three with a complete, working zap-shader wiring for
-# the GPU, which is a hard prerequisite for the whole gaming-stack project).
-# NOTE: this branch had no pm8150b_charger node at all (see verification-log.md
-# section 4) - 0001-port-charger-fg-from-wuerfeldev.patch ports the charger
-# and fuel-gauge nodes over from WuerfelDev/linux-sm8250 (branch
-# 6.17.0-instantnoodle), which has working charging but ships with the GPU
-# disabled. The patch is compile-verified (raw dtc build and a full
-# pmbootstrap/abuild package build, both zero errors on the changed nodes)
-# but NOT tested on real hardware - see docs/verification-log.md for the
-# exact verification done and what it does and does not prove.
+# Source: Xo666/mainline-instantnoodle, branch 6.16.7, head commit
+# 408762bfe17332622560658f394f9cdbb1c9902e (2026-01-14, unchanged as of
+# 2026-10-01). This is the tree the postmarketOS wiki reports as booting with
+# working 3D, and the only one of the three forks with a complete zap-shader
+# wiring for the GPU. The sha512sum below pins the exact tarball content.
+#
+# Kept as close to upstream Xo666 as possible for the first boot. Both
+# patches only move hardware settings back toward what the OnePlus vendor
+# kernel does (see each patch header):
+#   0001: the speaker amplifiers' boost converter was programmed from
+#         uninitialized stack variables.
+#   0002: the camera PMIC rails for the unsupported rear cameras were forced
+#         on from boot, one of them at 1.2 V where OnePlus uses 1.1 V.
+#
+# No charger driver: this tree has no driver for qcom,pm8150b-charger or
+# qcom,pm8150b-fg (checked 2026-10-01), so charging is left to the PMIC
+# hardware defaults set by the bootloader. An earlier patch here only added
+# device tree nodes for those, which nothing ever bound to. It was removed.
+# Do NOT port qcom_pm8150b_charger.c from WuerfelDev or the postmarketOS
+# SM8250 kernel as-is: it programs PM8150B's float voltage with the PMI8998
+# register scale, which on this battery means about 4.87 V instead of
+# 4.435 V. See docs/hardware-safety.md.
 source="
 	$pkgname-$pkgver.tar.gz::https://github.com/Xo666/mainline-instantnoodle/archive/refs/heads/$pkgver.tar.gz
-	0001-port-charger-fg-from-wuerfeldev.patch
+	0001-ASoC-tfa9872-fix-uninitialized-DC-DC-config.patch
+	0002-arm64-dts-qcom-instantnoodle-match-PM8009-camera-rails-to-OEM.patch
 "
 builddir="$srcdir/mainline-instantnoodle-$pkgver"
 
@@ -91,5 +94,6 @@ package() {
 
 sha512sums="
 11390f07286a48176ab46d20cd3ed7e389af8605da3b7f9c0c70148f54c2e41194f1205a92fd039b906eade8804360d6b98a77c402a1459098287fa5581e7d89  linux-oneplus-instantnoodle-6.16.7.tar.gz
-a049bd5b354161cbdcba903a6f247eec740d7e2a7e908d60692892bc619e4d8c16c8894c1773f82803033f360676b1ad7c59b31d192bc7c4ebf6f51f8a661cf0  0001-port-charger-fg-from-wuerfeldev.patch
+64923403662972aceeadb0e927303bdffd7b69edf62d5369e1acdb06869a8eee879deed38156128150a5badbf10762804abd45be492742fde037b2963c883aa3  0001-ASoC-tfa9872-fix-uninitialized-DC-DC-config.patch
+737d09ce3a33733c14e9139b0872eaa2db3f3ac86bf562073581b0bca470d8f8135b55beb6ed478a42cd37e4c94bff0a1e73cf6fbd617c9b1adf4dfdad799158  0002-arm64-dts-qcom-instantnoodle-match-PM8009-camera-rails-to-OEM.patch
 "

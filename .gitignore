@@ -19,6 +19,11 @@ _build/
 *.pem
 secrets/
 dumps/
+# Phone backups and fastboot output (IMEI, serial number, unique calibration
+# data): never commit these, this repo is public. See docs/hardware-safety.md.
+backup*/
+getvar*.txt
+partitii.txt
 
 # Editor / OS noise
 .vscode/

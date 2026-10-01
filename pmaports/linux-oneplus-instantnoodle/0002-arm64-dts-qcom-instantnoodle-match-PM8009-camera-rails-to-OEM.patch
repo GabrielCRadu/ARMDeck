@@ -1,0 +1,71 @@
+From: steamed-noodle <noreply@localhost>
+Subject: [PATCH] arm64: dts: qcom: sm8250-oneplus-instantnoodle: match PM8009 camera rails to the OnePlus vendor DT
+
+The Xo666 board DTS marks all seven PM8009 LDOs (the camera PMIC) as
+regulator-always-on, but only two of them have a consumer here: L3F (front
+camera IMX471 vdig) and L7F (camera I/O, front camera and its EEPROM).
+L1F, L2F, L4F, L5F and L6F have no consumer at all.
+
+In the OnePlus 8 vendor device tree (LineageOS/android_kernel_oneplus_sm8250,
+arch/arm64/boot/dts/vendor/19821, 82 .dts/.dtsi files scanned) every PM8009
+LDO is used only by camera modules: L1F/L3F/L4F as cam_vdig, L2F as
+cam_v_custom2 of the rear main camera, L5F/L6F as cam_vaf (autofocus),
+L7F as cam_vio. The camera driver powers them only while that camera is in
+use. Rear cameras are not supported on this kernel, so forcing their rails
+on just keeps unpowered-by-design hardware energized from boot.
+
+L2F is also set to 1.2 V here, while the vendor DT runs it at exactly
+1.1 V (camera/kona-oem-camera-instantnoodle.dtsi, rear "wide" sensor:
+rgltr-min-voltage/rgltr-max-voltage 1100000 for cam_v_custom2, and
+kona-regulators.dtsi: pm8009_l2 min=max=1100000). This was the only one of
+37 RPMh regulators whose mainline limits exceed the vendor limits.
+
+Changes:
+- drop regulator-always-on from L1F, L2F, L4F, L5F, L6F
+- L2F: 1.2 V -> 1.1 V (label kept to avoid touching anything else)
+L3F and L7F are unchanged, so the front camera keeps its supplies.
+
+--- a/arch/arm64/boot/dts/qcom/sm8250-oneplus-instantnoodle.dts	2026-10-01 16:32:01.994050351 +0300
++++ b/arch/arm64/boot/dts/qcom/sm8250-oneplus-instantnoodle.dts	2026-10-01 16:32:02.214804321 +0300
+@@ -808,15 +808,13 @@
+ 			regulator-min-microvolt = <1104000>;
+ 			regulator-max-microvolt = <1104000>;
+ 			regulator-initial-mode = <RPMH_REGULATOR_MODE_HPM>;
+-			regulator-always-on;
+ 		};
+ 
+ 		vreg_l2f_1p2: ldo2 {
+ 			regulator-name = "vreg_l2f_1p2";
+-			regulator-min-microvolt = <1200000>;
+-			regulator-max-microvolt = <1200000>;
++			regulator-min-microvolt = <1100000>;
++			regulator-max-microvolt = <1100000>;
+ 			regulator-initial-mode = <RPMH_REGULATOR_MODE_HPM>;
+-			regulator-always-on;
+ 		};
+ 		
+ 		vreg_l3f_1p05: ldo3 {
+@@ -832,7 +830,6 @@
+ 			regulator-min-microvolt = <1056000>;
+ 			regulator-max-microvolt = <1056000>;
+ 			regulator-initial-mode = <RPMH_REGULATOR_MODE_HPM>;
+-			regulator-always-on;
+ 		};
+ 
+ 		vreg_l5f_2p8: ldo5 {
+@@ -840,7 +837,6 @@
+ 			regulator-min-microvolt = <2800000>;
+ 			regulator-max-microvolt = <3000000>;
+ 			regulator-initial-mode = <RPMH_REGULATOR_MODE_HPM>;
+-			regulator-always-on;
+ 		};
+ 
+ 		vreg_l6f_2p8: ldo6 {
+@@ -848,7 +844,6 @@
+ 			regulator-min-microvolt = <2800000>;
+ 			regulator-max-microvolt = <2800000>;
+ 			regulator-initial-mode = <RPMH_REGULATOR_MODE_HPM>;
+-			regulator-always-on;
+ 		};
+ 
+ 		vreg_l7f_1p8: ldo7 {

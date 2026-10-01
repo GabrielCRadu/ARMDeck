@@ -4,32 +4,25 @@
 #
 # DRAFT, not verified on hardware. Adapted from the packaged
 # device-oneplus-instantnoodlep (OnePlus 8 Pro) port, since the two devices
-# share the same SM8250 platform, generation, and ABL bootloader. Flash
-# offsets and the super-partition path are cross-checked against the
-# `fastboot getvar all` / by-name partition dump for an actual OnePlus 8
-# (see docs/verification-log.md) and match instantnoodlep's values exactly -
-# not yet confirmed to be identical for every field, but no evidence of
-# divergence so far. Screen resolution and codename are corrected for the
-# non-Pro model.
+# share the same SM8250 platform, generation, and ABL bootloader. The flash
+# offsets match instantnoodlep and the 8T (kebab) port exactly. Screen
+# resolution and codename are corrected for the non-Pro model.
 #
-# BRICK-RISK AUDIT (2026-08-24, local-only notes, not tracked in this repo):
-# - deviceinfo_super_partitions below is NOT read by pmbootstrap at all (no
-#   such field exists in its Deviceinfo schema - confirmed by reading
-#   pmb/parse/deviceinfo.py directly). It does nothing. The real
-#   instantnoodlep port carries the same dead field, so this isn't a
-#   mistake unique to this draft, but do not assume it provides any of the
-#   dynamic-partition safety its presence implies.
-# - deviceinfo_flash_fastboot_partition_vbmeta was ADDED below after an
-#   audit found neither this draft nor the real instantnoodlep port set it,
-#   which means pmbootstrap silently skips disabling AVB verification
-#   during install. Whether this device actually needs that step is still
-#   unconfirmed, but the partition name itself ("vbmeta") is confirmed from
-#   the real by-name partition dump the user supplied (vbmeta ->
-#   .../by-name/vbmeta_b, i.e. an A/B-slotted vbmeta partition exists on
-#   this exact phone).
-# - There is still no backup-before-flash step anywhere in this project's
-#   documented flow. Get a verified stock OxygenOS restore package before
-#   touching real hardware.
+# Notes from the 2026-10-01 audit (details in docs/verification-log.md):
+# - The rootfs image is written raw over the whole "super" partition
+#   (/dev/sda14 on this phone, per the postmarketOS wiki partition dump).
+#   That destroys Android's system/vendor/product. Back up super first; see
+#   docs/hardware-safety.md.
+# - deviceinfo_super_partitions was removed. It is not read by pmbootstrap,
+#   but it IS read by the postmarketOS initramfs on the phone
+#   (init_2nd.sh: setup_dynamic_partitions), which tries to map Android
+#   logical partitions inside the listed partitions. With the rootfs written
+#   raw over super there are no logical partitions to map, so the field had
+#   nothing to do here.
+# - deviceinfo_flash_fastboot_partition_vbmeta only makes pmbootstrap offer
+#   "pmbootstrap flasher flash_vbmeta". The official 8 Pro and 8T ports do
+#   not set it and boot fine with an unlocked bootloader, so that step is
+#   optional: use it only if the bootloader refuses the boot image.
 
 deviceinfo_format_version="0"
 deviceinfo_name="OnePlus 8"
@@ -58,6 +51,5 @@ deviceinfo_flash_offset_tags="0x00000100"
 deviceinfo_flash_fastboot_partition_rootfs="super"
 deviceinfo_flash_fastboot_partition_dtbo="dtbo"
 deviceinfo_flash_fastboot_partition_vbmeta="vbmeta"
-deviceinfo_super_partitions="/dev/sda14 /dev/sda14"
 deviceinfo_rootfs_image_sector_size="4096"
 deviceinfo_flash_sparse="true"

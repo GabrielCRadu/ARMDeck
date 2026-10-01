@@ -2,6 +2,16 @@
 # definitions those existing board-level overrides in this tree turned out
 # to actually require
 #
+# CORRECTION (2026-10-01): the charger/fuel-gauge part of this patch only
+# makes the device tree compile. This tree has no driver for
+# qcom,pm8150b-charger or qcom,pm8150b-fg (no qcom_pm8150b_charger.c, no
+# qcom_fg.c in drivers/power/supply), so those nodes bind to nothing and
+# charging is NOT enabled by this patch. The text below that presents this
+# tree as "GPU + charger + fuel gauge at once" is wrong on the charger half.
+# Do not add the community qcom_pm8150b_charger.c driver to make them work:
+# it programs about 4.87 V float voltage on this battery. See
+# docs/hardware-safety.md.
+#
 # This tree (ObiKeahloa/linux, branch sm8250/v6.13-instantnoodle) is the
 # only one of the three known instantnoodle forks whose board DTS carries
 # both `&gpu { status = "okay"; }` and board-level `&pm8150b_charger` /

@@ -6,9 +6,16 @@
 > [`docs/verification-log.md`](docs/verification-log.md). Cea mai importantă corecție:
 > "suport mainline" pentru acest telefon nu înseamnă kernel.org - înseamnă un fork întreținut
 > de un singur contributor, care nu e nici măcar împachetat oficial în postmarketOS.
+>
+> **Corecturi 2026-10-01 (audit cu telefonul disponibil):** patch-urile de încărcare din
+> acest document **nu activează încărcarea** (niciun fork, în afară de WuerfelDev, nu are
+> driverul), iar driverul de încărcare din WuerfelDev și din kernelul oficial pmOS SM8250
+> programează bateria la ~4.87 V. Fluxul de instalare din Secțiunea 5 a fost rescris.
+> Detalii: [`docs/hardware-safety.md`](docs/hardware-safety.md) și
+> [`docs/verification-log.md`](docs/verification-log.md) §9.
 
 Transformarea unui smartphone comercial bazat pe platforma Qualcomm Snapdragon 865 (SM8250, nume de cod *kona*; codul specific de dispozitiv pentru OnePlus 8 este *instantnoodle*) într-o consolă portabilă de gaming sub un sistem de operare Linux reprezintă o lucrare de inginerie de sistem de o complexitate remarcabilă. Această tranziție implică decuplarea completă a dispozitivului de stiva proprietară Android - compusă din runtime-ul ART, serverul SurfaceFlinger, subsistemul IPC Binder, HAL-urile închise și nucleul downstream de tip CAF 4.19 - și reconstruirea mediului de execuție pe baza unui kernel Linux 6.x, pornind de la un fork comunitar dedicat SM8250 (nu de la kernelul upstream nemodificat; vezi Secțiunea 1).
-Configurația hardware a terminalului OnePlus 8 include 8 GB sau 12 GB memorie RAM LPDDR5, stocare UFS 2.0 (nu 3.0, vezi tabelul de mai jos), un panou Fluid AMOLED de 1080x2400 pixeli la 90 Hz și unitatea de procesare grafică Adreno 650, furnizând o bază computațională capabilă să susțină sarcini grafice complexe. Interfațarea acestui hardware cu un periferic hibrid precum GameSir X3 Pro, care asociază transportul de date USB-C Human Interface Device (HID) cu un modul activ de răcire termoelectrică Peltier, permite eliminarea plafonărilor termice severe și stabilizarea frecvențelor maxime de calcul - însă alimentarea telefonului însuși în timpul sesiunii rămâne un risc nerezolvat (Secțiunea 4).
+Configurația hardware a terminalului OnePlus 8 include 8 GB sau 12 GB memorie RAM LPDDR5, stocare UFS 3.0, un panou Fluid AMOLED de 1080x2400 pixeli la 90 Hz și unitatea de procesare grafică Adreno 650, furnizând o bază computațională capabilă să susțină sarcini grafice complexe. Interfațarea acestui hardware cu un periferic hibrid precum GameSir X3 Pro, care asociază transportul de date USB-C Human Interface Device (HID) cu un modul activ de răcire termoelectrică Peltier, permite eliminarea plafonărilor termice severe și stabilizarea frecvențelor maxime de calcul - însă alimentarea telefonului însuși în timpul sesiunii rămâne un risc nerezolvat (Secțiunea 4).
 La nivel de software, arhitectura propusă se sprijină pe driverul grafic complet open-source Mesa Turnip (Vulkan 1.3) și un lanț de execuție hibrid format din Proton 11 ARM64 și emulatorul usermode FEX-Emu, permițând rularea titlurilor Windows x86/x86_64 pe arhitectura AArch64. Compositorul folosit pentru sesiunea de gaming nu poate fi "Gamescope" ca opțiune de instalare în pmbootstrap - acel pachet nu există (Secțiunea 5); trebuie compilat separat.
 
 ## **1\. Starea Suportului de Kernel pentru SM8250 pe instantnoodle**
@@ -38,6 +45,11 @@ acord unele cu altele:
 > nimeni n-a confirmat încă, pe un telefon fizic, că încărcarea sau fuel gauge-ul chiar funcționează
 > cu acest patch aplicat.
 >
+> **Corectură 2026-10-01:** nu are cum să funcționeze. Kernelul Xo666 nu conține driver pentru
+> `qcom,pm8150b-charger` sau `qcom,pm8150b-fg` (verificat în arborele sursă), deci nodurile
+> portate nu sunt folosite de nimic. Patch-ul a fost scos din pachetul de kernel. Același lucru
+> e valabil pentru ObiKeahloa, mai jos.
+>
 > **Actualizare 2026-08-24 (mai târziu, aceeași zi): și direcția inversă a fost încercată, pe
 > ObiKeahloa.** S-a portat zap-shader-ul de la Xo666 peste DTS-ul ObiKeahloa, ca să rezolve
 > blocajul GPU-ului de acolo. La verificare prin compilare (nu doar citire de text) a ieșit la
@@ -64,7 +76,7 @@ Wiki-ul postmarketOS confirmă că dispozitivul boot-ează (`booting = yes`) cu 
 | :---- | :---- | :---- | :---- |
 | **Display (DSI/KMS)** | Funcțional | msm_drm, panel `samsung,amb655uv01` | O singură bandă MIPI-DSI (`mdss_dsi0`), nu două. 1080x2400 la 60/90 Hz confirmat. |
 | **Touchscreen** | Funcțional | `samsung,s6sy761` la adresa 0x48 pe i2c13 | Nu e goodix și nu e synaptics_dsx - e un controller Samsung dedicat. |
-| **Stocare UFS** | Funcțional | ufs_qcom | DTS și wiki declară `jedec,ufs-2.0`, nu UFS 3.0. |
+| **Stocare UFS** | Funcțional | ufs_qcom | UFS 3.0 (corectat 2026-10-01: `jedec,ufs-2.0` din DTS e doar numele generic al driverului, nu versiunea cipului; pachetul MSM OnePlus conține firmware pentru cipuri UFS 3.0/3.1). |
 | **USB-C OTG / USB 3.0** | Funcțional, cu quirk | qcom-pmic-typec / dwc3-qcom | Mux `fcs,fsa4480` @ 0x42 pe i2c15; comportamentul de orientare e neverificat pe hardware. |
 | **USB-PD (Power Delivery) / Încărcare** | **5 W confirmată, dar doar pe fork-ul fără GPU** | `qcom,pm8150b-charger` | Nod absent complet din DTS-ul Xo666 (folosit peste tot în acest document); prezent și funcțional doar pe fork-ul WuerfelDev, care are GPU-ul dezactivat. Vezi Secțiunea 4. |
 | **Audio ALSA/PipeWire** | Funcțional Condiționat | qcom-lpass / `qcom,wcd9380-codec` | Codec e WCD9380, nu WCD9385; plus 2x amplificatoare de difuzor `nxp,tfa9874` pe i2c15 (0x34 cască internă, 0x35 difuzor principal), absente din doc inițial. |
@@ -85,7 +97,7 @@ Fără aceste tabele de comenzi, regulatorii de tensiune LDO asociați panoului 
 ### **Touchscreen și Stocare UFS**
 
 Digitizorul tactil nu folosește driverele goodix sau synaptics presupuse inițial. Device tree-ul verificat declară un controller **`samsung,s6sy761`** pe magistrala I²C13, la adresa 0x48, expunând fluxurile de coordonate prin nodurile /dev/input/eventX standard.
-Subsistemul de stocare este gestionat prin driverul ufs\_qcom, dar DTS-ul și wiki-ul îl declară `jedec,ufs-2.0`, nu UFS 3.0 cum spune fișa tehnică de marketing a telefonului. Diferența contează pentru estimările de I/O (instalare de jocuri, load times), care trebuie coborâte proporțional.
+Subsistemul de stocare este gestionat prin driverul ufs\_qcom. Stocarea e UFS 3.0, cum spune și fișa tehnică. Corectat 2026-10-01: o versiune anterioară a acestui document afirma "UFS 2.0" pe baza textului `jedec,ufs-2.0` din DTS, care e doar numele generic al driverului Linux pentru orice versiune UFS; pachetul MSM OnePlus pentru acest telefon conține firmware pentru cipuri UFS 3.0 și 3.1.
 
 ### **Limitări Hardware Critice pe USB-C și Power Delivery**
 
@@ -261,6 +273,11 @@ postmarketOS - și care are GPU-ul dezactivat explicit în DTS. Detaliile:
   descarcă normal, fără nicio compensare din priză), fie cineva trebuie să porteze manual nodurile
   `pm8150b_charger` / `pm8150b_fg` din WuerfelDev peste DTS-ul Xo666 - o muncă de merge, nu o
   configurare.
+* **Corectură 2026-10-01:** portarea descrisă mai jos a adus doar noduri de device tree, fără
+  driver, deci nu activează încărcarea; a fost scoasă. Driverul existent în WuerfelDev și în
+  kernelul oficial pmOS SM8250 are un bug grav (tensiune maximă de încărcare ~4.87 V în loc de
+  4.435 V, confirmat independent pe alt dispozitiv SM8250) și nu trebuie portat așa cum e. Vezi
+  `docs/hardware-safety.md`, 4.1.
 * **Actualizare 2026-08-24: portarea a fost încercată.** Există acum un patch
   (`pmaports/linux-oneplus-instantnoodle/0001-port-charger-fg-from-wuerfeldev.patch`) care aduce
   nodurile `pm8150b_charger` și `pm8150b_fg`, plus canalele ADC pe care le folosesc, din WuerfelDev
@@ -306,40 +323,61 @@ Desfășurarea stivei de operare necesită pregătirea partițiilor fizice UFS, 
 
 ### **Fluxul Pas cu Pas de Instalare (dintr-un fork comunitar SM8250)**
 
-> **Pas 0, obligatoriu, înainte de orice altceva:** descărcați și verificați (checksum) un
-> pachet complet de restaurare OxygenOS (MSM Download Tool sau imagine flashabilă prin EDL),
-> potrivit exact cu modelul și regiunea telefonului vostru (IN2013/IN2010, nu variantele de
-> operator T-Mobile/Verizon). Acesta e singura plasă de siguranță reală dacă ceva merge prost
-> la pașii 5-6 de mai jos - nu contați pe `fastboot fetch` (suport incert pentru acest
-> bootloader, netestat) și nu contați exclusiv pe EDL (vezi caseta de la finalul secțiunii).
-> Faceți asta *înainte* de deblocarea bootloader-ului, cât timp telefonul încă răspunde normal.
+> **Corectat 2026-10-01, cu telefonul disponibil.** Varianta anterioară a acestui flux avea
+> erori care l-ar fi blocat sau ar fi dus în eroare: `pmbootstrap install --split` nu e
+> compatibil cu `pmbootstrap flasher flash_rootfs` pe metoda `fastboot` (verificat în codul
+> pmbootstrap 3.11.1), comanda `pmbootstrap flasher flash_boot` nu există pentru această
+> metodă, combinația de taste pentru fastboot era greșită, lipsea pasul "Deblocare OEM", iar
+> vbmeta era prezentat ca obligatoriu deși porturile oficiale 8 Pro și 8T nu îl scriu.
+> Procedura completă, cu backup, comenzi exacte și teste: [`docs/hardware-safety.md`](docs/hardware-safety.md).
 
-> 1. **Deblocarea Bootloader-ului:** Terminalul este comutat în modul Fastboot prin menținerea combinației de taste Volume Down \+ Power, urmată de comanda: `fastboot flashing unlock`
-> 2. **Pregătirea Kernelului:** Se clonează fork-ul `github.com/Xo666/mainline-instantnoodle`, branch `6.16.7` - **singurul dintre cele trei fork-uri cunoscute cu GPU confirmat funcțional** (vezi Secțiunea 1) - și se integrează `sm8250-oneplus-instantnoodle.dts` ca sursă de kernel pentru `pmbootstrap`, deoarece codename-ul `instantnoodle` nu există în pmaports upstream. `instantnoodlep` (8 Pro) și `kebab` (8T) sunt singurele codename-uri OnePlus SM8250 impachetate oficial. Alternativa `gitlab.postmarketos.org/WuerfelDev/linux-sm8250` (branch `6.17.0-instantnoodle`) are încărcare funcțională dar GPU dezactivat - nu porniți de aici dacă scopul e gaming.
-> 3. **Inițializarea Mediului de Construcție:** Pe o stație gazdă Linux, se rulează `pmbootstrap init`, punctând sursa de kernel către fork-ul de la pasul 2. **Interfața de utilizator "gamescope" nu există ca opțiune** - lista reală din pmbootstrap conține buffyboard, cage, console, cosmic, fbkeyboard, gnome, gnome-mobile, i3wm, kodi, lomiri, lxqt, mate, moonlight, niri, openbox, phosh, plasma-bigscreen/desktop/mobile, retroarch, shelli, sway, sxmo, weston, windowmaker, xfce4. Cea mai apropiată alegere gata făcută e `retroarch` sau `moonlight`; un compositor de gaming dedicat trebuie ambalat separat sau se alege `none` și se pornește manual după boot.
-> 4. **Compilarea Nucleului și Generarea Imaginilor:** `pmbootstrap install --split`
-> 5. **Verificarea dimensiunii înainte de scriere:** rulați `fastboot getvar all` pe telefonul
->    real și comparați dimensiunea raportată a partiției `super` cu dimensiunea efectivă a
->    imaginii de rootfs generate la pasul 4. `pmbootstrap`/`fastboot` **nu fac această
->    verificare automat** - un `fastboot flash super` cu o imagine de dimensiune greșită e
->    exact tipul de eroare care duce la partiții dinamice corupte (vezi tabelul de riscuri).
-> 6. **Dezactivarea verificării AVB (vbmeta):** înainte de a scrie rootfs-ul, rulați
->    `pmbootstrap flasher flash_vbmeta`. Fără acest pas, verificarea Android Verified Boot
->    poate respinge un boot.img/kernel nesemnat și cauza un bootloop sau un soft-brick -
->    ordinea contează, vbmeta trebuie scris *înainte* de rootfs, nu după. **Neverificat dacă
->    OnePlus 8 chiar impune asta după deblocarea bootloader-ului** - testați izolat dacă se
->    poate, dar nu săriți pasul presupunând că nu e necesar.
-> 7. **Scrierea Partițiilor:** Dispozitivul conectat în modul Fastboot este inscripționat secvențial:
+> 0. **Pregătire și backup complet, înainte de orice scriere** (`docs/hardware-safety.md`,
+>    secțiunile 1-2): verificați modelul (IN2013/IN2015/IN2011/IN2010; IN2019 Verizon nu se
+>    poate debloca, IN2017 T-Mobile cere token), descărcați pachetul MSM Download Tool pentru
+>    regiunea voastră, salvați datele personale, apoi faceți backup la **toate** partițiile în
+>    afară de `userdata` (inclusiv `super`, `persist` și partițiile EFS/IMEI) și verificați
+>    backup-ul cu `sha256sum`.
+> 1. **Deblocarea bootloader-ului:** Opțiuni dezvoltator > Deblocare OEM activat. Fastboot:
+>    telefon oprit, **Volum Sus + Volum Jos + Power**. Apoi `fastboot flashing unlock`
+>    (șterge toate datele).
+> 2. **Kernelul:** pachetul `pmaports/linux-oneplus-instantnoodle/` din acest repo (fork-ul
+>    Xo666, branch `6.16.7`, singurul cu GPU confirmat funcțional, plus două patch-uri de
+>    siguranță). Directoarele din `pmaports/` se copiază în `device/testing/` dintr-o copie
+>    locală a pmaports. **Nu folosiți** fork-ul WuerfelDev sau kernelul oficial pmOS SM8250
+>    pe acest telefon: driverul lor de încărcare programează bateria la ~4.87 V
+>    (`docs/hardware-safety.md`, 4.1).
+> 3. **Inițializarea mediului:** `pmbootstrap init` cu pmaports-ul local, dispozitiv
+>    `oneplus-instantnoodle`. **Interfața "gamescope" nu există ca opțiune** - lista reală din
+>    pmbootstrap conține buffyboard, cage, console, cosmic, fbkeyboard, gnome, gnome-mobile,
+>    i3wm, kodi, lomiri, lxqt, mate, moonlight, niri, openbox, phosh,
+>    plasma-bigscreen/desktop/mobile, retroarch, shelli, sway, sxmo, weston, windowmaker, xfce4.
+>    Cea mai apropiată alegere gata făcută e `retroarch` sau `moonlight`; un compositor de
+>    gaming dedicat trebuie ambalat separat sau se alege `none` și se pornește manual după boot.
+> 4. **Generarea imaginilor:** `pmbootstrap install` (**fără** `--split`), apoi
+>    `pmbootstrap export`. Rezultă `boot.img`, `dtbo.img` și `oneplus-instantnoodle.img`
+>    (rootfs-ul cu partițiile interioare pmOS_boot și pmOS_root, în format sparse).
+> 5. **Scrierea partițiilor** (din Windows, cu `fastboot.exe`, pentru că WSL2 nu vede USB-ul):
 >    ```
->    pmbootstrap flasher flash_dtbo
->    pmbootstrap flasher flash_vbmeta
->    pmbootstrap flasher flash_boot
->    pmbootstrap flasher flash_rootfs
+>    fastboot getvar current-slot
+>    fastboot getvar partition-size:super
+>    fastboot flash dtbo dtbo.img
+>    fastboot flash boot boot.img
+>    fastboot flash super oneplus-instantnoodle.img
+>    fastboot reboot
 >    ```
->    Câmpul `deviceinfo_super_partitions` din portul draft **nu are niciun efect real** - nu
->    există în schema pe care `pmbootstrap` chiar o citește (verificat direct în codul sursă).
->    Nu vă bazați pe el pentru siguranță; scrierea în `super` e un `fastboot flash` brut,
->    fără nicio logică de redimensionare a partițiilor logice.
+>    Din WSL, echivalentul este `pmbootstrap flasher flash_dtbo`, `flash_kernel` și
+>    `flash_rootfs` (cu `usbipd-win`). Bootloader-ul refuză o imagine mai mare decât partiția
+>    înainte de orice scriere (implementarea de referință Qualcomm ABL), deci scrierea în
+>    `super` nu poate atinge alte partiții sau GPT-ul. vbmeta se scrie doar dacă
+>    bootloader-ul refuză imaginea de boot.
+> 6. **Primele teste**, înainte de orice joc: `docs/hardware-safety.md`, secțiunea 4
+>    (încărcare, difuzoare, regulatoare, temperaturi, sloturi A/B).
+>
+> Despre `deviceinfo_super_partitions`: corectat 2026-10-01. Câmpul nu e citit de
+> `pmbootstrap`, dar **este** citit de initramfs-ul de pe telefon (`init_2nd.sh`), care încearcă
+> să mapeze partițiile logice Android din partițiile listate. Cu rootfs-ul scris direct peste
+> `super` nu există partiții logice de mapat, așa că a fost scos din `deviceinfo`; initramfs-ul
+> găsește imaginea pmOS din `super` oricum, scanând toate partițiile.
 
 Pachetele `fex`, `proton`, `steam` și `box64` **nu există deloc în pmaports** - toată stiva de gaming din userspace e muncă neambalată, de făcut manual sau prin scripturi proprii.
 
@@ -349,7 +387,7 @@ Pachetele `fex`, `proton`, `steam` și `box64` **nu există deloc în pmaports**
 > și `sm8250-oneplus-instantnoodle.dtb` compilat fără erori, în 5m30s. Asta confirmă că sursa e
 > internă consistentă și compilabilă - nu confirmă că pornește pe telefon, nici că shader-ul GPU
 > chiar se încarcă. Detalii complete și pachete draft pmaports (`device-oneplus-instantnoodle`,
-> `linux-oneplus-instantnoodle`, netestate prin `abuild`) în `docs/verification-log.md` §7.5 și
+> `linux-oneplus-instantnoodle`, construite ulterior prin `abuild`/`pmbootstrap`) în `docs/verification-log.md` §7.5 și
 > directorul `pmaports/`.
 
 ### **Estimări de Performanță și Benchmarks Așteptate**
@@ -375,8 +413,8 @@ Jocurile pe 32 de biți Direct3D 9 (*Fallout: New Vegas*) și titlurile 2D/izome
 
 | Risc Tehnic Identificat | Mecanism Cauzal | Impact Asupra Sistemului | Protocol Tehnic de Remediere / Mitigare |
 | :---- | :---- | :---- | :---- |
-| **Coruperea Tabelei GPT UFS** | Suprascrierea necorespunzătoare a volumelor dinamice super/userdata; `fastboot flash super` e o scriere brută, fără verificare de dimensiune. | Dispozitiv blocat complet (*Hard-Brick*); lipsă răspuns Fastboot. | Forțare în mod EDL (Qualcomm HS-USB QDLoader 9008) și rescriere GPT via bkerler/edl sau OnePlus MSM Download Tool - transport confirmat funcțional pe acest SoC, dar fără o recuperare completă documentată public. Pasul 0 din Secțiunea 5 (pachet OxygenOS pregătit dinainte) e plasa de siguranță reală. |
-| **Fork-ul cu GPU nu are încărcare (și invers)** | `pm8150b-charger` (5 W) funcționează doar pe fork-ul WuerfelDev, care are `&gpu` dezactivat; fork-ul Xo666 (GPU funcțional) nu are deloc nod de charger; fork-ul ObiKeahloa are `&gpu` activat dar fără zap-shader, plus blocuri de override pentru charger/fg care, verificat 2026-08-24, nu se compilau deloc (etichete lipsă în `pm8150b.dtsi`). | Pe Xo666 nemodificat, bateria se descarcă normal sub sarcină, fără nicio compensare din priză - nu ~2.7-5.5 ore cu Peltier alimentat, ci durata reală a bateriei neasistate. | Există acum **două** patch-uri candidate. (1) Nodurile de charger din WuerfelDev portate peste DTS-ul Xo666 (`pmaports/linux-oneplus-instantnoodle/0001-port-charger-fg-from-wuerfeldev.patch`) - compilare curată, inclusiv prin `abuild`/`pmbootstrap` real, dar mux-ul SBU rămâne dezactivat. (2) Zap-shader-ul de la Xo666 portat peste DTS-ul ObiKeahloa, plus definițiile de charger/fg care lipseau din `pm8150b.dtsi`-ul acelui fork (`pmaports/linux-oneplus-instantnoodle-obikeahloa/0001-port-zap-shader-from-xo666.patch`) - compilare curată, DTB-ul confirmă GPU + charger + fuel gauge simultan, tot prin pipeline-ul `abuild`/`pmbootstrap` real, mux-ul SBU tot dezactivat. **Ambele netestate pe hardware** - nu se știe dacă încărcarea sau GPU-ul chiar funcționează cu vreunul din aceste patch-uri pe un telefon fizic, și niciunul nu e kernelul implicit al proiectului. Vezi `docs/verification-log.md`. |
+| **Scriere greșită în partiții / pierderea Android-ului** | `fastboot flash super` suprascrie complet partiția `super` (system/vendor/product). Bootloader-ul refuză imaginile mai mari decât partiția înainte de scriere, deci nu se poate revărsa în GPT sau în alte partiții (corectat 2026-10-01: varianta anterioară a tabelului descria greșit un mecanism de corupere GPT). | Android nu mai pornește până la restaurarea `super`; fastboot rămâne disponibil. Hard-brick doar prin re-blocarea bootloader-ului cu software modificat sau prin scrieri manuale în alte partiții. | Backup complet și verificat înainte (`docs/hardware-safety.md`, secțiunea 2); restaurare cu `img2simg` + `fastboot flash super`; ultima plasă de siguranță: MSM Download Tool (EDL) cu pachetul regiunii. Nu rulați niciodată `fastboot flashing lock`. |
+| **Încărcare: niciun driver sigur** | Kernelele Xo666 și ObiKeahloa nu au driver pentru `qcom,pm8150b-charger`; WuerfelDev și kernelul oficial pmOS SM8250 au unul, dar programează tensiunea maximă a bateriei cu scala greșită (~4.87 V în loc de 4.435 V), nu setează curentul și scrie la o adresă greșită în PMIC (verificat 2026-10-01, confirmat independent pe Retroid Pocket 5). | Pe Xo666: încărcare doar pe setările hardware lăsate de bootloader. Cu driverul comunitar: risc real de supraîncărcare a bateriei. | Patch-urile anterioare de "portare a charger-ului" adăugau doar noduri de device tree fără driver; cel de pe Xo666 a fost scos. Test de încărcare cu monitorizarea tensiunii (`docs/hardware-safety.md`, 4.1). Nu se folosește driverul comunitar până nu e reparat. |
 | **Eșec Handshake USB-PD** | Comportament netestat al mux-ului `fcs,fsa4480` la orientare inversă a conectorului. | Posibilă întrerupere a alimentării coolerului Peltier și revenire la throttling. | Marcat OPEN în log-ul de verificare; necesită testare directă pe dispozitiv. |
 
 #### **Protocolul de Recuperare EDL (Emergency Download Mode)**
@@ -394,6 +432,12 @@ Jocurile pe 32 de biți Direct3D 9 (*Fallout: New Vegas*) și titlurile 2D/izome
 De sub un sistem Linux, utilitarul open-source bkerler/edl permite comunicarea cu nucleul primar PBL (Primary Boot Loader), încărcarea binarului semnat Firehose (prog_firehose_ddr.elf) și reconstrucția completă a LUN-urilor UFS din imaginile de fabrică OxygenOS - **presupunând că aveți deja aceste imagini de fabrică pregătite dinainte** (pasul 0).
 
 #### **Protecția Acumulatorului: de verificat, nu de presupus**
+
+> **Actualizare 2026-10-01:** pe kernelul folosit (Xo666) nu există driver de încărcare,
+> deci încărcarea rămâne pe setările hardware lăsate de bootloader. Singurul driver comunitar
+> disponibil (`qcom_pm8150b_charger.c`) e periculos în forma actuală: ~4.87 V tensiune maximă,
+> curent de încărcare nesetat, scriere la adresă greșită în PMIC. Testul de încărcare cu
+> monitorizarea tensiunii e în `docs/hardware-safety.md`, 4.1.
 
 Documentul original propunea un bypass de încărcare prin `echo 0 > /sys/class/power_supply/battery/charging_enabled`. Acesta e un nod **sysfs downstream** specific kernelelor Android/CAF - nu există în `power_supply` mainline, deci comanda va eșua pe acest kernel. Mainline expune în schimb `charge_control_limit` și `input_current_limit` sub `/sys/class/power_supply/`, dar chiar și acestea presupun un driver de charger funcțional - iar device tree-ul verificat nu declară niciunul (Secțiunea 4). Practic: nu există încă o rețetă confirmată de a proteja bateria în sesiuni lungi pe acest kernel; e primul lucru de testat cu telefonul fizic în mână, nu de presupus rezolvat.
 
@@ -417,6 +461,13 @@ manual. Coolerul Peltier al GameSir X3 Pro rezolvă oricum jumătatea termică a
 de rezultatul alimentării, pentru că se alimentează singur de la priză - dar fără o portare a
 nodurilor de charger peste DTS-ul Xo666, telefonul de pe acest fork joacă bine și se descarcă normal,
 fără nicio compensare din priză.
+
+**Corectură 2026-10-01:** ambele actualizări de mai jos descriu patch-uri care **nu activează
+încărcarea**: kernelele Xo666 și ObiKeahloa nu au driverul care să folosească nodurile portate.
+Concluzia reală e mai simplă: pe Xo666 telefonul încarcă doar pe setările hardware ale
+PMIC-ului, iar un driver de încărcare sigur pentru PM8150B încă nu există în niciun fork
+(cel din WuerfelDev/pmOS programează ~4.87 V). Patch-ul de pe Xo666 a fost scos; vezi
+`docs/verification-log.md` §9.
 
 **Actualizare 2026-08-24:** portarea de mai sus a fost încercată. Nodurile `pm8150b_charger` și
 `pm8150b_fg` din WuerfelDev au fost aduse peste DTS-ul Xo666 fără să atingă nodul `&gpu` sau

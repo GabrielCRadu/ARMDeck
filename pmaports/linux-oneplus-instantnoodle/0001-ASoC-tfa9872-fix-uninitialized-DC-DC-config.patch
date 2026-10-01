@@ -1,0 +1,62 @@
+From: steamed-noodle <noreply@localhost>
+Subject: [PATCH] ASoC: tfa9872: fix uninitialized DC-DC config and TFA9874 DCVOS register
+
+Two bugs in tfa987x_setup_dcdc(), the function that programs the boost
+(DC-DC) converter feeding the speaker amplifiers:
+
+1. "u32 mcc, dcvof, dcvos, dctrip, dctrip2 = 0;" only initializes dctrip2.
+   The OnePlus 8 device tree sets none of the optional DC-DC properties, so
+   of_property_read_u32() never writes the other four and they keep whatever
+   was on the stack. op8_defconfig sets CONFIG_INIT_STACK_NONE=y, so the
+   compiler does not zero them either. Depending on that garbage, the amp
+   boost converter is either left disabled or programmed with arbitrary
+   max coil current (DCMCC), boost voltage (DCVOF/DCVOS) and trip levels.
+   Initialize all five to 0, which means "keep the chip defaults".
+
+2. For TFA9874 (rev 0x73/0x74) the second boost voltage level DCVOS lives in
+   register 0x76 (DCDC_CTRL6) bits 14:9. NXP's own field map in the OnePlus
+   SM8250 vendor kernel says TFA9874_BF_DCVOS = 0x7695 (register 0x76,
+   bit 9, 6 bits wide). The driver wrote it to 0x70 (DCDC_CTRL0) instead,
+   where bits 14:9 hold DCDIS (DC-DC on/off, bit 14) and DCIE (adaptive
+   boost, bit 9). Write it to DCDC_CTRL6. With fix 1 and no device tree
+   value this path is never taken, but it must not be wrong if someone
+   adds "second-boost-voltage" later.
+
+Reference for the field map: LineageOS/android_kernel_oneplus_sm8250,
+techpack/audio/asoc/codecs/tfa98xx-v6/tfa9874_tfafieldnames.h
+(TFA9874_BF_DCMCC = 0x7033, TFA9874_BF_DCIE = 0x7090,
+TFA9874_BF_DCDIS = 0x70e0, TFA9874_BF_DCTRIP = 0x7444,
+TFA9874_BF_DCTRIP2 = 0x7534, TFA9874_BF_DCVOF = 0x7635,
+TFA9874_BF_DCVOS = 0x7695; encoding 0xRRPL = register, bit position,
+width minus one). DCMCC, DCIE, DCTRIP, DCTRIP2 and DCVOF were checked and
+already match the driver.
+
+This does NOT add speaker protection. The driver still runs both TFA9874
+amps without NXP's protection algorithm and with current/voltage sense
+disabled, so long loud playback can still overheat the speakers. See
+docs/hardware-safety.md in the steamed-noodle repo.
+
+NOTE: upstream tfa9872.c uses CRLF line endings, so the hunk lines below
+end in CRLF. Do not let git or an editor convert this file (see the
+repo's .gitattributes).
+
+--- a/sound/soc/codecs/tfa9872.c	2026-10-01 16:16:29.041020676 +0300
++++ b/sound/soc/codecs/tfa9872.c	2026-10-01 16:16:29.060787580 +0300
+@@ -145,7 +145,7 @@
+ 
+ static bool tfa987x_setup_dcdc(struct device *dev, struct regmap *rmap, u16 rev)
+ {
+-	u32 mcc, dcvof, dcvos, dctrip, dctrip2 = 0;
++	u32 mcc = 0, dcvof = 0, dcvos = 0, dctrip = 0, dctrip2 = 0;
+ 	int i;
+ 	u32 *dest[] = { &mcc, &dcvof, &dcvos, &dctrip, &dctrip2 };
+ 	const char *props[] = { "max-coil-current",
+@@ -191,7 +191,7 @@
+ 					FIELD_PREP(TFA9874_DCDC_CTRL6_DCVOF_MSK, dcvof));
+ 
+ 		if (dcvos)
+-			regmap_update_bits(rmap, TFA987X_DCDC_CTRL0,
++			regmap_update_bits(rmap, TFA987X_DCDC_CTRL6,
+ 					TFA9874_DCDC_CTRL6_DCVOS_MSK,
+ 					FIELD_PREP(TFA9874_DCDC_CTRL6_DCVOS_MSK, dcvos));
+ 		break;

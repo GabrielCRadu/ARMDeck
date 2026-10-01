@@ -1,0 +1,9 @@
+# APKBUILD and deviceinfo files are sourced by shell scripts, and every
+# file listed in an APKBUILD's source= is pinned by sha512. A CRLF line
+# ending added by a Windows checkout (core.autocrlf=true) breaks both.
+* text=auto eol=lf
+
+# Patches must stay byte-exact. Some upstream kernel files use CRLF line
+# endings, so their hunks carry CRLF too, and any conversion here would
+# make the patch fail to apply and its sha512sum stop matching.
+*.patch -text

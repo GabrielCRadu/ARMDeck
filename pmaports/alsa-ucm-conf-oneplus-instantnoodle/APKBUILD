@@ -1,19 +1,29 @@
 # Reference: <https://postmarketos.org/devicepkg>
-# DRAFT - not yet built. Sourced from github.com/Xo666/linux-oneplus-instantnoodle.
-# The HiFi.conf mixer paths (TERT_MI2S_RX, WCD9380 RX/TX) reference the
-# codec confirmed in reference/dts/sm8250-oneplus-instantnoodle.dts
-# (qcom,wcd9380-codec) - consistent with the rest of this document's audio
-# findings, not just copy-pasted from a similarly-named device.
+# DRAFT, builds through pmbootstrap, not yet tested on hardware. Sourced from
+# github.com/Xo666/linux-oneplus-instantnoodle. The HiFi.conf mixer paths
+# (TERT_MI2S_RX, WCD9380 RX/TX) reference the codec confirmed in
+# reference/dts/sm8250-oneplus-instantnoodle.dts (qcom,wcd9380-codec).
+#
+# This package ships only two files (ucm2/OnePlus/OnePlus8.conf and
+# HiFi.conf), so it must not "provide" alsa-ucm-conf: an earlier draft did,
+# which lets apk treat the real alsa-ucm-conf (with ucm2/ucm.conf, the file
+# that makes ALSA look up any card config at all) as already installed.
+# pmaports CI also rejects an unversioned alsa-ucm-conf provider
+# (.ci/testcases/test_provides.py). It depends on the real package instead.
+#
+# Speaker safety: HiFi.conf defines no hardware volume control for the two
+# TFA9874 speaker amplifiers, and the kernel driver runs them without any
+# speaker protection. Keep software volume moderate; see
+# docs/hardware-safety.md.
 maintainer=""
 pkgname=alsa-ucm-conf-oneplus-instantnoodle
 pkgver=1
-pkgrel=0
+pkgrel=1
 pkgdesc="ALSA UCM configuration for OnePlus 8 (instantnoodle)"
 url="https://github.com/Xo666/linux-oneplus-instantnoodle"
 arch="aarch64"
 license="proprietary"
-provides="alsa-ucm-conf"
-provider_priority=1
+depends="alsa-ucm-conf"
 options="!check"
 _commit="9e645da0ce76ccb7594d5b2da6fb43fe374b6897"
 source="$pkgname-$_commit.tar.gz::https://github.com/Xo666/linux-oneplus-instantnoodle/archive/$_commit.tar.gz"

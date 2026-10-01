@@ -10,6 +10,13 @@ kernel tree, device tree, and package repositories.
 
 **All checks performed 2026-08-24.** Anything marked OPEN needs hardware to settle.
 
+> **Read section 9 first (2026-10-01).** A pre-flash audit with the phone in hand found that
+> several conclusions below are wrong: both "charger port" patches were inert because neither
+> the Xo666 nor the ObiKeahloa tree has a PM8150B charger or fuel-gauge driver; the only
+> community driver (WuerfelDev / postmarketOS SM8250) programs about 4.87 V float voltage on
+> this battery; and the documented install flow could not have worked. Earlier text is kept
+> as the historical record, with this banner as the correction.
+
 Verdict key: **CONFIRMED** · **WRONG** · **PARTIAL** - right in outline, wrong in detail · **OPEN** - undecidable without the device.
 
 ---
@@ -153,7 +160,7 @@ Audited against `reference/dts/sm8250-oneplus-instantnoodle.dts` (Xo666 fork, br
 | Touchscreen is `goodix` or `synaptics_dsx` over I²C | `samsung,s6sy761` @ 0x48 on i2c13 | **WRONG** |
 | Panel over **two** MIPI-DSI lanes | `samsung,amb655uv01`, single link on `mdss_dsi0` | **WRONG** |
 | Panel 1080×2400, 90 Hz | Confirmed; wiki notes 60/90 Hz both supported | **CONFIRMED** |
-| UFS 3.0 | DTS/wiki declare `jedec,ufs-2.0` | **PARTIAL** |
+| UFS 3.0 | Corrected 2026-10-01: `jedec,ufs-2.0` is the generic Linux binding name for any UFS host, not the chip version; the OnePlus MSM package ships firmware for UFS 3.0/3.1 parts | **CONFIRMED** (earlier PARTIAL was wrong) |
 | Audio via WCD9385 + LPASS/Hexagon | `qcom,wcd9380-codec` present, **plus** 2× `nxp,tfa9874` speaker amps on i2c15 | **PARTIAL** |
 | ADSP/CDSP firmware needed | Confirmed - `adsp.mbn`, `cdsp.mbn` both required | **CONFIRMED** |
 | Adreno 650 works via Turnip/`msm` | `&gpu status = "okay"` **on the Xo666 tree only**, needs `a650_zap.mbn`. Disabled outright on the wiki's own tracked tree - see §1.4 fork divergence table | **CONFIRMED, tree-dependent** |
@@ -726,6 +733,9 @@ tree text is not a substitute for compiling it, a lesson this project has now pa
 
 ## 8. Summary
 
+> Corrected by section 9: the "GPU + charger + fg resolved" results below are compile-time
+> only and the charger/fg half binds to no driver on either tree.
+
 **Alive, on the Xo666 tree specifically.** The device boots mainline with working 3D on at
 least one tree - that was the one thing that could have ended the project, and it's answered,
 but not universally: the wiki's own tracked kernel (WuerfelDev) currently ships with the GPU
@@ -754,3 +764,156 @@ content already proven on Xo666. **Both patches remain compile-verified only, no
 demonstrated to boot with 3D on the postmarketOS wiki's own device page; both patches are
 candidates layered on top of what compiles cleanly, not confirmations of what boots. The
 Steam/FEX plumbing (§5.2) is the next-biggest source of uncertainty after the fork-merge problem.
+
+---
+
+## 9. Pre-flash audit with the phone in hand (2026-10-01)
+
+Full code scan of the repo, every claim re-checked against source code rather than reading
+device tree text: the Xo666, ObiKeahloa and WuerfelDev trees (GitHub/GitLab APIs, GitHub
+code search), pmbootstrap 3.11.1, the postmarketOS initramfs, the official
+`device-oneplus-instantnoodlep`/`kebab` packages, the postmarketOS wiki pages for the 8, 8 Pro
+and 8T, and the OnePlus 8 vendor kernel/device tree (LineageOS/android_kernel_oneplus_sm8250,
+`arch/arm64/boot/dts/vendor/19821` is the OnePlus 8). The user-facing result, with the
+preparation checklist and per-component tests, is [`docs/hardware-safety.md`](hardware-safety.md).
+
+### 9.1 Both "charger port" patches were inert - **WRONG fix, removed**
+
+The patches in section 7.5 (Xo666) and the ObiKeahloa entry only added device tree nodes.
+Nothing binds to them:
+
+- Xo666 `6.16.7` (head `408762bf`, unchanged since 2026-01-14): `drivers/power/supply` has no
+  `qcom_pm8150b_charger.c` and no `qcom_fg.c`. GitHub code search on that repo returns 0 hits
+  for `pm8150b-charger` and `pm8150b-fg`, while the same search finds `qcom,pmi8998-charger`
+  (so the repo is indexed). `qcom_pmi8998_charger.c` matches only `qcom,pmi8998-charger` and
+  `qcom,pm660-charger`, and `CONFIG_CHARGER_QCOM_SMB2` is off in `op8_defconfig` anyway.
+- ObiKeahloa `sm8250/v6.13-instantnoodle` (head `79c4d152`, 2025-10-28): same, no driver.
+- WuerfelDev `6.17.0-instantnoodle` (head `15f4f0b2`): has `qcom_pm8150b_charger.c`,
+  `qcom_fg.c` and `qcom_smbx.c`. So does the official postmarketOS SM8250 kernel
+  (`soc/qualcomm-sm8250/linux`, tags `sm8250-6.17.0` through `sm8250-7.2.0`).
+
+"Compiles, and the decompiled DTB shows the nodes with `status = "okay"`" was true and proved
+nothing about charging. The patch was removed from `linux-oneplus-instantnoodle` (pkgrel 3);
+the ObiKeahloa package is now marked do-not-flash with the correction in its header.
+
+### 9.2 The community PM8150B charger driver is unsafe as written - **NEW, critical**
+
+`qcom_pm8150b_charger.c` (identical in WuerfelDev and in pmOS `sm8250-7.2.0`, 964 lines):
+
+1. **Float voltage on the wrong scale.** `rc = (voltage_max_design_uv - 3487500) / 7500 + 1;`
+   written to `FLOAT_VOLTAGE_CFG` (0x70 in the charger block, 0x1070 on the PMIC). That is the
+   PMI8998/SMB2 scale (OnePlus vendor `qpnp-smb2.c`: min 3487500, step 7500). PM8150B/SMB5 uses
+   3.6 V + 10 mV per step (vendor `qpnp-smb5.c`, `smb5_pm8150b_params.fv`: min 3600000, max
+   4790000, step 10000; `smb5-reg.h`: `CHGR_FLOAT_VOLTAGE_CFG_REG = 0x1070`). With this
+   battery's 4.435 V the driver writes 127, which PM8150B reads as **4.87 V**, above even the
+   chip's documented 4.79 V maximum. Independently confirmed on a Retroid Pocket 5 (SM8250 +
+   PM8150B): register 0x1070 read back 0x7a = 4.82 V for a 4.40 V battery
+   (armada-os/armada#534, #550; fixed in ROCKNIX by PR #3371/#3382, merged 2026-09-29).
+2. **Charge current never set**, leaving the 5.35 A hardware default (same reports).
+3. **Watchdog pet without the peripheral base:** `regmap_write(chip->regmap,
+   BARK_BITE_WDOG_PET, ...)` writes PMIC address 0x643 instead of 0x1643, i.e. into another
+   PMIC peripheral. The same bug in the parent `qcom_smbx` driver was fixed upstream (series by
+   Robin Snyders, accepted by Sebastian Reichel 2026-09-09), together with an off-by-one
+   "+1" in the float voltage selector.
+
+OnePlus's own limits for this phone (`kona-mtp.dtsi` in `19821`): normal-temperature float
+4435 mV, software stop above 4445 mV, battery over-voltage fault at 4550 mV
+(`vbatt_hv_thr`), 4130 mV when warm, `fcc-max-ua` 3 A. The community battery node's 4.435 V is
+correct; the driver's encoding of it is not.
+
+### 9.3 Speaker amplifier driver: uninitialized boost configuration - **FIXED (patch 0001)**
+
+Xo666 drives both TFA9874 amps with its own `sound/soc/codecs/tfa9872.c`. In
+`tfa987x_setup_dcdc()`, `u32 mcc, dcvof, dcvos, dctrip, dctrip2 = 0;` initializes only
+`dctrip2`. The board DTS sets none of the optional DC-DC properties and `op8_defconfig` has
+`CONFIG_INIT_STACK_NONE=y`, so max coil current, both boost voltages and the first trip level
+came from stack garbage. For TFA9874 the driver also wrote DCVOS to register 0x70 instead of
+0x76: NXP's field map in the OnePlus vendor kernel
+(`techpack/audio/asoc/codecs/tfa98xx-v6/tfa9874_tfafieldnames.h`) gives
+`TFA9874_BF_DCVOS = 0x7695` (reg 0x76, bits 14:9), and bits 14:9 of 0x70 hold DCDIS (DC-DC
+on/off) and DCIE. DCMCC, DCIE, DCTRIP, DCTRIP2 and DCVOF were checked and match. Patch
+`0001-ASoC-tfa9872-fix-uninitialized-DC-DC-config.patch` zero-initializes and fixes the
+register. Upstream `tfa9872.c` uses CRLF line endings, so the patch hunks do too; the new
+`.gitattributes` keeps git from converting `*.patch` files.
+
+Not fixed and not fixable here: the driver disables the amps' current/voltage sense and runs
+no protection algorithm. Per NXP's TFA9874B data sheet, speaker protection for this part runs
+on the host DSP using that sense data. Volume limits are in `hardware-safety.md` 4.4.
+
+### 9.4 Regulators compared against the OnePlus vendor DT - **1 deviation, FIXED (patch 0002)**
+
+All 37 RPMh regulators in the Xo666 board DTS were compared, min and max, with
+`kona-regulators.dtsi` from `19821`. 36 match or are tighter. The exception, `vreg_l2f_1p2`
+(PM8009 LDO2), was 1.2 V where the vendor DT has exactly 1.1 V; the vendor camera DT
+(`camera/kona-oem-camera-instantnoodle.dtsi`) uses it as `cam_v_custom2` of the rear main
+camera at 1100000 uV, only while that camera is on. In the Xo666 DTS it had no consumer and was
+`regulator-always-on`, like all seven PM8009 LDOs, although only L3F and L7F feed anything
+(front camera). Across 82 vendor DT files, PM8009 LDOs feed only camera modules. Patch
+`0002-arm64-dts-qcom-instantnoodle-match-PM8009-camera-rails-to-OEM.patch` drops
+always-on from L1F/L2F/L4F/L5F/L6F and sets L2F to 1.1 V; the front camera's AVDD is a
+GPIO-switched fixed regulator with no PM8009 input. Verified by building the DTB and
+decompiling it.
+
+Also checked against the vendor DT and found fine: flash LED (300 mA torch, 1 A flash,
+1.28 s, equal to vendor defaults and below the vendor maxima of 500 mA / 1.5 A); GPU OPP
+table (670 MHz is gated by `opp-supported-hw` and the `gpu_speed_bin` fuse, so a plain 865
+stays at 587 MHz); CPU thermal trips (90/95 °C passive, 110 °C critical).
+
+### 9.5 The documented install flow could not work - **FIXED in the main doc**
+
+Checked in pmbootstrap 3.11.1:
+
+- `pmbootstrap install --split` cannot be followed by `pmbootstrap flasher flash_rootfs` on
+  the `fastboot` method: `pmb/flasher/frontend.py:rootfs()` looks for `<device>.img`, which
+  only exists without `--split`, and `print_flash_info()` deliberately omits `flash_rootfs`
+  when `split` does not match the flasher's `split` flag. With `--split` the sparse conversion
+  is skipped too. The official 8 Pro wiki uses plain `pmbootstrap install`.
+- `pmbootstrap flasher flash_boot` does not exist for `fastboot` (only for
+  `fastboot-bootpart`); the right action is `flash_kernel`.
+- vbmeta was presented as mandatory, citing GSI guides. The official 8 Pro and 8T packages do
+  not set a vbmeta partition and their wiki install flows never write it.
+- Fastboot key combination: Volume Up + Volume Down + Power (wiki), not Volume Down + Power.
+  The "OEM unlocking" developer option was missing.
+- The risk table's "`fastboot flash super` corrupts the GPT, hard brick, no fastboot" has no
+  mechanism: Qualcomm's reference ABL (`QcomModulePkg/Library/FastbootLib/FastbootCmds.c`)
+  rejects an image larger than the partition before writing, for sparse and raw images.
+
+### 9.6 deviceinfo - **FIXED**
+
+- `deviceinfo_super_partitions` is not "read by nothing": not by pmbootstrap, but the
+  initramfs runs `setup_dynamic_partitions "${deviceinfo_super_partitions:=}"`
+  (`init_2nd.sh`), which calls `make-dynpart-mappings` on each listed partition if that tool
+  is installed. With the rootfs written raw over `super` there are no logical partitions, and
+  `mount_subpartitions` finds the pmOS image by scanning every partition anyway, so the field
+  was removed. The wiki partition dump confirms `super` is `/dev/sda14` on this phone.
+- The file no longer matched its sha512sum (the vbmeta line was added after the last build),
+  so the package did not build as committed. Checksum regenerated, pkgrel bumped.
+- The initramfs never touches the phone's real GPT: `resize_root_partition` only resizes the
+  nested table inside the loop-mapped `super`, unless `PMOS_FORCE_PARTITION_RESIZE` is on the
+  kernel command line (it is not).
+
+### 9.7 No firmware was ever installed - **FIXED**
+
+`device-oneplus-instantnoodle` depended on `firmware-oneplus-instantnoodle`, whose main
+package is empty; the files live in subpackages, which apk never installs on its own, and
+pmbootstrap only auto-adds a `device-*-nonfree-firmware` subpackage. So the image had no zap
+shader, no DSP firmware and no WiFi firmware. The device package now depends on the adsp,
+cdsp, gpu, venus and wifi subpackages (slpi left out: sensors are unsupported). The official
+8 Pro and 8T packages have the same pattern.
+
+### 9.8 ALSA UCM package claimed to be alsa-ucm-conf - **FIXED**
+
+It declared `provides="alsa-ucm-conf"` while shipping two files, which lets apk skip the real
+package (and with it `ucm2/ucm.conf`). pmaports CI (`.ci/testcases/test_provides.py`) also
+requires any alsa-ucm-conf provider to be versioned `0.*`. It now depends on alsa-ucm-conf.
+
+### 9.9 Smaller items
+
+- Kernel sources are pinned by sha512: `pmbootstrap checksum --verify` passed on 2026-10-01 for
+  all five packages, so the Xo666 branch tarball is byte-identical to the one built in August.
+- A/B slots: pmOS here has no `qbootctl`, so it never marks boots successful. Harmless as long
+  as OxygenOS left the active slot marked successful; checked with `fastboot getvar` in
+  `hardware-safety.md` 4.2.
+- `pcie2` (the SDX55 modem link) is enabled in the DTS but nothing powers the modem, and no
+  modem firmware or EFS-writing service is installed.
+- `core.autocrlf=true` on the Windows checkout: added `.gitattributes` (`eol=lf`, `*.patch -text`).
