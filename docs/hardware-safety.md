@@ -223,6 +223,10 @@ Primul boot: logo postmarketOS, apoi pe USB apare o placă de rețea, telefonul 
 - Din Linux: `dd`, `parted`, `gparted`, `mkfs` pe `/dev/sda*`, `/dev/sdb*`... Singura partiție
   a pmOS e cea mapată din `/dev/sda14` (`super`).
 - Kernelul WuerfelDev, kernelul oficial pmOS SM8250 sau driverul lor de încărcare (secțiunea 4.1).
+- Pe telefon: `apk upgrade --prune` sau `apk upgrade --available`. Kernelul, firmware-ul și pachetul
+  de dispozitiv sunt construite local și nu există în depozitele online, iar aceste opțiuni le pot
+  șterge sau înlocui. `apk upgrade` simplu e în regulă. Un kernel nou instalat pe telefon ajunge doar
+  în `/boot`; partiția `boot_b` se actualizează tot prin fastboot de pe PC.
 
 ### 3.5 Întoarcerea la Android
 

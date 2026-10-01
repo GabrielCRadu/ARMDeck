@@ -31,6 +31,11 @@ constatare are dovada verificată și măsura recomandată. Ordinea e de la cel 
   3. Opțional, SSH doar prin cablu: înlocuiești `/etc/nftables.d/50_sshd.nft` cu o regulă care
      acceptă portul 22 doar pe `usb*`.
 
+**Aplicat pe telefon (2026-10-01):** `/etc/nftables.d/40_ssh_usb_only.nft` aruncă traficul SSH
+venit pe `wlan*` înaintea regulii care îl acceptă. Verificat: de pe PC, portul 22 pe IP-ul WiFi al
+telefonului nu mai răspunde, iar prin cablu USB SSH-ul merge. Fișierul nu aparține niciunui pachet,
+deci rămâne și după actualizări. Login-ul pentru teste se face cu cheia `op8_pmos`.
+
 ## S3. Protecții de kernel dezactivate (mediu)
 
 - **Dovadă** (`op8_defconfig`): active KASLR, `STRICT_KERNEL_RWX`, `STACKPROTECTOR_STRONG`,
@@ -79,6 +84,15 @@ constatare are dovada verificată și măsura recomandată. Ordinea e de la cel 
   2022-04-23. `amss.bin` (WiFi) nu corespunde niciunei versiuni linux-firmware. Firmware-ul
   DSP și shader-ul zap sunt semnate și verificate de TrustZone. Cipul WiFi accesează memoria
   doar prin SMMU.
+
+## S8b. Depozitele de pachete folosesc HTTP (scăzut)
+
+- `/etc/apk/repositories` pe telefon folosește `http://` (implicit în postmarketOS/Alpine), iar
+  `mirror.postmarketos.org` redirecționează spre `http://mirror.nura.eco`. Pachetele și indexul sunt
+  semnate criptografic, deci nu pot fi modificate pe drum. Rămân expuse doar ce pachete descarci și
+  posibilitatea de a ți se servi un index mai vechi.
+- **Măsură:** `https://` pentru `dl-cdn.alpinelinux.org` (suportă HTTPS). Pentru oglinda pmOS se
+  verifică întâi dacă servește HTTPS.
 
 ## S9. Ce e în regulă
 
