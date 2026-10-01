@@ -7,7 +7,7 @@ maintainer=""
 _flavor="oneplus-instantnoodle"
 pkgname=linux-$_flavor
 pkgver=6.16.7
-pkgrel=4
+pkgrel=5
 pkgdesc="OnePlus 8 (instantnoodle) mainline kernel, Xo666 fork"
 arch="aarch64"
 _carch="arm64"
@@ -42,7 +42,7 @@ makedepends="
 #   0001: the speaker amplifiers' boost converter was programmed from
 #         uninitialized stack variables.
 #   0002: the camera PMIC rails for the unsupported rear cameras were forced
-#         on from boot, one of them at 1.2 V where OnePlus uses 1.1 V.
+#         on from boot, one of them at 1.2 V where OnePlus runs 1.104 V.
 #
 # No charger driver: this tree has no driver for qcom,pm8150b-charger or
 # qcom,pm8150b-fg (checked 2026-10-01), so charging is left to the PMIC
@@ -95,5 +95,5 @@ package() {
 sha512sums="
 11390f07286a48176ab46d20cd3ed7e389af8605da3b7f9c0c70148f54c2e41194f1205a92fd039b906eade8804360d6b98a77c402a1459098287fa5581e7d89  linux-oneplus-instantnoodle-6.16.7.tar.gz
 64923403662972aceeadb0e927303bdffd7b69edf62d5369e1acdb06869a8eee879deed38156128150a5badbf10762804abd45be492742fde037b2963c883aa3  0001-ASoC-tfa9872-fix-uninitialized-DC-DC-config.patch
-737d09ce3a33733c14e9139b0872eaa2db3f3ac86bf562073581b0bca470d8f8135b55beb6ed478a42cd37e4c94bff0a1e73cf6fbd617c9b1adf4dfdad799158  0002-arm64-dts-qcom-instantnoodle-match-PM8009-camera-rails-to-OEM.patch
+5b4596a662651770bd815badfcf554d627a3b3939dc5e4ade26e73a7c06f5a70e234a58bd7e5c72cfbd1258c28d859079c79dba04ab1e31b0f2170d4750fd198  0002-arm64-dts-qcom-instantnoodle-match-PM8009-camera-rails-to-OEM.patch
 "

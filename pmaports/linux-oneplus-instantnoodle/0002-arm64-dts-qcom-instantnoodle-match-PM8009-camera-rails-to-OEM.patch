@@ -22,11 +22,18 @@ kona-regulators.dtsi: pm8009_l2 min=max=1100000). This was the only one of
 
 Changes:
 - drop regulator-always-on from L1F, L2F, L4F, L5F, L6F
-- L2F: 1.2 V -> 1.1 V (label kept to avoid touching anything else)
+- L2F: 1.2 V -> 1.104 V (label kept to avoid touching anything else).
+  L2F is a pmic5_nldo: 320 mV + n * 8 mV, so 1.100 V itself is not a
+  valid setting. A first version of this patch asked for exactly
+  1100000 uV; the regulator core could not set it, so the whole PM8009
+  regulator device failed to probe (-ENOTRECOVERABLE), which also left the
+  QCA6390 WiFi/BT power unit (fed by S2F) and the front camera without
+  supplies. 1.104 V is the step the vendor driver rounds 1.1 V up to, and
+  the value L1F already uses.
 L3F and L7F are unchanged, so the front camera keeps its supplies.
 
---- a/arch/arm64/boot/dts/qcom/sm8250-oneplus-instantnoodle.dts	2026-10-01 16:32:01.994050351 +0300
-+++ b/arch/arm64/boot/dts/qcom/sm8250-oneplus-instantnoodle.dts	2026-10-01 16:32:02.214804321 +0300
+--- a/arch/arm64/boot/dts/qcom/sm8250-oneplus-instantnoodle.dts	2026-10-01 19:52:43.772692982 +0300
++++ b/arch/arm64/boot/dts/qcom/sm8250-oneplus-instantnoodle.dts	2026-10-01 19:52:43.803581677 +0300
 @@ -808,15 +808,13 @@
  			regulator-min-microvolt = <1104000>;
  			regulator-max-microvolt = <1104000>;
@@ -38,8 +45,8 @@ L3F and L7F are unchanged, so the front camera keeps its supplies.
  			regulator-name = "vreg_l2f_1p2";
 -			regulator-min-microvolt = <1200000>;
 -			regulator-max-microvolt = <1200000>;
-+			regulator-min-microvolt = <1100000>;
-+			regulator-max-microvolt = <1100000>;
++			regulator-min-microvolt = <1104000>;
++			regulator-max-microvolt = <1104000>;
  			regulator-initial-mode = <RPMH_REGULATOR_MODE_HPM>;
 -			regulator-always-on;
  		};

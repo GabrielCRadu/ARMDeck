@@ -369,9 +369,16 @@ rău fizic, ce s-a verificat deja și testul precis de făcut pe telefon.
   îl folosește la exact 1.1 V, doar cât e pornită camera spate principală
   (`kona-oem-camera-instantnoodle.dtsi`). În tot DT-ul OnePlus 8 (82 de fișiere), LDO-urile
   PM8009 alimentează doar camere.
-- **Reparat (patch 0002):** L1F, L2F, L4F, L5F, L6F nu mai sunt forțate pornite; L2F la 1.1 V.
+- **Reparat (patch 0002):** L1F, L2F, L4F, L5F, L6F nu mai sunt forțate pornite; L2F la 1.104 V.
+  Prima variantă a patch-ului cerea exact 1.100 V, valoare imposibilă pentru acest tip de
+  regulator (pași de 8 mV de la 320 mV). La primul boot tot grupul PM8009 a eșuat și au
+  rămas fără alimentare WiFi/Bluetooth (cipul lor de putere depinde de S2F) și camera frontală.
+  Nimic periculos (linii oprite, nu supra-alimentate), dar o verificare la compilare nu prinde
+  asta: se vede doar pe telefon. 1.104 V e pasul la care driverul OnePlus rotunjește 1.1 V.
   Camera frontală păstrează L3F și L7F.
-- **Test:** în `regulator_summary`, `vreg_l2f_1p2` trebuie să apară oprit (sau la 1100 mV).
+- **Test:** `dmesg | grep -i regulators-2` nu trebuie să arate erori, iar `dmesg | grep "deferred probe pending"`
+  nu trebuie să mai listeze `qca6390-pmu`, WiFi sau camera. În `regulator_summary`, `vreg_l2f_1p2`
+  apare oprit (sau la 1104 mV).
   Camera frontală trebuie să funcționeze în continuare (dacă nu, raportezi, nu repornești
   regulatoarele de mână).
 

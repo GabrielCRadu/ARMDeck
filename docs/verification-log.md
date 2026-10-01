@@ -854,6 +854,14 @@ always-on from L1F/L2F/L4F/L5F/L6F and sets L2F to 1.1 V; the front camera's AVD
 GPIO-switched fixed regulator with no PM8009 input. Verified by building the DTB and
 decompiling it.
 
+**Correction after the first boot on hardware (2026-10-01):** the first version asked for exactly
+1100000 uV. L2F is a `pmic5_nldo` (320 mV + n x 8 mV), so 1.100 V is not a valid setting; the
+regulator core failed with -ENOTRECOVERABLE and the whole PM8009 regulator device did not probe.
+That left the QCA6390 WiFi/BT power unit (supplied by S2F), the front camera and its EEPROM in
+deferred probe. Nothing was over-volted; the rails simply stayed off. Fixed to 1104000 uV, the
+step the vendor driver rounds 1.1 V up to and the value L1F already uses (kernel pkgrel 5). The
+DTB compile check could not catch this: only a boot on the device did.
+
 Also checked against the vendor DT and found fine: flash LED (300 mA torch, 1 A flash,
 1.28 s, equal to vendor defaults and below the vendor maxima of 500 mA / 1.5 A); GPU OPP
 table (670 MHz is gated by `opp-supported-hw` and the `gpu_speed_bin` fuse, so a plain 865
