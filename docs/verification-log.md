@@ -963,5 +963,13 @@ OnePlus 8 IN2013, OxygenOS 13.1.0.590(EX01) firmware, slot b. Wrote only `dtbo_b
 - **Firewall hardening applied:** SSH dropped on `wlan*` (`/etc/nftables.d/40_ssh_usb_only.nft`),
   verified unreachable from the LAN and reachable over USB.
 
-Still to do on hardware: charging test from partial charge (voltage must stay below 4.45 V),
-Bluetooth check after a reboot (firmware now installed).
+- **Charger state read directly from the PMIC** (regmap debugfs `0-02` = PM8150B, read-only):
+  `0x1070 = 0x4d` -> float voltage 3.6 V + 77 x 10 mV = **4.37 V**; `0x1061 = 0x28` -> 2.0 A fast
+  charge current; `0x1370 = 0x20` -> 1.6 A USB input limit; `0x1006 = 0x45` -> TERMINATE (OnePlus
+  `smb5-reg.h` enum: 0 INHIBIT, 1 TRICKLE, 2 PRE, 3 FULLON, 4 TAPER, 5 TERMINATE); `0x1007 = 0x28`,
+  BAT_OV clear. With no charger driver in this kernel nothing rewrites these values, so a
+  discharge/recharge test is not needed to know the ceiling. The community driver also gets this
+  status enum wrong (it starts at TRICKLE = 0, the PMI8998 layout).
+
+Still to do on hardware: re-read the same registers after a full power-off (cold boot), and
+check Bluetooth after a reboot (firmware now installed).

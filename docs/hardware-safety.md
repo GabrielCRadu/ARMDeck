@@ -289,6 +289,8 @@ rău fizic, ce s-a verificat deja și testul precis de făcut pe telefon.
      (tot SM8250 + PM8150B): registrul `0x1070` citit înapoi `0x7a` = 4.82 V pentru o
      baterie de 4.40 V.
   2. Nu setează curentul de încărcare (rămâne valoarea hardware de 5.35 A).
+  4. Numerotează greșit stările încărcătorului: pune TRICKLE pe 0, dar la PM8150B starea 0 e
+     INHIBIT (`smb5-reg.h` OnePlus), deci raportează starea greșit.
   3. "Hrănește" watchdog-ul încărcătorului la adresa `0x643` în loc de `0x1643`, adică scrie
      în alt periferic al PMIC-ului (același bug a fost reparat în kernelul oficial Linux pe
      2026-09-09 pentru driverul-părinte `qcom_smbx`).
@@ -307,8 +309,11 @@ rău fizic, ce s-a verificat deja și testul precis de făcut pe telefon.
   Tensiunea bateriei (în µV) **nu are voie să treacă de 4450000**. Temperatura bateriei
   (zecimi de grad) ar trebui să rămână sub 400. Dacă depășește oricare: scoți cablul și te oprești.
   Repeți testul o dată de la ~90% până la plin, ca să vezi unde se oprește.
-  **NEVERIFICAT:** ce valoare lasă bootloader-ul în registrul de float voltage când nu există
-  driver; testul de mai sus o măsoară indirect.
+  **Verificat 2026-10-01** prin citirea directă a PMIC-ului (regmap debugfs `0-02`, doar citire, script
+  `/tmp/pmic.sh`): `0x1070 = 0x4d` = **4.37 V** tensiune maximă, `0x1061 = 0x28` = 2.0 A curent de
+  încărcare, `0x1370 = 0x20` = 1.6 A limită de intrare, stare TERMINATE (plin), fără bit BAT_OV. Cu
+  kernelul nostru (fără driver de încărcare) nimic nu schimbă aceste valori. De repetat citirea o dată
+  după o oprire completă, ca să confirmăm că bootloader-ul setează la fel la pornirea la rece.
 
 ### 4.2 Bootloader, sloturi A/B, vbmeta, fuzibile
 
