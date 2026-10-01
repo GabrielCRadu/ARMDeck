@@ -1,12 +1,13 @@
 # Reference: <https://postmarketos.org/devicepkg>
-# DRAFT, not yet booted on hardware. Adapted from device-oneplus-instantnoodlep
+# DRAFT. First booted on a real OnePlus 8 (IN2013) on 2026-10-01 with
+# linux-oneplus-instantnoodle r5. Adapted from device-oneplus-instantnoodlep
 # (pmaports, packaged). See docs/verification-log.md for the sourcing and
 # cross-checks behind every value here.
 maintainer=""
 pkgname=device-oneplus-instantnoodle
 pkgdesc="OnePlus 8"
 pkgver=0.1
-pkgrel=1
+pkgrel=2
 url="https://postmarketos.org"
 license="MIT"
 arch="aarch64"
@@ -17,6 +18,9 @@ options="!check !archcheck"
 # no GPU zap shader, no DSP firmware and no WiFi firmware at all.
 # slpi (sensor DSP) is left out on purpose: sensors do not work on any of
 # the kernels yet, so there is no reason to start that DSP.
+# linux-firmware-qca: QCA6390 Bluetooth firmware (qca/htbtfw20.tlv,
+# qca/htnv20.bin) from official linux-firmware. Without it the first boot
+# logged "QCA Failed to request file: qca/htbtfw20.tlv".
 depends="
 	alsa-ucm-conf-oneplus-instantnoodle
 	firmware-oneplus-instantnoodle-adsp
@@ -24,6 +28,7 @@ depends="
 	firmware-oneplus-instantnoodle-gpu
 	firmware-oneplus-instantnoodle-venus
 	firmware-oneplus-instantnoodle-wifi
+	linux-firmware-qca
 	linux-oneplus-instantnoodle
 	mkbootimg
 	postmarketos-base

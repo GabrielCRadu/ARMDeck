@@ -925,3 +925,35 @@ requires any alsa-ucm-conf provider to be versioned `0.*`. It now depends on als
 - `pcie2` (the SDX55 modem link) is enabled in the DTS but nothing powers the modem, and no
   modem firmware or EFS-writing service is installed.
 - `core.autocrlf=true` on the Windows checkout: added `.gitattributes` (`eol=lf`, `*.patch -text`).
+
+---
+
+## 10. First boot on the real phone (2026-10-01)
+
+OnePlus 8 IN2013, OxygenOS 13.1.0.590(EX01) firmware, slot b. Wrote only `dtbo_b`, `boot_b` and
+`super` (vbmeta untouched), after a full verified backup of every partition except `userdata`.
+
+- **Kernel r4** booted to the console login on the first try (display, touch, UFS, USB networking).
+  Its patch 0002 asked PM8009 L2F for an unrepresentable 1.100 V, so the whole PM8009 regulator
+  device failed and WiFi/BT/front camera stayed in deferred probe (section 9.4 correction).
+- **Kernel r5** (L2F 1.104 V): `vreg_l2f_1p2: Setting 1104000-1104000uV`, zero deferred probes,
+  `wlan0` up with ath11k firmware WLAN.HST.1.0.1.r1-01272 (2022-12-20), `hci0` present (needs
+  `linux-firmware-qca`, now a device dependency), front camera EEPROM detected.
+- **GPU:** devfreq offers 305-587 MHz (no 670 MHz step: the speed-bin fuse is read correctly);
+  SQE/GMU firmware fails at early boot (rootfs not mounted yet) and loads on first open of the
+  render node ("Loaded GMU firmware v2.1.8").
+- **Battery (bq27411):** 4.356 V at 100%, 27.7 °C, not charging past full. The gauge reports a
+  learned full capacity of 3056 mAh against 4270 mAh design, right after the driver rewrote its
+  configuration; not trusted as a wear figure yet.
+- **Thermal:** all zones 30-33 °C idle, `qcom_tsens` and `qcom_spmi_temp_alarm` loaded.
+- **DSPs:** ADSP and CDSP running, SLPI offline (no firmware, intended). The SDX55 modem enumerated
+  on PCIe but `mhi-pci-generic` could not power it up; no MHI devices, no rmtfs, so nothing touched
+  the EFS partitions.
+- **Speaker amps:** both TFA9874 found (rev 0x0c74). Audio is only partial (q6afe vote error,
+  va_macro probe -110), matching the wiki's "P".
+- **Firewall:** nftables active with input policy drop; port 22 open on all interfaces.
+- **Regulators:** all 39 within their DTS limits (which match the OnePlus vendor limits); rear
+  camera rails unused and off, front camera L3F/L7F on.
+
+Still to do on hardware: charging test from partial charge (voltage must stay below 4.45 V),
+speaker test at low volume, Bluetooth with firmware.
