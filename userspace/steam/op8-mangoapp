@@ -1,0 +1,31 @@
+#!/bin/sh
+# op8-mangoapp (steamed-noodle): ruleaza mangoapp-gs (MangoHud compilat pentru gamescope 3.16.29,
+# vezi build-mangoapp-gs.sh) in containerul "steam", cat timp traieste sesiunea Steam.
+# Il porneste steam-in-container.sh in fundal, chiar inainte de "exec steam", deci parintele lui
+# devine procesul Steam; cand Steam se inchide, bucla se opreste.
+# Containerul are ipc=host, deci mangoapp vede coada de mesaje a lui gamescope de pe gazda.
+# Jurnal: ~/op8-mangoapp.log
+BIN=/home/gabriel/games/build/mangoapp-gs
+LOG=/home/gabriel/op8-mangoapp.log
+PIDF=${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/op8-mangoapp.pid
+
+[ -x "$BIN" ] || exit 0
+
+# o singura instanta: opreste bucla si mangoapp ramase de la o sesiune anterioara
+if [ -f "$PIDF" ] && kill -0 "$(cat "$PIDF")" 2>/dev/null; then
+	kill "$(cat "$PIDF")" 2>/dev/null
+fi
+pkill -x mangoapp-gs 2>/dev/null
+echo $$ > "$PIDF"
+
+STEAM_PID=$PPID
+# gamescope si mangoapp aleg coada cu ftok("mangoapp", 65), relativ la directorul curent; fara
+# un fisier "mangoapp" in ambele directoare, cheia e aceeasi (-1), deci rulam din /
+cd /
+echo "$(date '+%F %T') pornit, sesiunea Steam = $STEAM_PID" >> "$LOG"
+while kill -0 "$STEAM_PID" 2>/dev/null; do
+	"$BIN" >> "$LOG" 2>&1
+	echo "$(date '+%F %T') mangoapp-gs a iesit cu $?" >> "$LOG"
+	sleep 2
+done
+rm -f "$PIDF"

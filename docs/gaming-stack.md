@@ -342,7 +342,7 @@ rula `stageA2.sh` (reguli udev + `udevadm trigger` + repornirea nftables).
    `conf.d/sm8250/OnePlus8.conf` (reparat și în pachet), iar amplificatoarele TFA9874 tac dacă
    PCM-ul e deschis S24_LE sau cu mmap (PipeWire forțat pe S16LE, fără mmap). Ieșirea implicită
    "Difuzoare (protejat)" (trece-sus 250 Hz + clamp) trimite în ieșirea directă, al cărei volum
-   e plafonul: -30 dB. Butoanele de volum: `op8-volbtn`. Vezi `userspace/README.md`.
+   e plafonul: -30 dB. Butoanele de volum: `op8-buttons.py`. Vezi `userspace/README.md`.
 6. **DXVK 2.7** în locul lui DXVK 3 pentru Proton ARM64, după metoda pocknix. (Jocurile testate
    până acum, Unity și 2D, au mers și fără.)
 7. ~~Spațiu~~ **rezolvat**: `userdata` formatat ext4 (`op8games`, 215 GB, cu acordul
@@ -380,8 +380,8 @@ rula `stageA2.sh` (reguli udev + `udevadm trigger` + repornirea nftables).
     - **C:** `-S fill` / `-S stretch` în gamescope (imagine tăiată sau deformată).
     Referință pentru panouri de telefon 2400x1080: profilul `redmagic6.amoled.lua` din
     SteamOS-ARM-Handhelds (rate dinamice 60/90/120/144 pe un panou fără EDID).
-15. **Ieșire din joc fără controler:** de legat o combinație de butoane (de exemplu Volume Up +
-    Volume Down) la butonul Steam sau la meniul rapid.
+15. ~~Ieșire din joc fără controler~~ **rezolvat 2026-10-02**: Volume Up + Volume Down apăsate
+    deodată deschid meniul Steam, și în jocuri (vezi mai jos, `op8-buttons.py`).
 16. **Sunetul lipsește uneori după pornire:** când DSP-ul audio răspunde cu eroare la pornire
     (`qcom-q6afe ... AFE failed to vote (3)`, uneori și `va_macro ... failed with error -110`),
     placa de sunet nu apare. 5 din 17 porniri pe 2026-10-02, cu imagini diferite, deci nu ține
@@ -397,6 +397,25 @@ rula `stageA2.sh` (reguli udev + `udevadm trigger` + repornirea nftables).
     poziție. Variante: Decky Loader + CSS Loader (netestat în containerul ARM) sau un indicator
     propriu într-un overlay gamescope, cu volumul schimbat printr-un etaj de filtru separat
     (atunci Steam nu-și mai arată bara).
+19. **Protecție termică după temperatura bateriei:** kernelul protejează doar procesorul (frânare
+    la 90 și 95 °C, oprire la 110 °C). Android frânează după temperatura carcasei și a bateriei,
+    mult mai devreme. Măsurat pe 2026-10-02: Slime Rancher a dus bateria la 46,5 °C (CPU 93 °C),
+    compilarea pe 8 nuclee la 46,6 °C (CPU 88-90 °C, frânat de kernel la 1,96/2,36 GHz). Peste
+    ~45 °C o baterie Li-ion nu ar trebui încărcată normal, iar căldura grăbește uzura unei
+    baterii deja obosite. De făcut: un serviciu care, peste ~42 °C la baterie, limitează treptat
+    frecvența nucleelor mari și a GPU-ului (`scaling_max_freq`, `devfreq/.../max_freq`), plus
+    citirea pragurilor JEITA (încărcarea la cald) din PMIC-ul PM8150B, nevăzute până acum.
+20. **Ecran cu zgomot colorat (o dată, cauză necunoscută):** pe 2026-10-02, în Slime Rancher,
+    cu overlay-ul pornit, după o schimbare de luminozitate, tot ecranul a devenit zgomot colorat.
+    A rămas și după sleep și după repornirea gamescope; a dispărut doar la repornirea telefonului
+    (panoul se resetează la întreruperea alimentării). Excluse: luminozitatea singură (10 pași
+    lenți, apoi 60 de valori în 2 s, din sysfs, fără zgomot), slider-ul din Steam în interfață,
+    fereastra `mangoapp` (era ascunsă). Indicii: Steam pune `GAMESCOPE_DISPLAY_HDR_ENABLED=1` deși
+    gamescope raportează `GAMESCOPE_DISPLAY_SUPPORTS_HDR=0`; controlerul de afișaj expune doar
+    `CTM` (fără `GAMMA_LUT`), iar în starea normală `CTM` nu e setat (`drm_info`, instantaneu în
+    `D:\op8-logs\drm_info-normal-*.txt`). Dacă reapare: `drm_info` înainte de repornire și
+    jurnalul proprietăților de culoare (`xprop -root -spy`, filtrat pe `GAMESCOPE_*COLOR/HDR`).
+    Măsură de rezervă: gamescope cu `--disable-color-management`.
 
 Rezolvate tot pe 2026-10-02, mai târziu:
 
@@ -404,8 +423,33 @@ Rezolvate tot pe 2026-10-02, mai târziu:
   lui de instalare, care era pe partiția de sistem (2,9 GB liberi), nu pe `steamapps`.
   `userspace/system/move-steam-to-games.sh` mută tot directorul Steam pe partiția de jocuri și
   îl montează (bind) la aceeași cale; `steam-gs.service` așteaptă acum acel montaj.
-- **Butoanele de volum inversate** în `op8-volbtn`: în landscape, Volume Up fizic e în stânga,
-  iar bara din Steam crește spre dreapta.
+- **Butoanele de volum** (`userspace/steam/op8-buttons.py`, în container, pornit cu sesiunea
+  Steam; înlocuiește `op8-volbtn` de pe gazdă):
+  - inversate: în landscape, Volume Up fizic e în stânga, iar bara din Steam crește spre dreapta;
+  - volumul se schimbă la eliberare, iar la ținere, continuu, după 0,5 s. Butoanele nu trimit
+    repetare automată (`EV=3`, fără `EV_REP`), deci ținerea are cronometrul ei;
+  - **Volume Up + Volume Down deodată = butonul Steam**, și în jocuri: Steam înregistrează la
+    gamescope Shift+Tab ca butonul Steam (`GuideKeyboardHotkey -> [Tab + Shift_L]` în jurnalul
+    gamescope), iar gamescope o interceptează înaintea jocului. Se trimite de pe o tastatură
+    virtuală permanentă, după eliberarea ambelor butoane: gamescope o declanșează doar dacă
+    nicio altă tastă nu e apăsată, iar butoanele de volum sunt și ele tastaturi pentru el.
+    Încercări abandonate: un controler Xbox virtual creat la apăsare (Steam afișa „controller
+    connected”) și o tastatură creată la fiecare apăsare (gamescope nu apuca să o vadă). Două
+    procese `sh`, câte unul pe buton, prindeau combinația cam o dată din trei.
+- **Overlay-ul de performanță** (meniul `...` > Performance): gamescope 3.16.29 trimite către
+  `mangoapp` câmpurile `app_frametime_ns` și `visible_frametime_ns` în ordine inversă față de
+  orice MangoHud (0.7.1 din Alpine, 0.8.4, `master`). `mangoapp` citește atunci mereu „necunoscut”
+  ca timp de cadru vizibil, nu iese din pauză și nu apare în jocurile Steam/Proton
+  ([gamescope #2430](https://github.com/ValveSoftware/gamescope/issues/2430), aceleași simptome).
+  `userspace/steam/build-mangoapp-gs.sh` compilează MangoHud 0.8.4 cu ordinea din gamescope, în
+  container (`ipc=host`, deci vede coada de mesaje a lui gamescope); `op8-mangoapp` îl pornește cu
+  sesiunea, iar gamescope nu mai primește `--mangoapp`. Steam scrie nivelul în
+  `/run/user/10000/mangohud.conf`. Când gamescope revine la ordinea veche, patch-ul trebuie scos.
+- **Primul joc 3D:** Slime Rancher (Unity, Proton 11 ARM64) merge, pornit în modul „safe”
+  (`-lowGraphics`); fără el se închidea uneori la încărcare.
+- **Indicatorul de încărcare care apare și dispare:** de la portul USB al PC-ului telefonul
+  primește ~2,5 W (Type-C fără PD). Sub sarcină consumă mai mult, iar starea bateriei trece între
+  „Charging” și „Discharging”. Cu un încărcător de priză nu apare.
 
 Rezolvate între timp: SSH pe WiFi doar de la PC (`40_ssh_usb_only.nft`, IP-ul PC-ului),
 profilul WiFi dezlegat de adresa MAC (după reset cipul QCA6390 a raportat alt MAC), jurnalul

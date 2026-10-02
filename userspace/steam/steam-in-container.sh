@@ -31,6 +31,20 @@ export STEAM_GAMESCOPE_HDR_SUPPORTED=0
 # audio si randare). Temporar, face logul mare.
 export SDL_LOGGING='*=verbose'
 
+# overlay-ul de performanta: mangoapp-gs ruleaza aici, in container (op8-mangoapp), iar Steam ii
+# scrie nivelul ales (preset) in fisierul comun creat de steam-gamescope.sh. Variabilele sunt cele
+# din ChimeraOS gamescope-session-steam. Fara mangoapp-gs compilat, Steam nu le primeste.
+MANGO_CONF="/run/user/$(id -u)/mangohud.conf"
+if [ -f "$MANGO_CONF" ] && [ -x /home/gabriel/games/build/mangoapp-gs ]; then
+	export MANGOHUD_CONFIGFILE="$MANGO_CONF"
+	export STEAM_USE_MANGOAPP=1
+	export STEAM_MANGOAPP_PRESETS_SUPPORTED=1
+	export STEAM_MANGOAPP_HORIZONTAL_SUPPORTED=1
+	export STEAM_DISABLE_MANGOAPP_ATOM_WORKAROUND=1
+	# pornit chiar inainte de "exec steam" (mai jos), ca parintele lui sa devina procesul Steam
+	START_MANGOAPP=1
+fi
+
 # fara LANG, metoda de input X (XOpenIM) nu porneste
 export LANG=C.UTF-8
 
@@ -39,5 +53,11 @@ export LD_LIBRARY_PATH="$CLIENT_DIR:$STEAM/lib/aarch64-linux-gnu"
 
 # touch ca pe Steam Deck si fara controler (interfata = touch real, jocuri = click)
 /home/gabriel/op8-touchmode &
+
+[ -n "${START_MANGOAPP:-}" ] && /home/gabriel/op8-mangoapp &
+
+# butoanele de volum: volum la eliberare, volum continuu la tinere, iar ambele deodata = butonul
+# Steam (inlocuieste vechiul op8-volbtn de pe gazda; serviciul lui trebuie sa ramana dezactivat)
+/home/gabriel/op8-buttons.py &
 
 exec "$CLIENT_DIR/steam" -gamepadui -steamos3 -steampal -steamdeck -noverifyfiles -noshaders

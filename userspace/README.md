@@ -18,9 +18,10 @@ postmarketOS (musl, systemd)          containerul distrobox "steam" (Fedora 44, 
 ├─ gamescope pe DSI-1 (DRM)  ───────► Steam ARM64 (steamdeck_publicbeta, -gamepadui -steamos3)
 │   steam-gs.service (user)           ├─ Proton 11 ARM64 + FEX pentru jocurile Windows
 ├─ PipeWire: "Difuzoare (protejat)"   ├─ dbus-send adaptor -> logind (sleep/restart/oprire)
-├─ op8-powerbtn / op8-volbtn          └─ op8-touchmode (touch ca pe Deck)
-├─ op8-standby (in locul s2idle)
-└─ op8-log (raport la pornire, esantioane la 2 s)
+├─ op8-powerbtn                       ├─ op8-touchmode (touch ca pe Deck)
+├─ op8-standby (in locul s2idle)      ├─ op8-buttons (volum, Vol+ + Vol- = butonul Steam)
+└─ op8-log (raport la pornire,        └─ op8-mangoapp (overlay-ul de performanta)
+   esantioane la 2 s)
 ```
 
 ## Ordinea de instalare
@@ -38,8 +39,10 @@ postmarketOS (musl, systemd)          containerul distrobox "steam" (Fedora 44, 
 | 9 | `power/install-standby.sh`, `power/install-power2.sh` | regula polkit, `op8-standby` în locul suspendării kernelului, luminozitate scriibilă de grupul `video` | sudo |
 | 10 | `audio/audio-step1.sh` | `pipewire-pulse`, blocurile de filtru, legătura UCM | sudo |
 | 11 | `audio/50-op8-difuzoare.conf` → `~/.config/pipewire/pipewire.conf.d/`, `audio/50-op8-wireplumber.conf` → `~/.config/wireplumber/wireplumber.conf.d/` | ieșirea protejată și formatul S16LE fără mmap | user |
-| 12 | `steam/*.sh`, `steam/op8-touchmode`, `power/op8-powerbtn`, `audio/op8-volbtn`, `op8-log/op8-top` → `~/`; fișierele `.service` → `~/.config/systemd/user/` | sesiunea Steam și serviciile userului | user, `systemctl --user enable --now ...` |
+| 12 | `steam/*.sh`, `steam/op8-touchmode`, `steam/op8-buttons.py`, `steam/op8-mangoapp`, `power/op8-powerbtn`, `op8-log/op8-top` → `~/`; fișierele `.service` → `~/.config/systemd/user/` | sesiunea Steam și serviciile userului | user, `systemctl --user enable --now ...` |
 | 13 | `system/install-tune.sh` | polling GPU 16 ms, THP `madvise`, `CAP_SYS_NICE` pentru gamescope, `/boot` doar citire | sudo |
+| 14 | în container, ca root: `dnf install python3-evdev pulseaudio-utils` | `op8-buttons.py`: butoanele de volum citite deodată, volum la eliberare și continuu la ținere, Volume Up + Volume Down = butonul Steam (Shift+Tab, pe care Steam îl înregistrează la gamescope), și în jocuri | root în container |
+| 15 | `steam/build-mangoapp-gs.sh` (dependențele în antetul lui) | overlay-ul de performanță: `mangoapp` din MangoHud 0.8.4 cu ordinea câmpurilor din gamescope 3.16.29 (altfel nu apare în jocuri, gamescope #2430); îl pornește `op8-mangoapp` | user, în container |
 
 Opțional: `system/format-games.sh` (**șterge** partiția Android `userdata` și o face ext4 pentru
 jocuri, cu confirmare `FORMAT`), `system/bind-steamapps.sh` (biblioteca Steam pe acea partiție),
@@ -68,7 +71,9 @@ Pe PC: `pc/op8-live.sh [ip]` salvează live jurnalul telefonului, eșantioanele 
 |---|---|
 | Raport la fiecare pornire (motive PON/POFF din PMIC, încărcare, pstore) | `/var/log/op8/boot-NNNN-*.txt` |
 | Eșantioane la 2 s (baterie, temperaturi, frecvențe, I/O) | `/var/log/op8/current.csv` |
-| Sleep, buton, volum | `journalctl -t op8-standby -t op8-powerbtn -t op8-volbtn` |
+| Sleep, butonul de pornire | `journalctl -t op8-standby -t op8-powerbtn` |
+| Butoanele de volum, butonul Steam | `~/op8-buttons.log` |
+| Overlay-ul de performanță | `~/op8-mangoapp.log` |
 | Comenzile de sleep/oprire ale Steam | `~/op8-dbus-send.log` |
 | Modul touch | `~/op8-touchmode.log` |
 | Procese la 2 s | `~/op8-top.log` |
