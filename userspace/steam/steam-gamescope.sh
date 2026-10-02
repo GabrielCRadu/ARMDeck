@@ -20,6 +20,21 @@ export GAMESCOPE_FAKE_OUTPUT_MM=152x68
 export MANGOHUD_CONFIGFILE="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/mangohud.conf"
 echo no_display > "$MANGOHUD_CONFIGFILE"
 
+# EDID pentru Steam: panoul DSI n-are EDID, iar fara el Steam nu stie rezolutia reala si porneste
+# jocurile la 1920x1080 (benzi negre). Gamescope ii da lui Steam EDID-ul doar prin
+# GAMESCOPE_PATCHED_EDID_FILE (proprietatea X GAMESCOPE_DISPLAY_EDID_PATH, setata o data la
+# pornire), iar fara EDID de la panou scrie acolo un fisier gol. Punem in locul lui EDID-ul
+# panoului deja rotit in landscape (2400x1080, 90 si 60 Hz, din make_edid.py); "<cale>.tmp" ca
+# director face ca scrierea lui gamescope (fopen .tmp, apoi rename) sa esueze si sa nu-l stearga.
+# Calea e sub /run/user, comuna cu containerul Steam.
+EDID_SRC=/home/gabriel/op8-edid-landscape.bin
+if [ -f "$EDID_SRC" ]; then
+	export GAMESCOPE_PATCHED_EDID_FILE="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/op8-edid.bin"
+	rm -rf "$GAMESCOPE_PATCHED_EDID_FILE.tmp"
+	cp "$EDID_SRC" "$GAMESCOPE_PATCHED_EDID_FILE"
+	mkdir -p "$GAMESCOPE_PATCHED_EDID_FILE.tmp"
+fi
+
 # panoul e 1080x2400 portret; gamescope primeste dimensiunea logica landscape.
 # right = orientarea in care controlerul GameSir X3 Pro sta corect fata de imagine.
 # touch mode 4 = evenimente touch reale, ca pe Steam Deck (glisare = scroll, fara cursor);

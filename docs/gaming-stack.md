@@ -380,6 +380,33 @@ rula `stageA2.sh` (reguli udev + `udevadm trigger` + repornirea nftables).
     - **C:** `-S fill` / `-S stretch` în gamescope (imagine tăiată sau deformată).
     Referință pentru panouri de telefon 2400x1080: profilul `redmagic6.amoled.lua` din
     SteamOS-ARM-Handhelds (rate dinamice 60/90/120/144 pe un panou fără EDID).
+    **Încercat pe 2026-10-02:**
+    - **B nu poate merge pe acest panou:** în kernelurile 6.x, `edid_override` se folosește
+      doar pe calea de citire a EDID-ului sau dacă driverul nu dă niciun mod; driverul
+      `panel-samsung-amb655uv01` dă direct două moduri, deci override-ul e ignorat (conectorul
+      rămâne cu EDID 0 octeți).
+    - **EDID pentru Steam fără recompilare:** gamescope îi dă lui Steam EDID-ul doar prin
+      `GAMESCOPE_PATCHED_EDID_FILE` (lipsea), iar fără EDID de la panou scrie acolo un fișier
+      gol. `steam-gamescope.sh` pune acum EDID-ul panoului rotit în landscape
+      (`userspace/system/make_edid.py`, 2400x1080 la 90 și 60 Hz, verificat cu `edid-decode`)
+      și face din `<cale>.tmp` un director, ca scrierea lui gamescope să eșueze. Merge
+      (`GAMESCOPE_DISPLAY_EDID_PATH` arată spre fișierul nostru), dar **nu schimbă nimic**:
+      la ecran intern Steam nu citește modurile din EDID (`OnScreenChanged: ... external: 0
+      modes: 0`).
+    - **Cauza reală:** Steam își pune singur interfața la 1920x1080 (`GAMESCOPE_XWAYLAND_MODE_
+      CONTROL`), iar rezoluția „nativă” a jocurilor e cea a interfeței („Using maximum game
+      resolution: screen resolution: 1920x1080”). O cerere de 2400x1080 trimisă de noi e
+      anulată imediat de Steam. Steam primește de la gamescope dimensiunea fizică a panoului
+      **nerotită** (70 x 151 mm pentru o imagine 2400x1080; `wl_output` geometry) și calculează
+      o scară absurdă (`UIScaleFromDimensions: 1920 x 1080 : 268mm x 39mm`).
+      `GAMESCOPE_FAKE_OUTPUT_MM` nu are efect pe backend-ul DRM în 3.16.29.
+    - **Setarea Steam Settings > Display > Scaling:** lista nu are 2400x1080 (are 2040x1080,
+      2560x1080); 2560x1080 nu umple ecranul.
+    - **Următorul pas:** dimensiunea fizică rotită: patch gamescope (schimbarea între ele a
+      `phys_width`/`phys_height` când imaginea e rotită, în `DRMBackend.cpp`, lângă
+      `wlserver_set_output_info`) sau, mai simplu, `.width_mm = 151, .height_mm = 70` în
+      driverul panoului (kernel r6). Apoi de văzut dacă Steam alege singur 2400x1080; dacă
+      nu, patch-ul Armada 0002/0003 (EDID sintetic în gamescope).
 15. ~~Ieșire din joc fără controler~~ **rezolvat 2026-10-02**: Volume Up + Volume Down apăsate
     deodată deschid meniul Steam, și în jocuri (vezi mai jos, `op8-buttons.py`).
 16. **Sunetul lipsește uneori după pornire:** când DSP-ul audio răspunde cu eroare la pornire
