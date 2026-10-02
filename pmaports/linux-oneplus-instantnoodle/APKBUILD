@@ -1,5 +1,5 @@
 # Reference: <https://postmarketos.org/vendorkernel>
-# DRAFT, not yet booted on hardware. Builds through the real
+# DRAFT. Runs on a real OnePlus 8 (IN2013) since 2026-10-01. Builds through the real
 # abuild/pmbootstrap pipeline with LLVM/clang (ARCH=arm64 LLVM=1), the same
 # convention as device/community/linux-postmarketos-qcom-sm8250. See
 # docs/verification-log.md for the build history.
@@ -7,7 +7,7 @@ maintainer=""
 _flavor="oneplus-instantnoodle"
 pkgname=linux-$_flavor
 pkgver=6.16.7
-pkgrel=5
+pkgrel=6
 pkgdesc="OnePlus 8 (instantnoodle) mainline kernel, Xo666 fork"
 arch="aarch64"
 _carch="arm64"
@@ -36,13 +36,18 @@ makedepends="
 # working 3D, and the only one of the three forks with a complete zap-shader
 # wiring for the GPU. The sha512sum below pins the exact tarball content.
 #
-# Kept as close to upstream Xo666 as possible for the first boot. Both
-# patches only move hardware settings back toward what the OnePlus vendor
-# kernel does (see each patch header):
+# Kept as close to upstream Xo666 as possible. The patches only move
+# hardware settings back toward what the OnePlus vendor kernel and the other
+# OnePlus 8 device trees do (see each patch header):
 #   0001: the speaker amplifiers' boost converter was programmed from
 #         uninitialized stack variables.
 #   0002: the camera PMIC rails for the unsupported rear cameras were forced
 #         on from boot, one of them at 1.2 V where OnePlus runs 1.104 V.
+#   0003: the board DTS deleted the removed_mem reservation (0x80b00000)
+#         and never added it back, so Linux used about 210 MB of secure-world
+#         memory as RAM. Once RAM filled up (big Steam downloads) the phone
+#         reset instantly with nothing in the kernel log. Found and verified
+#         on hardware on 2026-10-02; details in the patch header.
 #
 # No charger driver: this tree has no driver for qcom,pm8150b-charger or
 # qcom,pm8150b-fg (checked 2026-10-01), so charging is left to the PMIC
@@ -56,6 +61,7 @@ source="
 	$pkgname-$pkgver.tar.gz::https://github.com/Xo666/mainline-instantnoodle/archive/refs/heads/$pkgver.tar.gz
 	0001-ASoC-tfa9872-fix-uninitialized-DC-DC-config.patch
 	0002-arm64-dts-qcom-instantnoodle-match-PM8009-camera-rails-to-OEM.patch
+	0003-arm64-dts-qcom-instantnoodle-restore-removed_mem-reservation.patch
 "
 builddir="$srcdir/mainline-instantnoodle-$pkgver"
 
@@ -96,4 +102,5 @@ sha512sums="
 11390f07286a48176ab46d20cd3ed7e389af8605da3b7f9c0c70148f54c2e41194f1205a92fd039b906eade8804360d6b98a77c402a1459098287fa5581e7d89  linux-oneplus-instantnoodle-6.16.7.tar.gz
 64923403662972aceeadb0e927303bdffd7b69edf62d5369e1acdb06869a8eee879deed38156128150a5badbf10762804abd45be492742fde037b2963c883aa3  0001-ASoC-tfa9872-fix-uninitialized-DC-DC-config.patch
 5b4596a662651770bd815badfcf554d627a3b3939dc5e4ade26e73a7c06f5a70e234a58bd7e5c72cfbd1258c28d859079c79dba04ab1e31b0f2170d4750fd198  0002-arm64-dts-qcom-instantnoodle-match-PM8009-camera-rails-to-OEM.patch
+29a3a5c2bcc5828c4e27eab6ae73a9fb55f794c44905211b4845b71b95c9571fe44aecb21dde6830cfa757a26b846431ed957078852eb3fa5b77e728b13583c5  0003-arm64-dts-qcom-instantnoodle-restore-removed_mem-reservation.patch
 "

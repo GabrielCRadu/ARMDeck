@@ -43,7 +43,10 @@ postmarketOS (musl, systemd)          containerul distrobox "steam" (Fedora 44, 
 
 Opțional: `system/format-games.sh` (**șterge** partiția Android `userdata` și o face ext4 pentru
 jocuri, cu confirmare `FORMAT`), `system/bind-steamapps.sh` (biblioteca Steam pe acea partiție),
-`system/ufs-nopm.sh` (test pentru resetările din timpul descărcărilor),
+apoi `system/move-steam-to-games.sh` (tot directorul Steam pe acea partiție, ca Steam să vadă
+spațiul ei liber; cu Steam oprit),
+`system/ufs-nopm.sh` (test istoric pentru resetările din timpul descărcărilor: nu ajută, cauza
+era zona de memorie rezervată lipsă, reparată în kernel cu patch-ul `0003`; nu se instalează),
 `system/hide-venus.sh` / `show-venus.sh` (decodorul video hardware, pentru Remote Play).
 
 Pe PC: `pc/op8-live.sh [ip]` salvează live jurnalul telefonului, eșantioanele și un ping în

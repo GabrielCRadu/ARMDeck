@@ -32,6 +32,9 @@ driver for this PMIC programs the battery to about 4.87 V. Read
 Since 2026-10-01 the phone runs postmarketOS with the Steam ARM64 client in Game Mode, and
 Windows games (Unity, 2D) run through Proton 11 ARM64. Sleep, sound (behind a fixed volume
 ceiling), buttons and touch work; see `docs/gaming-stack.md` section 9 and `userspace/`.
+The resets during large downloads turned out to be a missing reserved-memory region in the
+Xo666 device tree: once RAM filled up, Linux wrote into secure-world memory and the phone reset
+instantly. Kernel patch `0003` restores it (verified on hardware on 2026-10-02).
 
 ## Why this exists
 

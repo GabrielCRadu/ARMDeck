@@ -6,6 +6,12 @@ instalarea jurnalului `op8-log`. Toate datele sunt citite de pe telefon, doar î
 Complementar cu [`hardware-safety.md`](hardware-safety.md) (riscuri fizice) și
 [`security-audit.md`](security-audit.md).
 
+**Actualizare 2026-10-02:** cauza reseturilor a fost găsită și nu e printre suspecții de mai jos
+(WiFi, alimentare, detectoare de blocaj). Device tree-ul Xo666 nu rezerva zona de memorie
+`removed_mem` (0x80b00000, ~210 MB), deci Linux scria în memoria lumii sigure când RAM-ul se
+umplea. Reparat cu patch-ul de kernel `0003`. Detalii și testele în `gaming-stack.md` 9, TODO 2.
+Restul auditului rămâne valabil ca listă de îmbunătățiri.
+
 Termeni:
 - *BCL* = limitatorul de curent al bateriei: pe Android încetinește CPU/GPU când tensiunea
   bateriei scade brusc, ca telefonul să nu se oprească.

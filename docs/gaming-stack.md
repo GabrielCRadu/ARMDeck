@@ -297,6 +297,8 @@ rula `stageA2.sh` (reguli udev + `udevadm trigger` + repornirea nftables).
   (scriere pe disc la 5 minute).
 - Cel mai probabil vinovat: WiFi (ath11k + `amss.bin` neverificat) sub trafic mare. De
   reprodus cu jurnalul kernelului transmis live pe PC.
+- **Cauza reală, găsită pe 2026-10-02 (TODO 2):** nu WiFi și nu discul, ci o zonă de memorie
+  rezervată lipsă din device tree (`removed_mem`). Rezolvat cu patch-ul de kernel `0003`.
 
 ### TODO
 
@@ -304,33 +306,31 @@ rula `stageA2.sh` (reguli udev + `udevadm trigger` + repornirea nftables).
    (`STEAM_TOUCH_CLICK_MODE`) doar din Steam Input, adică doar cu un controler conectat.
    `op8-touchmode` urmărește `GAMESCOPE_FOCUSED_APP`: interfața Steam (769) = 4 (touch real,
    glisare = scroll), jocurile = 1 (click). Gamescope pornește cu `--default-touch-mode 4`.
-2. **Resetările** (în lucru): toate reset "warm" cerut de SoC prin PS_HOLD (nu panic, nu
-   UVLO), toate în timpul descărcărilor Steam. Testele de izolare A-G au trecut. Detalii în
-   `performance-crash-audit.md`.
-   - **Reprodus pe 2026-10-02, fără WiFi:** 8 copieri paralele ale unui fișier real de 1,5 GB
-     (`cat src.tar > ...`, ~370 MB/s pe UFS) resetează telefonul în 5-10 s (testul H9; la fel
-     H3/H3b/H8/H8c cu `xzcat`). Trec: zerouri la aceeași viteză (`dd`, H1 un flux, H6 8 fluxuri,
-     5 minute fiecare), 2 fluxuri reale la ~200 MB/s (H2), 8 descărcări la ~72 MB/s (H7b),
-     WiFi și CPU fără disc (H4, H5). Deci cauza e **scrierea intensă de date reale pe UFS**.
-   - **UFS fără power management nu ajută** (`ufs-nopm.sh`, H8b a resetat la fel).
-     `op8-ufs-nopm.service` e încă activ pe telefon: de dezactivat.
-   - Jurnalul live de pe PC nu arată nicio eroare UFS înainte de reset (dar `journalctl -f`
-     poate rămâne blocat dacă discul se blochează).
-   - **Suspect principal: tensiunea sursei S8C.** Device tree-ul Xo666 îi dă 1,2-1,4 V, deci
-     kernelul o ține la 1,20 V. Android (driverul WiFi, `qcom,vdd-wlan-rfa2-config = <1350000
-     ...>` în `kona.dtsi`), plăcile Qualcomm MTP și RB5 și celelalte două device tree-uri pentru
-     OnePlus 8 o țin la 1,35 V (`1352000`). Din S8C se alimentează LDO-urile de 1,2 V `L6A`
-     (VCCQ, controlerul memoriei UFS) și `L9A` (PLL-ul UFS PHY, PCIe pentru WiFi și modem, USB
-     PHY, DSI), plus cipul WiFi. Cu 1,2 V la intrare și 1,2 V la ieșire, LDO-urile n-au nicio
-     rezervă. Neconfirmat: RPMh ar putea ridica singur sursa părinte, iar tensiunea reală nu se
-     poate măsura din Linux.
-   - **Nu e suspect VCC-ul UFS (`L17A`, 2,504 V):** Android îl coboară tot la 2,504 V pentru
-     cipurile UFS 3.0 (`vcc-low-voltage-sup` și `ufshcd_set_low_vcc_level()`), iar cipul e
-     Samsung KLUEG8UHDB-C2D1, UFS 3.0, HS-G4 pe 2 benzi, `active_icc_level` 15.
-   - **Următorul pas:** patch de device tree cu `vreg_s8c_1p3` fixat la 1352000 µV, kernel
-     construit cu pmbootstrap și pornit cu `fastboot boot` (din RAM, fără scriere în partiții),
-     apoi H9 de 3 ori. Dacă trece, scriere în `boot_b` cu acord explicit. Fișierul de test
-     `/home/gabriel/games/op8-test/src.tar` a rămas pe telefon pentru asta.
+2. ~~Resetările din timpul descărcărilor~~ **rezolvat 2026-10-02**: o zonă de memorie
+   rezervată lipsea din device tree. Toate reseturile erau reset "warm" prin PS_HOLD, instant,
+   fără niciun mesaj în kernel (nici în jurnalul brut `/dev/kmsg` trimis live pe PC).
+   - **Cauza:** device tree-ul Xo666 șterge `removed_mem` (0x80b00000) din `sm8250.dtsi` și
+     mută zonele firmware-ului mai sus, la 0x8dc00000, dar nu mai adaugă `removed_mem` înapoi.
+     Bootloader-ul declară RAM 0x80000000-0xb98fffff, deci Linux folosea ~210 MB din memoria
+     lumii sigure (TrustZone/hypervisor) ca RAM obișnuit. Paginile sunt în `ZONE_DMA32`, folosită
+     doar după ce zonele de sus se umplu, de aceea resetul apărea doar cu RAM-ul plin: la
+     descărcări mari, cache-ul de fișiere umple memoria.
+   - **Dovada:** `stress-ng --vm 4 --vm-bytes 8000M` (fără disc) a resetat în 5 s, iar 2000M a
+     trecut. Testele de disc care resetau (H3, H8, H9: 8 × 1,5 GB în lucru) depășeau RAM-ul
+     liber, iar cele care treceau (H1, H6 cu zerouri, H2, H7b) rămâneau sub ~4 GB.
+     Diferența aparentă dintre zerouri și date reale venea din mărimea fișierelor, nu din conținut.
+   - **Reparația:** patch-ul `pmaports/linux-oneplus-instantnoodle/0003` (pkgrel 6) readaugă
+     `removed_mem` cu 0xcd00000, ca în device tree-urile WuerfelDev și ObiKeahloa pentru OnePlus 8.
+     Acoperă și valorile OnePlus (0xAF00000 în Android 11, 0x5300000 în LineageOS 23.2 și în
+     `sm8250.dtsi`). Cu el, RAM2 (2 minute cu 150-350 MB liberi, `--verify` curat) și H9
+     (72 GB scriși în 3 minute, 404 MB/s în medie) au trecut fără reset.
+   - **Testat pe telefon** cu DTB-ul imaginii actuale plus nodul nou (`fdtput`, singura
+     diferență), scris în `boot_b`. DTB-ul compilat din sursă cu 0002 + 0003 e identic cu cel
+     testat. Pachetul r6 încă nu e construit cu pmbootstrap.
+   - **Excluse pe drum** (fiecare cu reset reprodus): power management-ul UFS (`ufs-nopm.sh`),
+     coada UFS redusă la o comandă, cablul USB și încărcarea (test pe baterie, prin WiFi),
+     tensiunea S8C ridicată la 1,352 V, ca în Android (test cu imaginea în `boot_b`, apoi revenire).
+     VCC-ul UFS (2,504 V) e identic cu Android pentru UFS 3.0.
 3. ~~Controlerele în Steam~~ **merg**: GameSir X3 Pro și Xbox pe fir, cu regulile udev pentru
    `hidraw`/`uinput`. Conectarea la cald prin `SDL_JOYSTICK_DISABLE_UDEV=1` (evenimentele udev
    nu ajung în containerul fără root). Maparea X3 Pro (`3537:0106`, lipsă din baza SDL) s-a
@@ -382,6 +382,30 @@ rula `stageA2.sh` (reguli udev + `udevadm trigger` + repornirea nftables).
     SteamOS-ARM-Handhelds (rate dinamice 60/90/120/144 pe un panou fără EDID).
 15. **Ieșire din joc fără controler:** de legat o combinație de butoane (de exemplu Volume Up +
     Volume Down) la butonul Steam sau la meniul rapid.
+16. **Sunetul lipsește uneori după pornire:** când DSP-ul audio răspunde cu eroare la pornire
+    (`qcom-q6afe ... AFE failed to vote (3)`, uneori și `va_macro ... failed with error -110`),
+    placa de sunet nu apare. 5 din 17 porniri pe 2026-10-02, cu imagini diferite, deci nu ține
+    de vreo modificare anume. O repornire o rezolvă. De încercat: un serviciu care, dacă
+    lipsește `/proc/asound/cards`, reîncarcă driverele audio (`unbind`/`bind`) sau repornește
+    DSP-ul (`remoteproc`).
+17. **Încărcare prin controler (passthrough, GameSir X3 Pro):** telefonul trebuie să fie gazdă
+    USB pentru controler și în același timp să primească curent prin el. De testat cu stiva
+    Type-C/PD din kernel (`tcpm`, raportează `PD PD_PPS`). Fără driver de încărcare, PMIC-ul
+    încarcă cu limitele lui hardware (verificate: 4,37 V, 2 A). Bateria e uzată (gauge-ul
+    estimează 1,9-3,1 Ah din 4,27 Ah), iar o baterie nouă nu e în plan.
+18. **Indicatorul de volum din Steam în colțul stânga jos (opțional):** Steam nu are setare de
+    poziție. Variante: Decky Loader + CSS Loader (netestat în containerul ARM) sau un indicator
+    propriu într-un overlay gamescope, cu volumul schimbat printr-un etaj de filtru separat
+    (atunci Steam nu-și mai arată bara).
+
+Rezolvate tot pe 2026-10-02, mai târziu:
+
+- **Spațiul din Steam** (Storage arăta 13,1 GB): Steam calculează spațiul liber pe directorul
+  lui de instalare, care era pe partiția de sistem (2,9 GB liberi), nu pe `steamapps`.
+  `userspace/system/move-steam-to-games.sh` mută tot directorul Steam pe partiția de jocuri și
+  îl montează (bind) la aceeași cale; `steam-gs.service` așteaptă acum acel montaj.
+- **Butoanele de volum inversate** în `op8-volbtn`: în landscape, Volume Up fizic e în stânga,
+  iar bara din Steam crește spre dreapta.
 
 Rezolvate între timp: SSH pe WiFi doar de la PC (`40_ssh_usb_only.nft`, IP-ul PC-ului),
 profilul WiFi dezlegat de adresa MAC (după reset cipul QCA6390 a raportat alt MAC), jurnalul

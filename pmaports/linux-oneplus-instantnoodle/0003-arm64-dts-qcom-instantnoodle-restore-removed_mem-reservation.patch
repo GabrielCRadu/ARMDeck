@@ -1,0 +1,45 @@
+From: steamed-noodle <noreply@localhost>
+Subject: [PATCH] arm64: dts: qcom: sm8250-oneplus-instantnoodle: restore the removed_mem reservation
+
+The board DTS deletes removed_mem from sm8250.dtsi ("removed_mem @
+0x80b00000 is bigger so we gotta shift everything up") and moves the
+firmware carve-outs up to 0x8dc00000, but never adds removed_mem back.
+The bootloader's /memory node covers 0x80000000-0xb98fffff, so Linux used
+0x80b00000-0x8dbfffff (about 210 MB) as ordinary RAM.
+
+That range belongs to the secure world. The pages sit in ZONE_DMA32, which
+the allocator only falls back to once the higher zones are full, so the
+phone ran fine until RAM filled up (large downloads filling the page cache,
+or any big allocation). Then the first write there reset the phone
+instantly: PMIC warm reset through PS_HOLD, nothing in the kernel log, even
+when streamed live over the network.
+
+Reproduced on a OnePlus 8 (IN2013, OxygenOS 13.1 firmware) on 2026-10-02:
+- stress-ng --vm 4 --vm-bytes 8000M: reset within 5 s; 2000M: no reset.
+- 8 parallel copies of a 1.5 GB file to UFS (~330 MB/s): reset in 5-20 s,
+  as soon as MemFree reached the bottom. Ruled out first: UFS power
+  management, UFS queue depth, the USB cable/charging path, S8C voltage.
+With this patch both run for 2-3 minutes with MemFree at 150-350 MB
+(72 GB written in 3 minutes, stress-ng --verify clean), no reset.
+
+Size: 0xcd00000, as in the two other OnePlus 8 device trees
+(WuerfelDev/linux-sm8250, ObiKeahloa/linux). It is a superset of the
+removed_region sizes in OnePlus's own trees (0xAF00000 in
+OnePlusOSS/android_kernel_oneplus_sm8250 R_11.0 kona.dtsi, 0x5300000 in
+LineageOS lineage-23.2 kona.dtsi and mainline sm8250.dtsi), and ends below
+camera_mem at 0x8dc00000. Reserving the larger range only costs RAM.
+---
+--- a/arch/arm64/boot/dts/qcom/sm8250-oneplus-instantnoodle.dts	2026-10-02 11:17:43.062673999 +0300
++++ b/arch/arm64/boot/dts/qcom/sm8250-oneplus-instantnoodle.dts	2026-10-02 11:17:43.082981829 +0300
+@@ -178,6 +178,11 @@
+ 	};
+ 
+ 	reserved-memory {
++		removed_mem: memory@80b00000 {
++			reg = <0x0 0x80b00000 0x0 0xcd00000>;
++			no-map;
++		};
++
+ 		camera_mem: camera@8dc00000 {
+ 			reg = <0x0 0x8dc00000 0x0 0x500000>;
+ 			no-map;
