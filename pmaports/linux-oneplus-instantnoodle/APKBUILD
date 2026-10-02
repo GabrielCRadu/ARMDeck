@@ -7,7 +7,7 @@ maintainer=""
 _flavor="oneplus-instantnoodle"
 pkgname=linux-$_flavor
 pkgver=6.16.7
-pkgrel=6
+pkgrel=7
 pkgdesc="OnePlus 8 (instantnoodle) mainline kernel, Xo666 fork"
 arch="aarch64"
 _carch="arm64"
@@ -48,6 +48,13 @@ makedepends="
 #         memory as RAM. Once RAM filled up (big Steam downloads) the phone
 #         reset instantly with nothing in the kernel log. Found and verified
 #         on hardware on 2026-10-02; details in the patch header.
+#   0004: the USB-C connector asked PD chargers for up to 12 V; the OnePlus 8
+#         never used more than 5 V over PD on Android. 5 V only (tested with
+#         a 45 W charger on 2026-10-02).
+#
+# steamed-noodle.config is merged over op8_defconfig: NTSYNC, preemption
+# switchable at runtime (default full), MGLRU and the lockup detectors. See
+# docs/compat-perf-audit.md.
 #
 # No charger driver: this tree has no driver for qcom,pm8150b-charger or
 # qcom,pm8150b-fg (checked 2026-10-01), so charging is left to the PMIC
@@ -62,12 +69,22 @@ source="
 	0001-ASoC-tfa9872-fix-uninitialized-DC-DC-config.patch
 	0002-arm64-dts-qcom-instantnoodle-match-PM8009-camera-rails-to-OEM.patch
 	0003-arm64-dts-qcom-instantnoodle-restore-removed_mem-reservation.patch
+	0004-arm64-dts-qcom-instantnoodle-limit-usb-c-sink-to-5V.patch
+	steamed-noodle.config
 "
 builddir="$srcdir/mainline-instantnoodle-$pkgver"
 
 prepare() {
 	default_prepare
 	make ARCH="$_carch" LLVM=1 "$_config"
+	ARCH="$_carch" ./scripts/kconfig/merge_config.sh -m .config "$srcdir"/steamed-noodle.config
+	make ARCH="$_carch" LLVM=1 olddefconfig
+	# merge_config.sh only warns when a requested value does not stick
+	local opt
+	for opt in NTSYNC PREEMPT_DYNAMIC LRU_GEN SOFTLOCKUP_DETECTOR HARDLOCKUP_DETECTOR \
+			DETECT_HUNG_TASK; do
+		grep -q "^CONFIG_$opt=y" .config || die "CONFIG_$opt did not end up enabled"
+	done
 }
 
 build() {
@@ -103,4 +120,6 @@ sha512sums="
 64923403662972aceeadb0e927303bdffd7b69edf62d5369e1acdb06869a8eee879deed38156128150a5badbf10762804abd45be492742fde037b2963c883aa3  0001-ASoC-tfa9872-fix-uninitialized-DC-DC-config.patch
 5b4596a662651770bd815badfcf554d627a3b3939dc5e4ade26e73a7c06f5a70e234a58bd7e5c72cfbd1258c28d859079c79dba04ab1e31b0f2170d4750fd198  0002-arm64-dts-qcom-instantnoodle-match-PM8009-camera-rails-to-OEM.patch
 29a3a5c2bcc5828c4e27eab6ae73a9fb55f794c44905211b4845b71b95c9571fe44aecb21dde6830cfa757a26b846431ed957078852eb3fa5b77e728b13583c5  0003-arm64-dts-qcom-instantnoodle-restore-removed_mem-reservation.patch
+2e80a6b19ef4c66257633f2212dc3149c6dd351de9929b113bc7f02b3fb27bb328084e1a47034fe76fbe1a3e4380d0713ab5219a00fc8bcd6243b863df61199c  0004-arm64-dts-qcom-instantnoodle-limit-usb-c-sink-to-5V.patch
+73b23898d202dd749125f6e61485cbcd3048f4f8fd9a365567f06166a1c214813f9ef0a67caa09e9dada70075294da5ccd38125d24d1987375c9e8607988b3ca  steamed-noodle.config
 "

@@ -27,6 +27,12 @@ export SDL_JOYSTICK_DISABLE_UDEV=1
 # (10 biti) in Remote Play. Test: SDR. Pentru a reveni, sterge linia.
 export STEAM_GAMESCOPE_HDR_SUPPORTED=0
 
+# Diagnoza unui joc: jurnal Proton in ~/proton-logs/steam-<appid>.log (exceptii, DLL-uri incarcate,
+# mesajele DXVK). Oprit implicit: FEX genereaza multe exceptii, iar jurnalizarea lor scade FPS-ul.
+# Pentru un singur joc e mai bine din Properties > Launch Options: PROTON_LOG=1 %command%
+#export PROTON_LOG=1
+export PROTON_LOG_DIR=/home/gabriel/proton-logs
+
 # Diagnoza Remote Play: jurnal SDL3 complet (clientul de streaming foloseste SDL3 pentru video,
 # audio si randare). Temporar, face logul mare.
 export SDL_LOGGING='*=verbose'
@@ -60,4 +66,7 @@ export LD_LIBRARY_PATH="$CLIENT_DIR:$STEAM/lib/aarch64-linux-gnu"
 # Steam (inlocuieste vechiul op8-volbtn de pe gazda; serviciul lui trebuie sa ramana dezactivat)
 /home/gabriel/op8-buttons.py &
 
-exec "$CLIENT_DIR/steam" -gamepadui -steamos3 -steampal -steamdeck -noverifyfiles -noshaders
+# Fara -noshaders: acelasi mecanism Steam aduce si video-urile re-codate ale jocurilor
+# (STEAM_COMPAT_TRANSCODED_MEDIA_PATH). Proton nu poate decoda H.264, iar fara ele afiseaza
+# barele de test TV in locul video-urilor (Poppy Playtime, Tiny Rails, 2026-10-02).
+exec "$CLIENT_DIR/steam" -gamepadui -steamos3 -steampal -steamdeck -noverifyfiles

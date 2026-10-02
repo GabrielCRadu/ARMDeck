@@ -64,6 +64,9 @@ claims turned out to only be partially correct.
   TODO list (in Romanian).
 - `docs/performance-crash-audit.md` - performance and crash-prevention audit after the first
   unexplained resets, read from the phone (in Romanian).
+- `docs/compat-perf-audit.md` - game compatibility and performance audit of the running system:
+  which Proton/DXVK works on the Adreno 650, why native x86 Linux games fail, D3D12 limits, and a
+  ranked list of kernel, gamescope and thermal changes (in Romanian).
 - `userspace/` - the scripts and configs that turn the flashed image into a Steam handheld:
   Steam session in gamescope, safe sleep (no kernel suspend), power and volume buttons,
   speakers behind a volume ceiling, Deck-style touch, A/B slot marking, diagnostic logging.

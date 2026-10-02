@@ -16,7 +16,17 @@ SETCAP=$(command -v setcap)
 if [ -x /usr/bin/gamescope ] && [ -n "$SETCAP" ]; then
 	"$SETCAP" cap_sys_nice+ep /usr/bin/gamescope
 fi
+# La fel pentru gamescope-op8 (gamescope cu patch-ul de full screen, rulat din ~/bin, vezi
+# userspace/steam/gamescope/). Fara capabilitate, gamescope scrie "No CAP_SYS_NICE, falling back to
+# regular-priority compute and threads". O copie noua a fisierului pierde capabilitatea, de aceea
+# se reaplica la fiecare pornire. Doar daca fisierul apartine userului si nu e scriibil de altii.
+GSOP8=/home/gabriel/bin/gamescope-op8
+if [ -x "$GSOP8" ] && [ -n "$SETCAP" ] && [ "$(stat -c %U "$GSOP8")" = gabriel ] &&
+	[ -z "$(find "$GSOP8" -perm /022)" ]; then
+	"$SETCAP" cap_sys_nice+ep "$GSOP8"
+fi
 
 echo "op8-tune: gpu_polling=$(cat "$G/polling_interval" 2>/dev/null) ms," \
 	"thp=$(cat /sys/kernel/mm/transparent_hugepage/enabled)," \
-	"gamescope=$(getcap /usr/bin/gamescope 2>/dev/null)"
+	"gamescope=$(getcap /usr/bin/gamescope 2>/dev/null)," \
+	"gamescope-op8=$(getcap "$GSOP8" 2>/dev/null)"
