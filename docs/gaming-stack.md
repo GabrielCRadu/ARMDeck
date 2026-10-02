@@ -304,10 +304,33 @@ rula `stageA2.sh` (reguli udev + `udevadm trigger` + repornirea nftables).
    (`STEAM_TOUCH_CLICK_MODE`) doar din Steam Input, adică doar cu un controler conectat.
    `op8-touchmode` urmărește `GAMESCOPE_FOCUSED_APP`: interfața Steam (769) = 4 (touch real,
    glisare = scroll), jocurile = 1 (click). Gamescope pornește cu `--default-touch-mode 4`.
-2. **Resetările**: 4 până acum, toate reset "warm" cerut de SoC prin PS_HOLD (nu panic, nu
-   watchdog, nu UVLO), toate în timpul descărcărilor Steam (scriere intensă pe UFS + WiFi).
-   Testele de izolare A-G au trecut. Următorul pas: `userspace/system/ufs-nopm.sh` (UFS fără
-   clock gating/scaling/hibern8) și o descărcare mare. Detalii în `performance-crash-audit.md`.
+2. **Resetările** (în lucru): toate reset "warm" cerut de SoC prin PS_HOLD (nu panic, nu
+   UVLO), toate în timpul descărcărilor Steam. Testele de izolare A-G au trecut. Detalii în
+   `performance-crash-audit.md`.
+   - **Reprodus pe 2026-10-02, fără WiFi:** 8 copieri paralele ale unui fișier real de 1,5 GB
+     (`cat src.tar > ...`, ~370 MB/s pe UFS) resetează telefonul în 5-10 s (testul H9; la fel
+     H3/H3b/H8/H8c cu `xzcat`). Trec: zerouri la aceeași viteză (`dd`, H1 un flux, H6 8 fluxuri,
+     5 minute fiecare), 2 fluxuri reale la ~200 MB/s (H2), 8 descărcări la ~72 MB/s (H7b),
+     WiFi și CPU fără disc (H4, H5). Deci cauza e **scrierea intensă de date reale pe UFS**.
+   - **UFS fără power management nu ajută** (`ufs-nopm.sh`, H8b a resetat la fel).
+     `op8-ufs-nopm.service` e încă activ pe telefon: de dezactivat.
+   - Jurnalul live de pe PC nu arată nicio eroare UFS înainte de reset (dar `journalctl -f`
+     poate rămâne blocat dacă discul se blochează).
+   - **Suspect principal: tensiunea sursei S8C.** Device tree-ul Xo666 îi dă 1,2-1,4 V, deci
+     kernelul o ține la 1,20 V. Android (driverul WiFi, `qcom,vdd-wlan-rfa2-config = <1350000
+     ...>` în `kona.dtsi`), plăcile Qualcomm MTP și RB5 și celelalte două device tree-uri pentru
+     OnePlus 8 o țin la 1,35 V (`1352000`). Din S8C se alimentează LDO-urile de 1,2 V `L6A`
+     (VCCQ, controlerul memoriei UFS) și `L9A` (PLL-ul UFS PHY, PCIe pentru WiFi și modem, USB
+     PHY, DSI), plus cipul WiFi. Cu 1,2 V la intrare și 1,2 V la ieșire, LDO-urile n-au nicio
+     rezervă. Neconfirmat: RPMh ar putea ridica singur sursa părinte, iar tensiunea reală nu se
+     poate măsura din Linux.
+   - **Nu e suspect VCC-ul UFS (`L17A`, 2,504 V):** Android îl coboară tot la 2,504 V pentru
+     cipurile UFS 3.0 (`vcc-low-voltage-sup` și `ufshcd_set_low_vcc_level()`), iar cipul e
+     Samsung KLUEG8UHDB-C2D1, UFS 3.0, HS-G4 pe 2 benzi, `active_icc_level` 15.
+   - **Următorul pas:** patch de device tree cu `vreg_s8c_1p3` fixat la 1352000 µV, kernel
+     construit cu pmbootstrap și pornit cu `fastboot boot` (din RAM, fără scriere în partiții),
+     apoi H9 de 3 ori. Dacă trece, scriere în `boot_b` cu acord explicit. Fișierul de test
+     `/home/gabriel/games/op8-test/src.tar` a rămas pe telefon pentru asta.
 3. ~~Controlerele în Steam~~ **merg**: GameSir X3 Pro și Xbox pe fir, cu regulile udev pentru
    `hidraw`/`uinput`. Conectarea la cald prin `SDL_JOYSTICK_DISABLE_UDEV=1` (evenimentele udev
    nu ajung în containerul fără root). Maparea X3 Pro (`3537:0106`, lipsă din baza SDL) s-a
