@@ -420,6 +420,13 @@ rula `stageA2.sh` (reguli udev + `udevadm trigger` + repornirea nftables).
     Type-C/PD din kernel (`tcpm`, raportează `PD PD_PPS`). Fără driver de încărcare, PMIC-ul
     încarcă cu limitele lui hardware (verificate: 4,37 V, 2 A). Bateria e uzată (gauge-ul
     estimează 1,9-3,1 Ah din 4,27 Ah), iar o baterie nouă nu e în plan.
+    **Încărcătoare USB-C PD (ex. Samsung 45 W): de nefolosit deocamdată.** Conectorul din
+    device tree-ul Xo666 declară `sink-pdos` cu `PDO_VAR(5000, 12000, 5000)`, deci telefonul ar
+    cere unui încărcător PD 9 V. Pe Android, OnePlus 8 nu folosea PD peste 5 V (încărcarea
+    rapidă e Warp, 5 V / 6 A), deci 9 V pe VBUS e netestat pe placa asta. De făcut întâi: patch
+    de device tree cu `sink-pdos = <PDO_FIXED(5000, 3000, ...)>` (doar 5 V), apoi un test
+    urmărit (`tcpm-source-psy-*/voltage_now` trebuie să arate 5 V). Sigure până atunci: portul
+    USB al PC-ului sau un încărcător USB-A de 5 V.
 18. **Indicatorul de volum din Steam în colțul stânga jos (opțional):** Steam nu are setare de
     poziție. Variante: Decky Loader + CSS Loader (netestat în containerul ARM) sau un indicator
     propriu într-un overlay gamescope, cu volumul schimbat printr-un etaj de filtru separat
