@@ -1,0 +1,100 @@
+#!/bin/sh
+# op8-thermal (steamed-noodle): protectie termica dupa temperatura bateriei.
+# Kernelul protejeaza doar procesorul (franare la 90 si 95 C, oprire la 110 C). Android franeaza
+# dupa temperatura carcasei si a bateriei, mult mai devreme; aici lipsea, iar un joc 3D a dus
+# bateria la 46,5 C (2026-10-02). Telefonul n-are senzor de carcasa; bateria (gauge-ul bq27411)
+# e cel mai aproape de mana si e componenta care sufera cel mai mult de la caldura.
+#
+# Pe niveluri, cu histerezis: se urca imediat la nivelul atins, se coboara cate unul, abia cand
+# bateria scade cu HYST sub pragul nivelului curent. Limitele sunt frecvente maxime; frecventa
+# reala o alege tot kernelul, sub ele. In standby (op8-standby) nu se atinge nimic: op8-standby
+# tine atunci nucleele mari la minim si le restaureaza singur; dupa trezire limita se reaplica.
+# Jurnal: journalctl -t op8-thermal (si coloanele de frecvente din op8-sampler).
+# "op8-thermal restore" scoate toate limitele (la oprirea serviciului).
+BAT=/sys/class/power_supply/bq27411-0/temp
+CF=/sys/devices/system/cpu/cpufreq
+GPU=/sys/class/devfreq/3d00000.gpu
+STANDBY=/run/op8-standby.active
+STATE=/run/op8-thermal.level
+PERIOD=5
+HYST=10
+
+log() { logger -t op8-thermal -- "$*"; }
+
+# pragul de intrare al unui nivel, in zecimi de grad
+enter() {
+	case "$1" in
+		1) echo 410 ;;
+		2) echo 420 ;;
+		3) echo 430 ;;
+		4) echo 445 ;;
+	esac
+}
+
+# limitele unui nivel: nuclee mari (policy4, kHz), nucleul prime (policy7, kHz), GPU (Hz);
+# "max" = fara limita. Nucleele mici (policy0) nu se limiteaza.
+caps() {
+	case "$1" in
+		0) echo "max max max" ;;
+		1) echo "2054400 2457600 max" ;;
+		2) echo "1766400 2073600 525000000" ;;
+		3) echo "1478400 1632000 441600000" ;;
+		4) echo "1056000 1190400 305000000" ;;
+	esac
+}
+
+# scrie o limita doar daca difera de cea curenta
+set_max() {
+	f=$1
+	v=$2
+	[ "$(cat "$f")" = "$v" ] || echo "$v" > "$f"
+}
+
+apply() {
+	set -- $(caps "$1")
+	b=$1
+	p=$2
+	g=$3
+	[ "$b" = max ] && b=$(cat "$CF/policy4/cpuinfo_max_freq")
+	[ "$p" = max ] && p=$(cat "$CF/policy7/cpuinfo_max_freq")
+	[ "$g" = max ] && g=$(tr ' ' '\n' < "$GPU/available_frequencies" | sort -n | tail -1)
+	set_max "$CF/policy4/scaling_max_freq" "$b"
+	set_max "$CF/policy7/scaling_max_freq" "$p"
+	set_max "$GPU/max_freq" "$g"
+}
+
+if [ "${1:-}" = restore ]; then
+	apply 0
+	rm -f "$STATE"
+	log "limite scoase"
+	exit 0
+fi
+
+level=0
+echo 0 > "$STATE"
+log "pornit: praguri 41/42/43/44,5 C la baterie, histerezis $((HYST / 10)) C"
+while :; do
+	if ! t=$(cat "$BAT" 2>/dev/null) || [ -z "$t" ]; then
+		sleep "$PERIOD"
+		continue
+	fi
+	new=$level
+	# urcare: cel mai mare nivel al carui prag e atins
+	for l in 4 3 2 1; do
+		if [ "$t" -ge "$(enter "$l")" ]; then
+			[ "$l" -gt "$new" ] && new=$l
+			break
+		fi
+	done
+	# coborare: cate un nivel, sub pragul nivelului curent minus HYST
+	if [ "$new" = "$level" ] && [ "$level" -gt 0 ] && [ "$t" -lt $(( $(enter "$level") - HYST )) ]; then
+		new=$((level - 1))
+	fi
+	if [ "$new" != "$level" ]; then
+		log "baterie $((t / 10)).$((t % 10)) C: nivel $level -> $new ($(caps "$new"))"
+		level=$new
+		echo "$level" > "$STATE"
+	fi
+	[ -e "$STANDBY" ] || apply "$level"
+	sleep "$PERIOD"
+done

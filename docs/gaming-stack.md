@@ -397,14 +397,20 @@ rula `stageA2.sh` (reguli udev + `udevadm trigger` + repornirea nftables).
     poziție. Variante: Decky Loader + CSS Loader (netestat în containerul ARM) sau un indicator
     propriu într-un overlay gamescope, cu volumul schimbat printr-un etaj de filtru separat
     (atunci Steam nu-și mai arată bara).
-19. **Protecție termică după temperatura bateriei:** kernelul protejează doar procesorul (frânare
-    la 90 și 95 °C, oprire la 110 °C). Android frânează după temperatura carcasei și a bateriei,
-    mult mai devreme. Măsurat pe 2026-10-02: Slime Rancher a dus bateria la 46,5 °C (CPU 93 °C),
-    compilarea pe 8 nuclee la 46,6 °C (CPU 88-90 °C, frânat de kernel la 1,96/2,36 GHz). Peste
-    ~45 °C o baterie Li-ion nu ar trebui încărcată normal, iar căldura grăbește uzura unei
-    baterii deja obosite. De făcut: un serviciu care, peste ~42 °C la baterie, limitează treptat
-    frecvența nucleelor mari și a GPU-ului (`scaling_max_freq`, `devfreq/.../max_freq`), plus
-    citirea pragurilor JEITA (încărcarea la cald) din PMIC-ul PM8150B, nevăzute până acum.
+19. ~~Protecție termică după temperatura bateriei~~ **făcut 2026-10-02**
+    (`userspace/system/op8-thermal`, `install-thermal.sh`). Kernelul protejează doar procesorul
+    (frânare la 90 și 95 °C, oprire la 110 °C), iar Android frânează mult mai devreme, după
+    carcasă și baterie. Măsurat: Slime Rancher a dus bateria la 46,5 °C (CPU 93 °C), compilarea
+    pe 8 nuclee la 46,6 °C. `op8-thermal` (serviciu de sistem, la 5 s) limitează nucleele mari,
+    prime și GPU-ul pe 4 niveluri, la 41 / 42 / 43 / 44,5 °C la baterie (cu 1 °C histerezis);
+    nucleele mici rămân libere, iar în standby nu atinge nimic. Telefonul n-are senzor de carcasă.
+    **JEITA în PM8150B** (citit, doar citire): `0x1090 = 0x00`, deci reducerea automată a
+    curentului și a tensiunii la cald e **dezactivată** (în Android o face software-ul OnePlus).
+    Rămân doar pragurile hardware (`0x1094`-`0x109f`, trei perechi de coduri ADC ale
+    termistorului: soft, oprirea încărcării, oprirea de urgență), netransformate în grade. Deci
+    fără driver de încărcare, curentul de încărcare (2,0 A) nu scade la cald: încărcatul în timp
+    ce joci încălzește bateria în plus. De urmărit: o scriere a lui `0x1090` (activare JEITA)
+    ar cere scriere în registrele PMIC, nefăcută.
 20. **Ecran cu zgomot colorat (o dată, cauză necunoscută):** pe 2026-10-02, în Slime Rancher,
     cu overlay-ul pornit, după o schimbare de luminozitate, tot ecranul a devenit zgomot colorat.
     A rămas și după sleep și după repornirea gamescope; a dispărut doar la repornirea telefonului

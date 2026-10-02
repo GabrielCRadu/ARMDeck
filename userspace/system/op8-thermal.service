@@ -1,0 +1,13 @@
+[Unit]
+Description=op8-thermal: protectie termica dupa temperatura bateriei (limiteaza CPU mare si GPU)
+After=local-fs.target op8-tune.service
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/op8-thermal
+ExecStopPost=/usr/local/bin/op8-thermal restore
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
