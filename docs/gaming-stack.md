@@ -359,12 +359,35 @@ rula `stageA2.sh` (reguli udev + `udevadm trigger` + repornirea nftables).
     există decodare software ca rezervă). Încercat și cu `STEAM_GAMESCOPE_HDR_SUPPORTED=0`: tot crapă.
     De încercat: formatul cerut de Steam de la V4L2 față de ce oferă Venus pe SM8250 (NV12 vs
     QC08C/UBWC), H.264 forțat pe PC, un decodor V4L2 stateless. Analizor: `op8-minidump.py`.
+    **Investigat 2026-10-02 (strace + gdb pe `streaming_client`):**
+    - Clientul ARM64 are doar două decodoare: `CV4L2Accel` (V4L2 hardware) și Pyrowave, dar
+      biblioteca Pyrowave există doar pentru x86 (`steamrt64/libpyrowave-shared.so.0`). Nu are
+      decodare software (fără libavcodec, spre deosebire de clientul x86). Steam-ul de pe PC
+      poate codifica Pyrowave (`libpyrowave-shared-0.dll`).
+    - Venus (`/dev/video14`): H.264 / HEVC / VP8 / VP9 / MPEG-2 la intrare, NV12 și Q08C la
+      ieșire. Pașii clientului reușesc toți: `S_FMT` H.264 1920x1088, `REQBUFS` OUTPUT 16
+      (MMAP), CAPTURE NV12 `REQBUFS` DMABUF 16 => 18 (minimul Venus), 18 buffere DRM dumb,
+      `STREAMON` pe ambele cozi, 18 `QBUF` CAPTURE. Apoi firul de decodare face `G_FMT` pe
+      OUTPUT și crapă (SIGSEGV) **înainte de primul `QBUF` cu date**, în căutarea unui buffer
+      liber din propria listă de buffere OUTPUT (obiect + 712: pointer, + 728: număr de
+      elemente de 16 octeți). Pointerul e corupt (`0xffff00000048`, altă dată `0xaaab00000054`).
+    - `STEAMLINK_V4L2_BUFFER_COUNT=18` (variabilă citită de client) a ajuns la client, dar
+      crash-ul e identic. Scoasă la loc.
+    - Același cod V4L2 e defect și pe alte telefoane Qualcomm: pe Ayn Odin 2 Portal (SM8550,
+      Iris) trimite cadre goale și dă ecran verde (steam-for-linux #13428, deschis din iulie
+      2026, fără răspuns de la Valve).
+    - Conexiunea mergea prin releu SDR (`--transport k_EStreamTransportSDR`, ping 40 ms), nu
+      direct pe LAN: probabil din cauza firewall-ului telefonului (nft, doar SSH de la PC).
+    - **Alternativa propusă:** Moonlight în container (adăugat ca joc non-Steam) + Sunshine
+      sau Apollo pe PC (NVENC pe RTX 3060). Decodare software (FFmpeg) sau Venus prin
+      `h264_v4l2m2m`. Amânat la cererea utilizatorului.
 12. **Jocurile Linux native (x86)** se închid în sub o secundă (Half-Life, Hue, LIMBO, Terraria):
     Steam le mapează pe unealta `native`. Ocolire: Proton 11.0 (ARM64) forțat din Properties >
     Compatibility (versiunea Windows). Soluția completă: FEX + rootfs la
     `/usr/share/guestos/fex-mesa` (punctul 8).
 13. **Muffin Knight:** mici probleme de afișare la text (Proton ARM64).
-14. **Full screen (benzi negre pe laterale):** panoul DSI n-are EDID, iar gamescope-ul din Alpine
+14. ~~Full screen~~ **rezolvat 2026-10-02**, cu un gamescope modificat (vezi „Rezolvate tot pe
+    2026-10-02” mai jos). Istoricul investigației: panoul DSI n-are EDID, iar gamescope-ul din Alpine
     nu generează unul. Steam nu vede rezoluția reală (2400x1080) și alege 1920x1080
     (`systemdisplaymanager.txt`: "screen resolution: 1920x1080"; în logul gamescope Xwayland trece
     de la 2400x1080 la 1920x1080 imediat după pornirea Steam). `GAMESCOPE_DISPLAY_EDID_PATH` e doar
@@ -427,6 +450,12 @@ rula `stageA2.sh` (reguli udev + `udevadm trigger` + repornirea nftables).
     de device tree cu `sink-pdos = <PDO_FIXED(5000, 3000, ...)>` (doar 5 V), apoi un test
     urmărit (`tcpm-source-psy-*/voltage_now` trebuie să arate 5 V). Sigure până atunci: portul
     USB al PC-ului sau un încărcător USB-A de 5 V.
+    **Făcut și testat 2026-10-02:** DTB-ul din `boot_b` are acum `sink-pdos = <0x2601912c>`
+    (doar 5 V / 3 A; `fdtput` pe imaginea cu `removed_mem`, scrisă de utilizator). Încărcătorul
+    Samsung 45 W oferă 5 / 9 / 15 / 20 V și PPS 3,3-21 V; telefonul a negociat PD **5 V / 3 A**
+    (`power_operation_mode = usb_power_delivery`). Bateria primește ~0,9 A cu Steam pornit
+    (portul PC-ului: ~0,35 A). Limita reală e ICL-ul PMIC-ului (1,6 A la 5 V, ~8 W). De pus și
+    în pachetul de kernel (patch `0004`, r7) ca să nu se piardă la următorul build.
 18. **Indicatorul de volum din Steam în colțul stânga jos (opțional):** Steam nu are setare de
     poziție. Variante: Decky Loader + CSS Loader (netestat în containerul ARM) sau un indicator
     propriu într-un overlay gamescope, cu volumul schimbat printr-un etaj de filtru separat
@@ -485,6 +514,22 @@ Rezolvate tot pe 2026-10-02, mai târziu:
   container (`ipc=host`, deci vede coada de mesaje a lui gamescope); `op8-mangoapp` îl pornește cu
   sesiunea, iar gamescope nu mai primește `--mangoapp`. Steam scrie nivelul în
   `/run/user/10000/mangohud.conf`. Când gamescope revine la ordinea veche, patch-ul trebuie scos.
+- **Full screen** (fără benzi negre, jocurile la 2400x1080): Steam trece panoul în configurația
+  lui ca ecran **extern** (`config.vdf`: `IsExternalDisplay 1`, „External: OnePlus 8”), deși
+  gamescope îl anunță intern, și cere la fiecare pornire Xwayland 1920x1080
+  (`GAMESCOPE_XWAYLAND_MODE_CONTROL = 0, 1920, 1080, 0`); o cerere de 2400x1080 trimisă din
+  afară e anulată imediat. Soluția: gamescope 3.16.29 din Alpine plus patch-ul
+  `userspace/steam/gamescope/9001-steamed-noodle-force-native-xwayland.patch`: cu
+  `GAMESCOPE_FORCE_NATIVE_XWAYLAND`, orice cerere de mod Xwayland devine dimensiunea nativă.
+  Construit cu `build-gamescope-op8.sh` (pmbootstrap, sub qemu: crossdirect eșua cu „cannot
+  execute cc1”), rulat din `~/bin/gamescope-op8` fără instalare; `steam-gamescope.sh` îl
+  folosește dacă există. Verificat: Steam cere 1920x1080 de 5 ori la pornire, apoi se oprește
+  (fără buclă), iar la Tiny Rails jurnalul arată „Using maximum game resolution: screen
+  resolution: 2400x1080”. Limite: binarul din `~/bin` n-are `CAP_SYS_NICE` (op8-tune o pune
+  doar pe `/usr/bin/gamescope`), iar o rezoluție aleasă per joc în Steam e ignorată. De făcut
+  pachet apk și de reconstruit la fiecare actualizare de gamescope.
+- **Încărcarea în sleep:** în standby telefonul nu mai răspunde pe WiFi (ping și SSH), deci
+  verificările de la distanță cer telefonul treaz sau pe cablu.
 - **Primul joc 3D:** Slime Rancher (Unity, Proton 11 ARM64) merge, pornit în modul „safe”
   (`-lowGraphics`); fără el se închidea uneori la încărcare.
 - **Indicatorul de încărcare care apare și dispare:** de la portul USB al PC-ului telefonul

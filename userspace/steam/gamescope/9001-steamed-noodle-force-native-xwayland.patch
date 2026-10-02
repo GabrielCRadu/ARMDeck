@@ -1,0 +1,22 @@
+--- a/src/steamcompmgr.cpp
++++ b/src/steamcompmgr.cpp
+@@ -7219,6 +7219,19 @@
+ 				height = std::min<int>(height, currentOutputHeight);
+ 			}
+ 
++			// steamed-noodle: Steam does not treat this EDID-less 2400x1080 phone panel as an
++			// internal screen and asks for a 1920x1080 Xwayland mode (pillarboxed UI, games capped
++			// at 1920x1080). With GAMESCOPE_FORCE_NATIVE_XWAYLAND set, every Xwayland server keeps
++			// the native output size, so Steam and its games see the whole panel.
++			static const bool s_bForceNativeXwayland = getenv( "GAMESCOPE_FORCE_NATIVE_XWAYLAND" ) != nullptr;
++			if ( s_bForceNativeXwayland && currentOutputWidth && currentOutputHeight )
++			{
++				if ( width != int( currentOutputWidth ) || height != int( currentOutputHeight ) )
++					xwm_log.infof( "steamed-noodle: Xwayland mode request %dx%d -> native %ux%u", width, height, currentOutputWidth, currentOutputHeight );
++				width = currentOutputWidth;
++				height = currentOutputHeight;
++			}
++
+ 			gamescope_xwayland_server_t *server = wlserver_get_xwayland_server( server_idx );
+ 			if ( server )
+ 			{

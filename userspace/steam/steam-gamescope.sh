@@ -4,6 +4,7 @@
 #   systemd-run --user --unit=steam-gs --collect /bin/sh -c "~/steam-gamescope.sh > ~/steam-gs.log 2>&1"
 # Oprire: systemctl --user stop steam-gs
 pkill -x gamescope 2>/dev/null
+pkill -x gamescope-op8 2>/dev/null
 
 # nimeni nu e logat pe ecran, deci fara logind: acces direct la /dev/dri si /dev/input
 export LIBSEAT_BACKEND=noop
@@ -39,6 +40,16 @@ fi
 # right = orientarea in care controlerul GameSir X3 Pro sta corect fata de imagine.
 # touch mode 4 = evenimente touch reale, ca pe Steam Deck (glisare = scroll, fara cursor);
 # Steam comuta singur pe 1 (mouse) in jocuri si inapoi pe 4 in interfata
-exec gamescope -W 2400 -H 1080 -r 60 --xwayland-count 2 --backend drm \
+#
+# Full screen: Steam nu trateaza panoul ca ecran intern si cere pentru Xwayland 1920x1080 (benzi
+# negre, jocuri plafonate la 1920x1080). gamescope-op8 = gamescope 3.16.29 din Alpine plus
+# patch-ul 9001 (gamescope/build-gamescope-op8.sh, pmbootstrap): cu GAMESCOPE_FORCE_NATIVE_XWAYLAND, Xwayland
+# ramane la dimensiunea nativa, orice ar cere Steam. Fara binar, gamescope-ul din sistem.
+GS=gamescope
+if [ -x /home/gabriel/bin/gamescope-op8 ]; then
+	GS=/home/gabriel/bin/gamescope-op8
+	export GAMESCOPE_FORCE_NATIVE_XWAYLAND=1
+fi
+exec "$GS" -W 2400 -H 1080 -r 60 --xwayland-count 2 --backend drm \
 	--force-orientation right --default-touch-mode 4 -e -- \
 	distrobox enter steam -- /home/gabriel/steam-in-container.sh

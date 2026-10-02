@@ -44,6 +44,7 @@ postmarketOS (musl, systemd)          containerul distrobox "steam" (Fedora 44, 
 | 14 | în container, ca root: `dnf install python3-evdev pulseaudio-utils` | `op8-buttons.py`: butoanele de volum citite deodată, volum la eliberare și continuu la ținere, Volume Up + Volume Down = butonul Steam (Shift+Tab, pe care Steam îl înregistrează la gamescope), și în jocuri | root în container |
 | 15 | `steam/build-mangoapp-gs.sh` (dependențele în antetul lui) | overlay-ul de performanță: `mangoapp` din MangoHud 0.8.4 cu ordinea câmpurilor din gamescope 3.16.29 (altfel nu apare în jocuri, gamescope #2430); îl pornește `op8-mangoapp` | user, în container |
 | 16 | `system/install-thermal.sh` | `op8-thermal`: limitează nucleele mari și GPU-ul după temperatura bateriei (41-44,5 °C), plus o citire a pragurilor JEITA din PM8150B în `/var/log/op8/` | sudo |
+| 17 | `steam/gamescope/build-gamescope-op8.sh` (în WSL, pe PC) → `gamescope-op8` în `~/bin/` pe telefon | full screen: gamescope cu patch-ul 9001, Xwayland mereu la 2400x1080 (altfel Steam pune 1920x1080 și apar benzi negre) | user |
 
 Opțional: `system/format-games.sh` (**șterge** partiția Android `userdata` și o face ext4 pentru
 jocuri, cu confirmare `FORMAT`), `system/bind-steamapps.sh` (biblioteca Steam pe acea partiție),
