@@ -3,6 +3,10 @@
 # implicite ("Difuzoare (protejat)"): +/-5% pe apasare si la tinut apasat (repetare), cu limita
 # 100%. Plafonul fizic ramane volumul iesirii directe (-30 dB), pe care butoanele nu-l ating.
 # In standby (op8-standby) butoanele se ignora. Jurnal: journalctl -t op8-volbtn
+# Butoanele sunt inversate: tinut in mana in modul landscape (ecranul rotit spre dreapta),
+# butoanele de volum ajung pe marginea de sus, cu Volume Up in stanga si Volume Down in dreapta.
+# Bara de volum din Steam creste spre dreapta, deci butonul din dreapta trebuie sa dea volum mai
+# mare.
 log() { logger -t op8-volbtn -- "$*"; }
 
 dev() {
@@ -25,8 +29,8 @@ watch() {
 		[ "$val" = 1 ] || [ "$val" = 2 ] || continue
 		[ -e /run/op8-standby.active ] && continue
 		case "$code" in
-			115) wpctl set-volume -l 1.0 @DEFAULT_AUDIO_SINK@ 5%+ ;;
-			114) wpctl set-volume @DEFAULT_AUDIO_SINK@ 5%- ;;
+			114) wpctl set-volume -l 1.0 @DEFAULT_AUDIO_SINK@ 5%+ ;;
+			115) wpctl set-volume @DEFAULT_AUDIO_SINK@ 5%- ;;
 			*) continue ;;
 		esac
 		[ "$val" = 1 ] && log "cod $code -> $(wpctl get-volume @DEFAULT_AUDIO_SINK@)"
