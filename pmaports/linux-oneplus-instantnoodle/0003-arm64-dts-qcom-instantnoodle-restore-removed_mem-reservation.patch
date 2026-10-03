@@ -1,4 +1,4 @@
-From: steamed-noodle <noreply@localhost>
+From: ARMDeck <noreply@localhost>
 Subject: [PATCH] arm64: dts: qcom: sm8250-oneplus-instantnoodle: restore the removed_mem reservation
 
 The board DTS deletes removed_mem from sm8250.dtsi ("removed_mem @

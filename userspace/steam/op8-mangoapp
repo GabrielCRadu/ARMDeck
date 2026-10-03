@@ -1,5 +1,5 @@
 #!/bin/sh
-# op8-mangoapp (steamed-noodle): ruleaza mangoapp-gs (MangoHud compilat pentru gamescope 3.16.29,
+# op8-mangoapp (armdeck): ruleaza mangoapp-gs (MangoHud compilat pentru gamescope 3.16.29,
 # vezi build-mangoapp-gs.sh) in containerul "steam", cat timp traieste sesiunea Steam.
 # Il porneste steam-in-container.sh in fundal, chiar inainte de "exec steam", deci parintele lui
 # devine procesul Steam; cand Steam se inchide, bucla se opreste.

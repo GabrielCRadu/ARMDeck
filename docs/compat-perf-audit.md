@@ -228,7 +228,7 @@ Făcute în ordinea planului, cu teste pe telefon după fiecare pas.
   re-codate prin același mecanism ca shaderele pre-compilate, oprit de `-noshaders`. Fără opțiune,
   Steam a descărcat singur video-urile (`CompatVideoTCMediaV1`, 2,6 GB la Poppy) și shaderele
   Vulkan; Poppy are acum video-ul real. **P7 se inversează:** `-noshaders` scos.
-- **Kernel r7** (patch-urile 0001-0004 + `steamed-noodle.config`), instalat cu
+- **Kernel r7** (patch-urile 0001-0004 + `armdeck.config`), instalat cu
   `userspace/system/install-kernel.sh` și scris în `boot_b`: pornește curat, `Dynamic Preempt:
   full`, `/dev/ntsync` (deja `0666`, fără regulă udev), MGLRU `0x0003`, watchdog și hung task
   active, sunet, WiFi și serviciile în regulă, DTB-ul identic cu cel testat (memorie rezervată +
@@ -251,6 +251,20 @@ Făcute în ordinea planului, cu teste pe telefon după fiecare pas.
 
 - **Jurnalul Proton** (`PROTON_LOG=1`) a fost pornit global doar pentru teste: FEX produce multe
   excepții, iar jurnalizarea lor scade FPS-ul. Oprit; pentru un joc se pune din Launch Options.
+
+## 7. De testat (din jurnalele de pe 2026-10-03)
+
+Toate boot-urile s-au încheiat cu oprire sau restart cerute din Steam, fără crash. Protecția termică
+nu a intervenit (A Hat in Time, 4 min: CPU max 83 °C, GPU 67 °C, baterie 32 °C).
+
+| Joc | Ce s-a văzut | Cauza | De încercat |
+|---|---|---|---|
+| Tomb Raider (203160) | se închide instant, cod 127 | Launch Options `gamescope -w 1280 -h 720 -f -- %command%`: `gamescope` nu există în container (127 = comandă negăsită). În plus, Steam alege versiunea Linux x86 (C2) | șters Launch Options, Compatibility pe Proton 11.0-2, rezoluția din joc |
+| Subnautica (264710) | se închide după 8 s | Compatibility era pe Proton Experimental ARM64 (C1, DXVK 3) | Proton 11.0-2, păstrat `PROTON_NO_NTSYNC=1` |
+| A Hat in Time (278360) | 4 min ok, a doua pornire închisă după 8 s | probabil ieșire manuală | de verificat o sesiune mai lungă |
+
+Dacă unul tot nu pornește: `PROTON_LOG=1 %command%` în Launch Options, o pornire, apoi jurnalul din
+`~/proton-logs/steam-<appid>.log`.
 
 ## Surse
 

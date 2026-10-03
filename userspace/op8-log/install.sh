@@ -1,5 +1,5 @@
 #!/bin/sh
-# steamed-noodle, etapa A, pasul 3: Bluetooth (bluez), reguli controlere USB + Bluetooth, op8-log.
+# armdeck, etapa A, pasul 3: Bluetooth (bluez), reguli controlere USB + Bluetooth, op8-log.
 # Rulare: sudo sh /tmp/op8-log/install.sh
 set -eu
 S=$(dirname "$0")
@@ -19,7 +19,7 @@ systemctl enable --now bluetooth
 
 echo "== 2. reguli udev pentru controlere (USB si Bluetooth)"
 mkdir -p /etc/udev/rules.d
-install -m 644 "$S/70-steamed-noodle-gamepads.rules" /etc/udev/rules.d/
+install -m 644 "$S/70-armdeck-gamepads.rules" /etc/udev/rules.d/
 udevadm control --reload
 udevadm trigger --subsystem-match=hidraw
 

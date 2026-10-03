@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# op8-log (steamed-noodle): analizor minimal de minidump Breakpad pentru ARM64, fara dependente.
+# op8-log (armdeck): analizor minimal de minidump Breakpad pentru ARM64, fara dependente.
 # Arata semnalul, adresa, modulul + offsetul pentru PC si LR ale firului care a crapat si
 # adresele de intoarcere probabile gasite prin scanarea stivei (module + offset).
 # Folosire: python3 op8-minidump.py /tmp/dumps/crash_XXXX.dmp

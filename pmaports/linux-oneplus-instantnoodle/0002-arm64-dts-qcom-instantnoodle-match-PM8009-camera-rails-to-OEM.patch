@@ -1,4 +1,4 @@
-From: steamed-noodle <noreply@localhost>
+From: ARMDeck <noreply@localhost>
 Subject: [PATCH] arm64: dts: qcom: sm8250-oneplus-instantnoodle: match PM8009 camera rails to the OnePlus vendor DT
 
 The Xo666 board DTS marks all seven PM8009 LDOs (the camera PMIC) as

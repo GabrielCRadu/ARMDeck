@@ -1,5 +1,5 @@
 #!/bin/sh
-# steamed-noodle, etapa A: gamescope pe ecranul telefonului, cu Steam din containerul "steam".
+# armdeck, etapa A: gamescope pe ecranul telefonului, cu Steam din containerul "steam".
 # Ruleaza pe gazda (postmarketOS) ca serviciu al userului:
 #   systemd-run --user --unit=steam-gs --collect /bin/sh -c "~/steam-gamescope.sh > ~/steam-gs.log 2>&1"
 # Oprire: systemctl --user stop steam-gs

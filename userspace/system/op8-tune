@@ -1,5 +1,5 @@
 #!/bin/sh
-# op8-tune (steamed-noodle, OnePlus 8): setari de performanta aplicate la fiecare pornire.
+# op8-tune (armdeck, OnePlus 8): setari de performanta aplicate la fiecare pornire.
 # Toate sunt reversibile: systemctl disable op8-tune si repornire.
 # Vezi docs/performance-crash-audit.md, P3, P4, P7.
 G=/sys/class/devfreq/3d00000.gpu

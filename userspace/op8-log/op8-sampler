@@ -1,5 +1,5 @@
 #!/bin/sh
-# op8-log (steamed-noodle, OnePlus 8): un esantion la fiecare $OP8_INTERVAL secunde (implicit 2),
+# op8-log (armdeck, OnePlus 8): un esantion la fiecare $OP8_INTERVAL secunde (implicit 2),
 # o linie CSV scrisa imediat pe disc (sync), ca dupa un reset sa stim ce facea telefonul in
 # ultimele secunde. Doar citire din sysfs/proc. OP8_ONCE=1 = un singur esantion (pentru test).
 set -u

@@ -1,5 +1,5 @@
 #!/bin/sh
-# op8-log (steamed-noodle): marcheaza un moment in log, de exemplu: op8-mark start descarcare
+# op8-log (armdeck): marcheaza un moment in log, de exemplu: op8-mark start descarcare
 # Apare in jurnalul systemd (op8-mark) si in coloana "mark" a urmatorului esantion.
 m="$*"
 [ -n "$m" ] || { echo "folosire: op8-mark <text>"; exit 2; }

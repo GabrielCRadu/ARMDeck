@@ -1,5 +1,5 @@
 #!/bin/sh
-# steamed-noodle, audit de performanta, pasul 1: setarile fara kernel nou (P3, P4, P7, C6).
+# armdeck, audit de performanta, pasul 1: setarile fara kernel nou (P3, P4, P7, C6).
 # Rulare: sudo sh /tmp/op8-log/install-tune.sh
 set -eu
 S=$(dirname "$0")

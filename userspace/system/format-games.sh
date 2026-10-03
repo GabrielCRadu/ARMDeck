@@ -1,5 +1,5 @@
 #!/bin/sh
-# steamed-noodle: formateaza partitia Android "userdata" (219 GiB) ca ext4 pentru jocuri si o
+# armdeck: formateaza partitia Android "userdata" (219 GiB) ca ext4 pentru jocuri si o
 # monteaza in /home/gabriel/games. STERGE DEFINITIV datele Android vechi din userdata.
 # Android ramane reinstalabil prin MSM (rescrie tot, inclusiv userdata).
 # Rulare: sudo sh /tmp/op8-log/format-games.sh

@@ -1,5 +1,5 @@
 #!/bin/sh
-# steamed-noodle: biblioteca Steam (steamapps) sta pe partitia de jocuri si e montata (bind) in
+# armdeck: biblioteca Steam (steamapps) sta pe partitia de jocuri si e montata (bind) in
 # locul ei vechi, ca Steam sa vada exact aceeasi cale. Rulare: sudo sh /tmp/op8-log/bind-steamapps.sh
 set -eu
 die() { echo "OPRIT: $*"; exit 1; }

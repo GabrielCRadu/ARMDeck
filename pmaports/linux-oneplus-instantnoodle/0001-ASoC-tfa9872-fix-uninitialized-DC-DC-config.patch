@@ -1,4 +1,4 @@
-From: steamed-noodle <noreply@localhost>
+From: ARMDeck <noreply@localhost>
 Subject: [PATCH] ASoC: tfa9872: fix uninitialized DC-DC config and TFA9874 DCVOS register
 
 Two bugs in tfa987x_setup_dcdc(), the function that programs the boost
@@ -34,7 +34,7 @@ already match the driver.
 This does NOT add speaker protection. The driver still runs both TFA9874
 amps without NXP's protection algorithm and with current/voltage sense
 disabled, so long loud playback can still overheat the speakers. See
-docs/hardware-safety.md in the steamed-noodle repo.
+docs/hardware-safety.md in the ARMDeck repo.
 
 NOTE: upstream tfa9872.c uses CRLF line endings, so the hunk lines below
 end in CRLF. Do not let git or an editor convert this file (see the

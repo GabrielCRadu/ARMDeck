@@ -1,5 +1,5 @@
 #!/bin/sh
-# steamed-noodle: instaleaza un pachet de kernel construit pe PC (linux-oneplus-instantnoodle-*.apk)
+# armdeck: instaleaza un pachet de kernel construit pe PC (linux-oneplus-instantnoodle-*.apk)
 # si genereaza /boot/boot.img. NU scrie in partitii: boot.img se scrie in boot_b separat, cu fastboot
 # de pe PC, dupa verificare.
 #   sudo sh install-kernel.sh /home/gabriel/linux-oneplus-instantnoodle-6.16.7-r7.apk

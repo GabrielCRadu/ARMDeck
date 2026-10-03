@@ -1,5 +1,5 @@
 #!/bin/sh
-# op8-log (steamed-noodle, OnePlus 8): raport la fiecare pornire. Doar citire.
+# op8-log (armdeck, OnePlus 8): raport la fiecare pornire. Doar citire.
 # Scrie $OP8_DIR/boot-<data>-<boot_id>.txt cu:
 #   - motivele de pornire/oprire din PMIC-ul principal PM8150 (PON gen2, registrele 0x08C0-0x08CB;
 #     la gen2 adresele de gen1 0x0808-0x080D NU sunt motivele)

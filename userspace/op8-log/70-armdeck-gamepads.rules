@@ -1,4 +1,4 @@
-# steamed-noodle: grupul input are acces la controlere (hidraw, USB si Bluetooth) si la uinput,
+# armdeck: grupul input are acces la controlere (hidraw, USB si Bluetooth) si la uinput,
 # ca Steam din container (userul gabriel, grupul input) sa le poata folosi. Pe SteamOS face asta
 # steam-devices cu TAG uaccess, care cere o sesiune logata pe ecran; aici nu exista.
 # Numele dispozitivului HID e "bus:VENDOR:PRODUCT.n" (0003 = USB, 0005 = Bluetooth).

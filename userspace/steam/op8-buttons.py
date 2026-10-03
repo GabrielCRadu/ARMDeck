@@ -1,5 +1,5 @@
 #!/usr/bin/python3
-# op8-buttons (steamed-noodle): butoanele de volum ale telefonului, intr-un singur proces care
+# op8-buttons (armdeck): butoanele de volum ale telefonului, intr-un singur proces care
 # citeste ambele butoane deodata (Volume Up si Volume Down sunt dispozitive de intrare diferite).
 # Inlocuieste op8-volbtn (doua procese sh care se coordonau prin fisiere: combinatia mergea cam o
 # data din trei) si op8-steamkey.
@@ -84,7 +84,7 @@ def main():
         log("nu gasesc gpio-keys / pm8941_resin")
         return
     log("pornit: " + ", ".join(f"{d.name} ({d.path})" for d in devs.values()))
-    kbd = UInput({e.EV_KEY: [e.KEY_LEFTSHIFT, e.KEY_TAB]}, name="steamed-noodle Steam key",
+    kbd = UInput({e.EV_KEY: [e.KEY_LEFTSHIFT, e.KEY_TAB]}, name="ARMDeck Steam key",
                  bustype=e.BUS_VIRTUAL)
 
     down = {}            # cod -> momentul apasarii

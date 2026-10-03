@@ -1,5 +1,5 @@
 #!/bin/bash
-# steamed-noodle, etapa A: pregatirea containerului "steam" pentru Steam in modul Deck.
+# armdeck, etapa A: pregatirea containerului "steam" pentru Steam in modul Deck.
 # Ruleaza in container ca userul normal; sudo de aici e root doar in container.
 set -euo pipefail
 

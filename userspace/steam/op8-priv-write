@@ -1,8 +1,8 @@
 #!/bin/sh
-# steamed-noodle: /usr/bin/steamos-polkit-helpers/steamos-priv-write in containerul Steam.
+# armdeck: /usr/bin/steamos-polkit-helpers/steamos-priv-write in containerul Steam.
 # Steam scrie luminozitatea prin acest helper ("steamos-priv-write <cale> <valoare>"). Permite
 # doar luminozitatea ecranului; fisierul e scriibil de grupul video pe gazda (regula udev
-# 72-steamed-noodle-backlight.rules), iar userul gabriel e in video.
+# 72-armdeck-backlight.rules), iar userul gabriel e in video.
 case "$1" in
 	/sys/class/backlight/*/brightness) ;;
 	*) echo "steamos-priv-write: cale nepermisa: $1" >&2; exit 1 ;;

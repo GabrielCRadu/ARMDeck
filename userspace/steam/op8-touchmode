@@ -1,5 +1,5 @@
 #!/bin/sh
-# op8-touchmode (steamed-noodle): touch ca pe Steam Deck fara controler conectat.
+# op8-touchmode (armdeck): touch ca pe Steam Deck fara controler conectat.
 # Steam comuta modul touch al gamescope (STEAM_TOUCH_CLICK_MODE pe radacina Xwayland) doar din
 # Steam Input, adica doar cand are un controler. Aici urmarim aplicatia din fata
 # (GAMESCOPE_FOCUSED_APP): interfata Steam (769) sau nimic = 4 (touch real: glisare = scroll,

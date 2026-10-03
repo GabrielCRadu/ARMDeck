@@ -1,5 +1,5 @@
 #!/bin/sh
-# steamed-noodle: marcheaza slotul curent (b) ca "successful" la fiecare pornire, ca pe Android.
+# armdeck: marcheaza slotul curent (b) ca "successful" la fiecare pornire, ca pe Android.
 # Fara asta, bootloader-ul scade contorul de incercari la fiecare boot; dupa ~7 porniri slotul
 # devine "unbootable" si apare ecranul "current image (boot/recovery) have been destroyed"
 # (s-a intamplat pe 2026-10-02, reparat cu fastboot --set-active=b).

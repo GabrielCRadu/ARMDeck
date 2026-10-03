@@ -1,5 +1,5 @@
 #!/bin/sh
-# steamed-noodle: protectia termica dupa temperatura bateriei (op8-thermal) si o citire, doar
+# armdeck: protectia termica dupa temperatura bateriei (op8-thermal) si o citire, doar
 # citire, a pragurilor JEITA din PMIC-ul PM8150B (incarcarea la cald / la rece, nevazute pana acum).
 # Rulare: sudo sh /tmp/op8-log/install-thermal.sh
 set -eu

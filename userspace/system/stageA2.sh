@@ -1,5 +1,5 @@
 #!/bin/sh
-# steamed-noodle, etapa A, pasul 2: controlere pentru Steam si SSH pe WiFi doar de la PC.
+# armdeck, etapa A, pasul 2: controlere pentru Steam si SSH pe WiFi doar de la PC.
 set -eu
 # IP-ul PC-ului din reteaua WiFi (singurul de la care SSH-ul pe WiFi e permis)
 PC_IP=${1:?folosire: sudo sh stageA2.sh <IP-ul PC-ului>}
@@ -9,8 +9,8 @@ PC_IP=${1:?folosire: sudo sh stageA2.sh <IP-ul PC-ului>}
 #    Pe SteamOS face asta steam-devices cu TAG uaccess, care cere o sesiune pe ecran; aici
 #    nu exista, deci folosim grupul input.
 mkdir -p /etc/udev/rules.d
-cat > /etc/udev/rules.d/70-steamed-noodle-gamepads.rules <<'EOF'
-# steamed-noodle: acces pentru grupul input la controlere (hidraw) si la uinput
+cat > /etc/udev/rules.d/70-armdeck-gamepads.rules <<'EOF'
+# armdeck: acces pentru grupul input la controlere (hidraw) si la uinput
 # GameSir (Zikway), Valve, Microsoft, Sony, Nintendo, 8BitDo
 KERNEL=="hidraw*", ATTRS{idVendor}=="3537", MODE="0660", GROUP="input"
 KERNEL=="hidraw*", ATTRS{idVendor}=="28de", MODE="0660", GROUP="input"
@@ -29,7 +29,7 @@ cp /etc/nftables.d/40_ssh_usb_only.nft /root/40_ssh_usb_only.nft.bak
 cat > /etc/nftables.d/40_ssh_usb_only.nft <<EOF
 table inet filter {
 	chain input {
-		iifname "wlan*" ip saddr != $PC_IP tcp dport 22 drop comment "SSH only over USB or from the PC (steamed-noodle security-audit S2)"
+		iifname "wlan*" ip saddr != $PC_IP tcp dport 22 drop comment "SSH only over USB or from the PC (armdeck security-audit S2)"
 		iifname "wlan*" meta nfproto ipv6 tcp dport 22 drop comment "no SSH over IPv6 WiFi"
 	}
 }
@@ -43,6 +43,6 @@ systemctl restart nftables
 
 echo "== verificare"
 ls -l /dev/uinput
-cat /etc/udev/rules.d/70-steamed-noodle-gamepads.rules | grep -c MODE
+cat /etc/udev/rules.d/70-armdeck-gamepads.rules | grep -c MODE
 nft list chain inet filter input | grep -E "dport 22"
 echo "== GATA pasul 2"

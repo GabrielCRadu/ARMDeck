@@ -1,100 +1,81 @@
-# steamed-noodle
+<p align="center">
+  <img src="docs/images/armdeck-banner.png" alt="ARMDeck" width="640">
+</p>
 
-Research and build notes for turning a OnePlus 8 (codename `instantnoodle`, Qualcomm
-SM8250) into a dedicated Linux gaming handheld, running a mainline-adjacent kernel instead
-of Android.
+<p align="center">
+  <b>Turn a Snapdragon phone into a Linux gaming handheld.</b><br>
+  Mainline Linux, Steam in Game Mode, Windows games through Proton ARM64. No Android.
+</p>
+
+---
+
+## What is ARMDeck
+
+ARMDeck takes a Snapdragon phone, wipes Android, and boots it into a mainline Linux kernel
+(postmarketOS) with the Steam ARM64 client running in Game Mode under gamescope, the same
+compositor the Steam Deck uses. Windows games run through Proton ARM64 and FEX (an x86
+emulator). The phone becomes a dedicated console: no modem, no calls, no Android apps.
+
+The goal is not for one person to port every phone. ARMDeck provides the shared stack and a
+strict contribution process so the community can add and maintain support for more devices.
+
+## Supported devices
+
+Each device has a **profile**: its kernel, device tree, firmware packaging and tuning.
+
+| Device | Profile | SoC / GPU | Variants verified | Status |
+|---|---|---|---|---|
+| OnePlus 8 | `instantnoodle` | SM8250 / Adreno 650 | IN2013 (global) | Daily use: Steam, Proton games, sound, touch, buttons, 5 V charging |
+
+Phones sold under one name often differ by region (different modem, RF board, sometimes
+different panels or memory). A profile lists the exact variants that were tested on real
+hardware; anything else is unverified until someone reports it.
+
+## What works on the OnePlus 8
+
+- Steam ARM64 in Game Mode, full screen at the native 2400x1080 (patched gamescope).
+- Windows games through Proton 11.0-2 ARM64 (DXVK 2.7, Unity and 2D games run well).
+- Performance overlay (MangoHud), Steam menu on Volume Up + Volume Down.
+- Kernel with NTSYNC, full preemption and MGLRU.
+- Sound (behind a fixed volume ceiling for the speaker amplifier), touch, buttons.
+- USB-C limited to 5 V input, battery-temperature thermal guard.
+
+Known limits: Proton Experimental ARM64 (DXVK 3) fails on Adreno 650, native x86 Linux
+games need a missing x86 Mesa, Remote Play hits a Valve ARM64 client bug, and real deep
+sleep is still being worked on. Details in [docs/compat-perf-audit.md](docs/compat-perf-audit.md).
+
+## Read before flashing
+
+This wipes the phone. Read [docs/hardware-safety.md](docs/hardware-safety.md) first. Some
+community kernels for these phones contain settings that can damage hardware (for example a
+charger driver that programs the battery to about 4.87 V); ARMDeck documents which ones to
+avoid and why.
+
+## Contributing
+
+A contribution guide with strict safety rules, device profile templates and a device report
+tool is being written. Until then, open an issue with your phone model, exact variant
+(for example IN2013) and what you tested.
 
 ## How this is built
 
-This project is developed with AI assistance, using models including Claude Sonnet 5 and
-Claude Opus 5, doing the research, source verification, packaging, and build work
-alongside the author. Every non-obvious claim in `docs/verification-log.md` is traced to a
-primary source (a real file, a real build, a real API response) specifically so the work
-can be checked rather than taken on faith - that's the point of that file existing at all.
-If you think AI involvement automatically makes a project worthless, this isn't the repo
-for you; no need to spend your time on it.
-
-## Status
-
-Nothing has been flashed to real hardware yet. The kernel source compiles, the full device
-package set builds through the real postmarketOS packaging pipeline, and a bootable image
-has been assembled. None of that proves the phone actually boots it.
-
-A pre-flash audit on 2026-10-01 (phone in hand) found and fixed real problems before
-anything touched the device: a broken install procedure, firmware that never made it into
-the image, a speaker-amplifier driver configured from uninitialized memory, camera power
-rails forced on (one above the OnePlus voltage), and "charger support" patches that could not
-work because no driver existed for them. It also found that the only community charger
-driver for this PMIC programs the battery to about 4.87 V. Read
-`docs/hardware-safety.md` before flashing anything; the audit trail is in
-`docs/verification-log.md` section 9.
-
-Since 2026-10-01 the phone runs postmarketOS with the Steam ARM64 client in Game Mode, and
-Windows games (Unity, 2D) run through Proton 11 ARM64. Sleep, sound (behind a fixed volume
-ceiling), buttons and touch work; see `docs/gaming-stack.md` section 9 and `userspace/`.
-The resets during large downloads turned out to be a missing reserved-memory region in the
-Xo666 device tree: once RAM filled up, Linux wrote into secure-world memory and the phone reset
-instantly. Kernel patch `0003` restores it (verified on hardware on 2026-10-02).
-
-## Why this exists
-
-Mainline Linux support for this exact phone does not exist upstream, and is not
-officially packaged in postmarketOS. It only exists as unofficial, mutually incompatible
-community kernel forks. This repo tracks what was actually checked against those forks
-and the real toolchain, as opposed to a first-draft research document whose numeric
-claims turned out to only be partially correct.
+This project is developed with AI assistance (Claude models) doing research, source
+verification, packaging and build work alongside the author. Every non-obvious claim in
+[docs/verification-log.md](docs/verification-log.md) is traced to a primary source (a real
+file, a real build, a real measurement) so the work can be checked rather than taken on faith.
 
 ## Repo layout
 
-- `Gaming Mainline OnePlus 8.md` - the main architecture and how-to document (in
-  Romanian). Covers the kernel/device tree situation, the Vulkan/Mesa graphics stack,
-  Proton/FEX for running Windows games, power and thermal behavior, and the install flow.
-- `docs/verification-log.md` - the actual audit trail. Every claim in the main document,
-  checked against pmaports, the kernel forks, and a real build, with sources. This is
-  the file to read if you want to know what is actually confirmed versus assumed.
-- `docs/hardware-safety.md` - preparation, backups, the exact flashing procedure, and a
-  component-by-component list of what the Linux kernel touches on this phone, what could
-  physically go wrong, and how to test it (in Romanian).
-- `docs/build-environment.md` - how to set up a machine to build this (WSL2/Ubuntu, the
-  toolchain, the recorded traps) and how to reproduce the verified package and image builds.
-  Also has the current work queue and the list of things that must not be done yet.
-- `docs/gaming-stack.md` - research on SteamOS, Bazzite, Armada OS, pocknix-os and
-  SteamOS-ARM-Handhelds for this phone, then the results of running Steam on it: Steam ARM64
-  in a Fedora container on postmarketOS, Windows games through Proton 11 ARM64 + FEX, and the
-  TODO list (in Romanian).
-- `docs/performance-crash-audit.md` - performance and crash-prevention audit after the first
-  unexplained resets, read from the phone (in Romanian).
-- `docs/compat-perf-audit.md` - game compatibility and performance audit of the running system:
-  which Proton/DXVK works on the Adreno 650, why native x86 Linux games fail, D3D12 limits, and a
-  ranked list of kernel, gamescope and thermal changes (in Romanian).
-- `userspace/` - the scripts and configs that turn the flashed image into a Steam handheld:
-  Steam session in gamescope, safe sleep (no kernel suspend), power and volume buttons,
-  speakers behind a volume ceiling, Deck-style touch, A/B slot marking, diagnostic logging.
-  Start with `userspace/README.md`.
-- `reference/dts/` - the three known community device trees for this phone (from three
-  different forks), pulled for direct comparison. They disagree with each other on
-  several points, including which one has a working GPU versus a working battery
-  charger.
-- `pmaports/` - draft postmarketOS packages (kernel, device port, firmware, ALSA config)
-  for this phone. Not part of upstream pmaports. Built and verified locally through the
-  real `abuild`/`pmbootstrap` pipeline.
-- `tools/inline-doc-values.py` - a one-off script used to recover numeric values that had
-  been embedded as images in the original source document.
-- `CLAUDE.md` - writing-style rules used while working on this repo with an AI assistant.
-
-## Key finding so far
-
-No single kernel fork currently has a working GPU, battery charging, and clean USB-C
-orientation switching all at the same time. Only the WuerfelDev tree (and the official
-postmarketOS SM8250 kernel) has a PM8150B charger driver at all, and that driver currently
-programs an unsafe float voltage. The default kernel here is Xo666 (working GPU) with no
-charger driver, so charging is left to the PMIC hardware defaults. Details and sources are
-in `docs/verification-log.md` and `docs/hardware-safety.md`.
-
-## Target device
-
-OnePlus 8, global variant (IN2013/IN2010), codename `instantnoodle`. Android is wiped
-entirely. No modem, calls, or SMS.
+- `pmaports/` - postmarketOS packages for the device (kernel with ARMDeck patches, device
+  port, firmware, ALSA config). Not part of upstream pmaports.
+- `userspace/` - what turns the flashed image into a handheld: Steam session in gamescope,
+  buttons, overlay, thermal guard, power tests. Start with `userspace/README.md`.
+- `docs/` - safety, build environment, gaming stack research, audits and the verification
+  log. Some older documents are in Romanian.
+- `reference/dts/` - the three community device trees for the OnePlus 8, kept for comparison.
+- `tools/` - helper scripts.
+- `Gaming Mainline OnePlus 8.md` - the original research draft (Romanian). It contains errors
+  corrected in the verification log; do not treat it as a source of truth.
 
 ## License and attribution
 

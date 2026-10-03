@@ -1,0 +1,63 @@
+#!/bin/sh
+# op8-s2idle-test (armdeck): test de suspendare reala a kernelului (s2idle) cu trezire de
+# la ceasul PMIC (RTC) dupa SLEEP_S secunde. Pregateste telefonul ca sleep-ul (panou oprit prin
+# gamescope, aplicatii inghetate), suspenda, apoi repune totul si scrie ce s-a intamplat.
+# Daca nu se mai trezeste: Pornire + Volume Down tinute ~15 s = reset hardware din PMIC.
+#   sudo systemd-run --unit=op8-s2idle-test /bin/sh /home/gabriel/op8-s2idle-test [secunde]
+# Rezultat: /var/log/op8/s2idle-test-<data>.txt
+SLEEP_S=${1:-60}
+U=/sys/fs/cgroup/user.slice/user-10000.slice/user@10000.service
+BL=$(ls -d /sys/class/backlight/* | head -1)
+BAT=/sys/class/power_supply/bq27411-0
+RTC=/sys/class/rtc/rtc0
+QS=/sys/kernel/debug/qcom_stats
+OUT=/var/log/op8/s2idle-test-$(date +%Y%m%d-%H%M%S).txt
+
+out() { echo "$*" >> "$OUT"; logger -t op8-s2idle-test -- "$*"; }
+gsctl() { su -s /bin/sh gabriel -c "XDG_RUNTIME_DIR=/run/user/10000 gamescopectl $*" >/dev/null 2>&1; }
+stats() {
+	for f in "$QS"/aosd "$QS"/cxsd "$QS"/ddr; do
+		[ -f "$f" ] || continue
+		out "  qcom_stats $(basename "$f"): $(tr '\n' ' ' < "$f" | tr -s ' ')"
+	done
+	for f in success fail last_failed_dev last_failed_errno last_failed_step last_hw_sleep total_hw_sleep; do
+		[ -r /sys/power/suspend_stats/$f ] && out "  suspend_stats $f: $(cat /sys/power/suspend_stats/$f)"
+	done
+}
+
+old_bl=$(cat "$BL/brightness")
+restore() {
+	trap - EXIT INT TERM
+	for c in "$U/app.slice" "$U/user.slice"; do echo 0 > "$c/cgroup.freeze"; done
+	sleep 1
+	gsctl drm_sleep_internal_screen 0
+	echo "$old_bl" > "$BL/brightness"
+	rm -f /run/op8-standby.active
+	out "restaurat $(date '+%T'): luminozitate $(cat "$BL/brightness"), panou $(cat /sys/class/drm/card1-DSI-1/dpms)"
+}
+trap restore EXIT INT TERM
+
+out "op8-s2idle-test $(date '+%F %T'), kernel $(uname -v | cut -c1-40), mem_sleep $(cat /sys/power/mem_sleep), usb online=$(cat /sys/class/power_supply/tcpm-source-psy-*/online)"
+echo 1 > /sys/power/pm_debug_messages 2>/dev/null
+touch /run/op8-standby.active
+echo 0 > "$BL/brightness"
+gsctl drm_sleep_internal_screen 1
+sleep 2
+for c in "$U/app.slice" "$U/user.slice"; do echo 1 > "$c/cgroup.freeze"; done
+sleep 1
+out "inainte: panou $(cat /sys/class/drm/card1-DSI-1/dpms), baterie $(cat $BAT/capacity)% $(cat $BAT/charge_now) uAh"
+stats
+
+echo 0 > "$RTC/wakealarm"
+echo "+$SLEEP_S" > "$RTC/wakealarm"
+t0=$(date +%s)
+c0=$(cat $BAT/charge_now)
+out "suspend s2idle $(date '+%T'), trezire RTC programata peste $SLEEP_S s"
+if echo freeze > /sys/power/state; then rc=0; else rc=$?; fi
+t1=$(date +%s)
+out "trezit $(date '+%T'): rc=$rc, $((t1 - t0)) s in suspendare, irq trezire $(cat /sys/power/pm_wakeup_irq 2>/dev/null)"
+c1=$(cat $BAT/charge_now)
+out "dupa: baterie $(cat $BAT/capacity)% $c1 uAh, consum mediu $(( (c0 - c1) * 3600 / ((t1 - t0) * 1000) )) mA (din incarcarea bateriei, pas 1 mAh)"
+stats
+dmesg | grep -i -E "PM: |suspend|resume|Freezing|Restarting|wakeup|s2idle|failed" | tail -40 >> "$OUT"
+echo 0 > /sys/power/pm_debug_messages 2>/dev/null

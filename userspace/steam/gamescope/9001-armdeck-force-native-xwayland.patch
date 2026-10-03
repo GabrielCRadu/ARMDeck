@@ -4,7 +4,7 @@
  				height = std::min<int>(height, currentOutputHeight);
  			}
  
-+			// steamed-noodle: Steam does not treat this EDID-less 2400x1080 phone panel as an
++			// armdeck: Steam does not treat this EDID-less 2400x1080 phone panel as an
 +			// internal screen and asks for a 1920x1080 Xwayland mode (pillarboxed UI, games capped
 +			// at 1920x1080). With GAMESCOPE_FORCE_NATIVE_XWAYLAND set, every Xwayland server keeps
 +			// the native output size, so Steam and its games see the whole panel.
@@ -12,7 +12,7 @@
 +			if ( s_bForceNativeXwayland && currentOutputWidth && currentOutputHeight )
 +			{
 +				if ( width != int( currentOutputWidth ) || height != int( currentOutputHeight ) )
-+					xwm_log.infof( "steamed-noodle: Xwayland mode request %dx%d -> native %ux%u", width, height, currentOutputWidth, currentOutputHeight );
++					xwm_log.infof( "armdeck: Xwayland mode request %dx%d -> native %ux%u", width, height, currentOutputWidth, currentOutputHeight );
 +				width = currentOutputWidth;
 +				height = currentOutputHeight;
 +			}

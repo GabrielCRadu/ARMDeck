@@ -1,0 +1,83 @@
+#!/bin/sh
+# op8-power-test (armdeck): masoara curentul din baterie in starile de sleep, fara
+# suspendarea kernelului. Fiecare stare adauga ceva peste cea dinainte, dureaza STAGE_S secunde,
+# iar media se face fara primele SETTLE_S secunde. La final repune totul cum era.
+# Telefonul trebuie sa fie SCOS din priza (altfel curentul de incarcare strica masuratoarea).
+# Rulare (ruleaza mai departe si dupa ce SSH-ul se pierde, cand se opreste WiFi-ul):
+#   sudo systemd-run --unit=op8-power-test /bin/sh /home/gabriel/op8-power-test
+# Rezultat: /var/log/op8/power-test-<data>.txt
+STAGE_S=${STAGE_S:-120}
+SETTLE_S=${SETTLE_S:-30}
+U=/sys/fs/cgroup/user.slice/user-10000.slice/user@10000.service
+CF=/sys/devices/system/cpu/cpufreq
+BL=$(ls -d /sys/class/backlight/* | head -1)
+BAT=/sys/class/power_supply/bq27411-0
+OUT=/var/log/op8/power-test-$(date +%Y%m%d-%H%M%S).txt
+
+out() { echo "$*" >> "$OUT"; logger -t op8-power-test -- "$*"; }
+gsctl() { su -s /bin/sh gabriel -c "XDG_RUNTIME_DIR=/run/user/10000 gamescopectl $*" >/dev/null 2>&1; }
+
+measure() {
+	name=$1
+	sleep "$SETTLE_S"
+	n=0; sum=0; min=0; max=-999999
+	end=$(( $(cut -d. -f1 /proc/uptime) + STAGE_S - SETTLE_S ))
+	while [ "$(cut -d. -f1 /proc/uptime)" -lt "$end" ]; do
+		i=$(( $(cat "$BAT/current_now") / 1000 ))
+		n=$((n + 1)); sum=$((sum + i))
+		[ "$i" -lt "$min" ] && min=$i
+		[ "$i" -gt "$max" ] && max=$i
+		sleep 2
+	done
+	out "$(printf '%-44s medie %5d mA  (min %5d, max %5d, %d citiri)  baterie %s%% %s mV' \
+		"$name" $((sum / n)) "$min" "$max" "$n" "$(cat $BAT/capacity)" $(( $(cat $BAT/voltage_now) / 1000 )))"
+}
+
+old_bl=$(cat "$BL/brightness")
+for p in policy0 policy4 policy7; do eval "old_$p=$(cat $CF/$p/scaling_max_freq)"; done
+
+restore() {
+	trap - EXIT INT TERM
+	rfkill unblock wlan 2>/dev/null; rfkill unblock bluetooth 2>/dev/null
+	systemctl kill -s CONT op8-sampler 2>/dev/null
+	for c in "$U/app.slice" "$U/user.slice"; do echo 0 > "$c/cgroup.freeze"; done
+	sleep 1
+	gsctl drm_sleep_internal_screen 0
+	for p in policy0 policy4 policy7; do eval "v=\$old_$p"; echo "$v" > "$CF/$p/scaling_max_freq"; done
+	echo "$old_bl" > "$BL/brightness"
+	rm -f /run/op8-standby.active
+	out "restaurat: luminozitate $(cat $BL/brightness), wifi $(rfkill list wlan | grep -c 'Soft blocked: no') deblocat"
+}
+trap restore EXIT INT TERM
+
+out "op8-power-test $(date '+%F %T'), kernel $(uname -v | cut -c1-40), usb online=$(cat /sys/class/power_supply/tcpm-source-psy-*/online)"
+[ "$(cat /sys/class/power_supply/tcpm-source-psy-*/online)" = 0 ] || out "ATENTIE: telefonul e in priza, masuratoarea include incarcarea"
+
+# op8-thermal si butoanele stau deoparte cat timp exista marcajul (ca in standby)
+touch /run/op8-standby.active
+
+measure "S0 ecran aprins, interfata Steam"
+
+echo 0 > "$BL/brightness"
+for c in "$U/app.slice" "$U/user.slice"; do echo 1 > "$c/cgroup.freeze"; done
+for p in policy4 policy7; do cat "$CF/$p/cpuinfo_min_freq" > "$CF/$p/scaling_max_freq"; done
+measure "S1 sleep-ul actual (iluminare 0, inghetat)"
+
+for c in "$U/app.slice" "$U/user.slice"; do echo 0 > "$c/cgroup.freeze"; done
+sleep 1
+gsctl drm_sleep_internal_screen 1
+sleep 2
+for c in "$U/app.slice" "$U/user.slice"; do echo 1 > "$c/cgroup.freeze"; done
+measure "S2 + panoul oprit (DPMS prin gamescope)"
+
+systemctl kill -s STOP op8-sampler
+cat "$CF/policy0/cpuinfo_min_freq" > "$CF/policy0/scaling_max_freq"
+measure "S3 + jurnalul pe pauza, nucleele mici la minim"
+
+rfkill block bluetooth
+measure "S4 + Bluetooth oprit"
+
+rfkill block wlan
+measure "S5 + WiFi oprit"
+
+out "gata $(date '+%T')"

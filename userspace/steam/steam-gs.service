@@ -1,5 +1,5 @@
 [Unit]
-Description=steamed-noodle: Steam (container Fedora) in gamescope pe ecranul telefonului
+Description=armdeck: Steam (container Fedora) in gamescope pe ecranul telefonului
 # cel mult 5 porniri pe minut, ca o eroare permanenta sa nu intre in bucla
 StartLimitIntervalSec=60
 StartLimitBurst=5

@@ -1,5 +1,5 @@
 #!/bin/sh
-# op8-thermal (steamed-noodle): protectie termica dupa temperatura bateriei.
+# op8-thermal (armdeck): protectie termica dupa temperatura bateriei.
 # Kernelul protejeaza doar procesorul (franare la 90 si 95 C, oprire la 110 C). Android franeaza
 # dupa temperatura carcasei si a bateriei, mult mai devreme; aici lipsea, iar un joc 3D a dus
 # bateria la 46,5 C (2026-10-02). Telefonul n-are senzor de carcasa; bateria (gauge-ul bq27411)

@@ -52,7 +52,7 @@ makedepends="
 #         never used more than 5 V over PD on Android. 5 V only (tested with
 #         a 45 W charger on 2026-10-02).
 #
-# steamed-noodle.config is merged over op8_defconfig: NTSYNC, preemption
+# armdeck.config is merged over op8_defconfig: NTSYNC, preemption
 # switchable at runtime (default full), MGLRU and the lockup detectors. See
 # docs/compat-perf-audit.md.
 #
@@ -70,14 +70,14 @@ source="
 	0002-arm64-dts-qcom-instantnoodle-match-PM8009-camera-rails-to-OEM.patch
 	0003-arm64-dts-qcom-instantnoodle-restore-removed_mem-reservation.patch
 	0004-arm64-dts-qcom-instantnoodle-limit-usb-c-sink-to-5V.patch
-	steamed-noodle.config
+	armdeck.config
 "
 builddir="$srcdir/mainline-instantnoodle-$pkgver"
 
 prepare() {
 	default_prepare
 	make ARCH="$_carch" LLVM=1 "$_config"
-	ARCH="$_carch" ./scripts/kconfig/merge_config.sh -m .config "$srcdir"/steamed-noodle.config
+	ARCH="$_carch" ./scripts/kconfig/merge_config.sh -m .config "$srcdir"/armdeck.config
 	make ARCH="$_carch" LLVM=1 olddefconfig
 	# merge_config.sh only warns when a requested value does not stick
 	local opt
@@ -117,9 +117,9 @@ package() {
 
 sha512sums="
 11390f07286a48176ab46d20cd3ed7e389af8605da3b7f9c0c70148f54c2e41194f1205a92fd039b906eade8804360d6b98a77c402a1459098287fa5581e7d89  linux-oneplus-instantnoodle-6.16.7.tar.gz
-64923403662972aceeadb0e927303bdffd7b69edf62d5369e1acdb06869a8eee879deed38156128150a5badbf10762804abd45be492742fde037b2963c883aa3  0001-ASoC-tfa9872-fix-uninitialized-DC-DC-config.patch
-5b4596a662651770bd815badfcf554d627a3b3939dc5e4ade26e73a7c06f5a70e234a58bd7e5c72cfbd1258c28d859079c79dba04ab1e31b0f2170d4750fd198  0002-arm64-dts-qcom-instantnoodle-match-PM8009-camera-rails-to-OEM.patch
-29a3a5c2bcc5828c4e27eab6ae73a9fb55f794c44905211b4845b71b95c9571fe44aecb21dde6830cfa757a26b846431ed957078852eb3fa5b77e728b13583c5  0003-arm64-dts-qcom-instantnoodle-restore-removed_mem-reservation.patch
-2e80a6b19ef4c66257633f2212dc3149c6dd351de9929b113bc7f02b3fb27bb328084e1a47034fe76fbe1a3e4380d0713ab5219a00fc8bcd6243b863df61199c  0004-arm64-dts-qcom-instantnoodle-limit-usb-c-sink-to-5V.patch
-73b23898d202dd749125f6e61485cbcd3048f4f8fd9a365567f06166a1c214813f9ef0a67caa09e9dada70075294da5ccd38125d24d1987375c9e8607988b3ca  steamed-noodle.config
+86ccf7699adb767d115dbaf4ffd1008f13af49cf9a92f6682c9ad79c8f0b66da56c03051c42fa32faca88ab44bacdb7a5adc12be141e3a73497ce72d78aa0779  0001-ASoC-tfa9872-fix-uninitialized-DC-DC-config.patch
+f7d5833df5a0bb696366b8d59b25150c053366676dac8e64a789a06b08b49ff6eba8da7d643bcda033ab58f94bdd15de4d7d7f1e49b4c8da5eff93f015687746  0002-arm64-dts-qcom-instantnoodle-match-PM8009-camera-rails-to-OEM.patch
+17b6c3bdfd080d255169bfba53b960177e0b6a7585b0c20a9c08124f2bf1f9d64ddb594c73dc5f2b9a49777b2615c5f4486c7212d163b40a0aa93ac20e4b5b34  0003-arm64-dts-qcom-instantnoodle-restore-removed_mem-reservation.patch
+81ca6a7dc10381f7f4c7f9886631b9f78ca9a775f61a9dd67b4319bace56b45a6bf7ba79b0d59adc00a94c3df3ef85d5ecb9fc6d2b21637b8764f20c46dea1dd  0004-arm64-dts-qcom-instantnoodle-limit-usb-c-sink-to-5V.patch
+1efc9b20d75aebc72b002d808e219abc45e8b31ea9818f2bd4e6eb062e03e8243225514903ed93b1c6e4df66f1f26d086073f7ea9b4f91eaf80b5124d27ab4bd  armdeck.config
 "

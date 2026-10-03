@@ -1,4 +1,4 @@
-From: steamed-noodle <noreply@localhost>
+From: ARMDeck <noreply@localhost>
 Subject: [PATCH] arm64: dts: qcom: sm8250-oneplus-instantnoodle: limit the USB-C sink to 5 V
 
 The connector node advertises PDO_VAR(5000, 12000, 5000) next to the 5 V

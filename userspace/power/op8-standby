@@ -1,5 +1,5 @@
 #!/bin/sh
-# op8-standby (steamed-noodle, OnePlus 8): "sleep" sigur, FARA suspendarea kernelului (s2idle
+# op8-standby (armdeck, OnePlus 8): "sleep" sigur, FARA suspendarea kernelului (s2idle
 # nu e testat pe kernelul nostru; daca nu se trezeste, ramane doar un reset fortat).
 # Steam -> dbus-send login1 Suspend -> systemd-suspend.service -> acest script (in locul
 # systemd-sleep). Ecran negru, aplicatiile userului inghetate, nucleele mari la frecventa

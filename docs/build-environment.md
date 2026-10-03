@@ -155,7 +155,7 @@ This reproduces what [`verification-log.md` §7.5](verification-log.md) recorded
 
 ```bash
 cd ~
-git clone https://github.com/GabrielCRadu/steamed-noodle.git
+git clone https://github.com/GabrielCRadu/armdeck.git
 git clone --depth 1 https://gitlab.postmarketos.org/postmarketOS/pmaports.git
 ```
 
@@ -165,7 +165,7 @@ The four packages in this repo's `pmaports/` are not part of upstream pmaports. 
 copied into a local pmaports checkout for `pmbootstrap` to see them:
 
 ```bash
-cp -r ~/steamed-noodle/pmaports/* ~/pmaports/device/testing/
+cp -r ~/armdeck/pmaports/* ~/pmaports/device/testing/
 ```
 
 ### 5.3 Initialize pmbootstrap against that checkout

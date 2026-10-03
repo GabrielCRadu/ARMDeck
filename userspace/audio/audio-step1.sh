@@ -1,5 +1,5 @@
 #!/bin/sh
-# steamed-noodle, sunet pasul 1: pachetele PipeWire lipsa si legatura UCM.
+# armdeck, sunet pasul 1: pachetele PipeWire lipsa si legatura UCM.
 # Profilul nostru e in ucm2/OnePlus/, dar ALSA il cauta dupa driver si nume de placa
 # (conf.d/sm8250/OnePlus8.conf); fara legatura, PipeWire nu creeaza nicio iesire.
 # Nu porneste niciun sunet. Rulare: sudo sh /tmp/op8-log/audio-step1.sh

@@ -1,5 +1,5 @@
 #!/bin/bash
-# steamed-noodle, etapa A: porneste clientul Steam ARM64 in modul Deck, in containerul "steam".
+# armdeck, etapa A: porneste clientul Steam ARM64 in modul Deck, in containerul "steam".
 # Il porneste steam-gamescope.sh (pe gazda), ca proces copil al lui gamescope.
 STEAM="$HOME/.local/share/Steam"
 CLIENT_DIR="$STEAM/steamrtarm64"

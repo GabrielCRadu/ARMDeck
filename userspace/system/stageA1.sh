@@ -1,5 +1,5 @@
 #!/bin/sh
-# steamed-noodle, etapa A, pasul 1: pachetele pentru test (GPU, gamescope, containere).
+# armdeck, etapa A, pasul 1: pachetele pentru test (GPU, gamescope, containere).
 # Doar adauga pachete noi. Pe telefon nu se ruleaza niciodata apk upgrade --prune / --available.
 set -eu
 

@@ -1,4 +1,4 @@
-// steamed-noodle: userul gabriel (Steam ruleaza in container, fara sesiune logata pe ecran)
+// armdeck: userul gabriel (Steam ruleaza in container, fara sesiune logata pe ecran)
 // poate suspenda (la noi: op8-standby, nu suspendarea kernelului), opri si reporni telefonul
 // fara parola, chiar daca sesiunile SSH tin blocaje de sleep. Fara regula, logind raspunde
 // "challenge" si Steam ramane blocat in "suspend operation in progress".

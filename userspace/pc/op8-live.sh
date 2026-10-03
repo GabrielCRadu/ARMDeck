@@ -1,5 +1,5 @@
 #!/bin/bash
-# op8-log pe PC (steamed-noodle): jurnalul telefonului live, esantioanele op8-sampler si un ping
+# op8-log pe PC (armdeck): jurnalul telefonului live, esantioanele op8-sampler si un ping
 # la fiecare secunda, cu ora PC-ului, in D:\op8-logs\<data>\. Nu depinde de discul telefonului.
 # Pauza dintre ultimul semn de viata si revenire spune cauza unui reset:
 # ~120 s de inghet = kernel panic (kernel.panic=120), mai putin = watchdog dupa o blocare.

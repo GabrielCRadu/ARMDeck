@@ -1,5 +1,5 @@
 #!/bin/bash
-# steamed-noodle: gamescope 3.16.29 (pachetul Alpine, aports community/gamescope) plus patch-ul
+# armdeck: gamescope 3.16.29 (pachetul Alpine, aports community/gamescope) plus patch-ul
 # 9001 (Xwayland ramane la dimensiunea nativa a panoului, orice ar cere Steam), construit pentru
 # aarch64 cu pmbootstrap, in WSL. Rezultat: gamescope-op8, de copiat pe telefon in ~/bin/
 # (fara instalare; steam-gamescope.sh il foloseste daca exista, altfel gamescope-ul din sistem).
@@ -18,9 +18,9 @@ for f in APKBUILD 0001-Fix-undefined-type-uint.patch system-deps.patch system-sp
 	curl -fsL -o "$D/$f" "$A/$f"
 done
 grep -q '^pkgver=3.16.29$' "$D/APKBUILD" || { echo "OPRIT: aports are alta versiune de gamescope; verifica patch-ul"; exit 1; }
-cp "$HERE/9001-steamed-noodle-force-native-xwayland.patch" "$D/"
+cp "$HERE/9001-armdeck-force-native-xwayland.patch" "$D/"
 sed -i 's/^pkgrel=.*/pkgrel=100/' "$D/APKBUILD"
-sed -i 's/^\t0001-Fix-undefined-type-uint.patch$/\t0001-Fix-undefined-type-uint.patch\n\t9001-steamed-noodle-force-native-xwayland.patch/' "$D/APKBUILD"
+sed -i 's/^\t0001-Fix-undefined-type-uint.patch$/\t0001-Fix-undefined-type-uint.patch\n\t9001-armdeck-force-native-xwayland.patch/' "$D/APKBUILD"
 sed -i 's/^arch=/options="!check"\narch=/' "$D/APKBUILD"
 $PMB checksum gamescope
 $PMB -y --no-cross build --arch aarch64 --force gamescope

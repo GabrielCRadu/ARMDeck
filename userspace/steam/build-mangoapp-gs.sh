@@ -1,5 +1,5 @@
 #!/bin/bash
-# steamed-noodle: mangoapp (overlay-ul de performanta MangoHud) compilat pentru gamescope 3.16.29.
+# armdeck: mangoapp (overlay-ul de performanta MangoHud) compilat pentru gamescope 3.16.29.
 #
 # De ce: gamescope 3.16.29 trimite in mesajul catre mangoapp campurile app_frametime_ns si
 # visible_frametime_ns in ordine inversa fata de MangoHud (0.7.1 din Alpine, 0.8.x, master).
@@ -36,7 +36,7 @@ P=src/app/mangoapp_proto.h
 [ "$(grep -c 'uint64_t app_frametime_ns;' $P)" = 1 ] || { echo "OPRIT: app_frametime_ns neasteptat in $P"; exit 1; }
 # schimba intre ele cele doua declaratii (pozitiile raman, numele se inverseaza)
 awk '
-	/uint64_t visible_frametime_ns;/ { sub(/visible_frametime_ns;/, "app_frametime_ns; /* steamed-noodle: ordinea din gamescope 3.16.29 */"); print; next }
+	/uint64_t visible_frametime_ns;/ { sub(/visible_frametime_ns;/, "app_frametime_ns; /* armdeck: ordinea din gamescope 3.16.29 */"); print; next }
 	/uint64_t app_frametime_ns;/ { sub(/app_frametime_ns;/, "visible_frametime_ns;"); print; next }
 	{ print }' "$P" > "$P.new"
 mv "$P.new" "$P"

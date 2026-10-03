@@ -1,5 +1,5 @@
 #!/bin/sh
-# steamed-noodle: muta tot directorul Steam pe partitia de jocuri si il monteaza (bind) la aceeasi
+# armdeck: muta tot directorul Steam pe partitia de jocuri si il monteaza (bind) la aceeasi
 # cale (~/.local/share/Steam). Steam calculeaza spatiul liber pe directorul lui de instalare, nu
 # pe steamapps: cu doar steamapps montat de pe partitia de jocuri (bind-steamapps.sh), Steam vedea
 # partitia de sistem (13 GB, ~3 GB liberi) si putea refuza jocurile mari.

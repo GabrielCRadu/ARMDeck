@@ -1,5 +1,5 @@
 #!/bin/sh
-# steamed-noodle: test pentru resetarile "warm" din TrustZone. Dezactiveaza managementul de energie
+# armdeck: test pentru resetarile "warm" din TrustZone. Dezactiveaza managementul de energie
 # al UFS (oprirea ceasului, schimbarea frecventei, hibernarea automata a legaturii) la fiecare
 # pornire. UFS ramane la frecventa maxima; costa putin consum in plus.
 # Anulare: sudo systemctl disable op8-ufs-nopm && sudo reboot

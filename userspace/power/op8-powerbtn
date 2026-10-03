@@ -1,5 +1,5 @@
 #!/bin/sh
-# op8-powerbtn (steamed-noodle): butonul de pornire ca pe Steam Deck (steamos-powerbuttond):
+# op8-powerbtn (armdeck): butonul de pornire ca pe Steam Deck (steamos-powerbuttond):
 # apasare scurta = steam://shortpowerpress (Steam face sleep), apasare lunga (>= 1 s) =
 # steam://longpowerpress (meniul de alimentare). In standby, de trezire se ocupa op8-standby;
 # 3 secunde dupa trezire butonul se ignora, ca apasarea de trezire sa nu ceara alt sleep.

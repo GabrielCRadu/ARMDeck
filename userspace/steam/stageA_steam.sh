@@ -1,5 +1,5 @@
 #!/bin/bash
-# steamed-noodle, etapa A: clientul Steam ARM64 nativ, in containerul distrobox "steam".
+# armdeck, etapa A: clientul Steam ARM64 nativ, in containerul distrobox "steam".
 # Aceeasi metoda ca pocknix-os (packages/shared/pocknix-steam/pocknix-steam-install), plus
 # verificarea sumelor de control. Ruleaza ca userul normal, in container, fara sudo.
 #   faza 1: descarca si verifica runtime-ul si clientul

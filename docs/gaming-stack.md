@@ -519,7 +519,7 @@ Rezolvate tot pe 2026-10-02, mai târziu:
   gamescope îl anunță intern, și cere la fiecare pornire Xwayland 1920x1080
   (`GAMESCOPE_XWAYLAND_MODE_CONTROL = 0, 1920, 1080, 0`); o cerere de 2400x1080 trimisă din
   afară e anulată imediat. Soluția: gamescope 3.16.29 din Alpine plus patch-ul
-  `userspace/steam/gamescope/9001-steamed-noodle-force-native-xwayland.patch`: cu
+  `userspace/steam/gamescope/9001-armdeck-force-native-xwayland.patch`: cu
   `GAMESCOPE_FORCE_NATIVE_XWAYLAND`, orice cerere de mod Xwayland devine dimensiunea nativă.
   Construit cu `build-gamescope-op8.sh` (pmbootstrap, sub qemu: crossdirect eșua cu „cannot
   execute cc1”), rulat din `~/bin/gamescope-op8` fără instalare; `steam-gamescope.sh` îl

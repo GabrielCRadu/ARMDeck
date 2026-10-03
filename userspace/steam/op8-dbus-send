@@ -1,5 +1,5 @@
 #!/bin/sh
-# steamed-noodle: adaptor pentru dbus-send in containerul Steam (/usr/local/bin/dbus-send).
+# armdeck: adaptor pentru dbus-send in containerul Steam (/usr/local/bin/dbus-send).
 # Steam suspenda/opreste/reporneste cu "dbus-send --system ... login1.Manager.Suspend boolean:true".
 # logind refuza simplul Suspend cat timp exista blocaje (pe postmarketOS fiecare sesiune SSH tine
 # "inhibit=sleep"): BlockedByInhibitorLock, iar Steam ramane cu ecranul negru. Aici Suspend,
