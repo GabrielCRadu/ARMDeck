@@ -155,7 +155,7 @@ This reproduces what [`verification-log.md` §7.5](verification-log.md) recorded
 
 ```bash
 cd ~
-git clone https://github.com/GabrielCRadu/armdeck.git
+git clone https://github.com/GabrielCRadu/ARMDeck.git
 git clone --depth 1 https://gitlab.postmarketos.org/postmarketOS/pmaports.git
 ```
 
