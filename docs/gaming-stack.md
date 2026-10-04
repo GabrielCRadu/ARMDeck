@@ -473,7 +473,10 @@ was running (udev rules + `udevadm trigger` + restarting nftables).
     policy engine uses 500 ms). Result: the phone stays USB host and gets PD 5 V / 2 A from the X3
     (the X3 also offers 9 V / 1.5 A, refused by the 5 V-only sink PDOs); the controller and the
     X3 fan work, and the battery gains about 0.1 A in the Steam interface. Use: charger into the
-    X3 first, then the phone. Now kernel patch 0007 (r11).
+    X3 first, then the phone. Now kernel patch 0007 (r11). The other order (charger after the
+    phone) cannot be fixed from the phone: the X3 ignores a swap the phone asks for, and a
+    software re-seat only charged for 2-3 s (2026-10-05, see lessons-learned.md); GameSir's FAQ
+    gives the same order for Android.
 18. **Steam's volume indicator in the bottom-left corner (optional):** Steam has no position
     setting. Options: Decky Loader + CSS Loader (untested in the ARM container) or our own
     indicator in a gamescope overlay, with the volume changed through a separate filter stage
@@ -508,6 +511,15 @@ was running (udev rules + `udevadm trigger` + restarting nftables).
     drm_sleep_internal_screen 1`, 2 s, then `0` cleared it without a reboot. The DSI link was too
     slow for 90 Hz (521 Mbps per lane); kernel r11 runs it at the vendor rate (651.78 Mbps) and the
     boot-time `dsi_err_worker` lines dropped from 13 to 1. Not seen on r11 so far.
+    **2026-10-05, r11 (parked by the maintainer, to fix later):** coloured flicker linked to
+    brightness changes. Steam's auto-dim gave 17 s of bursts of `dsi_err_worker: status=4`
+    (`DSI_ERR_STATE_FIFO` in 6.16's `dsi_host.c`; status 5 = FIFO + timeout), and moving the
+    brightness slider fast gives a slight coloured flicker (no new `dsi_err` lines that time).
+    Earlier, `steam-gs.log` had `write /sys/class/backlight/ae94000.dsi.0/brightness failed,
+    errno = 110` (the panel's brightness command timed out). 109 `dsi_err` lines in 4.6 h,
+    the first ones 35 s after boot. Leads: how the panel driver sends the brightness command
+    (low-power or high-speed mode, versus the vendor driver) while frames stream; coalescing
+    Steam's many small brightness steps. Workaround meanwhile: turn off Steam's screen dimming.
 21. **Refresh rate the user can change (60 / 90 Hz).** Kernel patch 0006 of r9 ran the panel at
     60 Hz by default, with 90 Hz only through the boot option
     `panel_samsung_amb655uv01.refresh=90`. Wanted: switching from Steam (the refresh-rate slider
@@ -542,8 +554,15 @@ was running (udev rules + `udevadm trigger` + restarting nftables).
     bug, fixed in Linux 7.0-rc4 by the series "usb: gadget: Fix net_device lifecycle with
     device_move" (v2, March 2026), missing from 6.16.7. Workaround in place:
     `armdeck-usb-gadget-off` removes the gadget at boot, and `op8-tune` sets `panic_on_oops=1`,
-    `panic=10`. To do: backport the fix as a kernel patch, then capture why the port flips at boot
-    inside the X3 (tcpm log).
+    `panic=10`. **Fixed in kernel r12 (2026-10-05, test image on boot_b):** patches 0008-0010
+    backport the fix and two follow-ups; with the gadget active again
+    (`armdeck-usb-gadget-off` disabled for the test), PC cable then into the X3 gave no Oops and
+    `usb0` moved to `/sys/devices/virtual/net/`. Booting inside the X3 with its charger connected
+    (the other trigger) also passed: one boot, no Oops, charging and the controller working, the
+    Steam interface up. The gadget-off workaround is not needed from r12 on (left disabled, so SSH
+    over the USB cable works again); `panic_on_oops` stays as a safety net. Still to do: install
+    the r12 package into `/boot` (the kernel runs from the test image on boot_b), and capture why
+    the port flips at boot inside the X3 (tcpm log).
 24. **Steam started before the clock was set.** The phone has no usable real-time clock, so the
     date is 1970 until NTP answers (about 40 s after boot on WiFi). Steam started then fails its
     TLS connections and its interface may never appear. Fixed in `steam-gs.service`: it waits
@@ -564,7 +583,9 @@ was running (udev rules + `udevadm trigger` + restarting nftables).
     `/run/user/10000`; every game runs the MangoHud layer hidden (`MANGOHUD=1`,
     `MANGOHUD_CONFIG=read_cfg,preset=0,no_display,...`, set in `steam-in-container.sh`), which
     reloads the file when it changes. Tested in Tomb Raider: 30, 18, 45 and off follow the slider
-    live, with no felt input delay.
+    live, with no felt input delay. At 30 fps the frame time graph is almost flat (small spikes at
+    a regular interval, source not yet known) and the phone draws 6.4 W, against more than 8 W at
+    about 35 fps uncapped.
 26. **Picture on a TV or monitor through a USB-C to HDMI dongle (to test).** First find out which
     kind of dongle it is. A plain USB-C to HDMI adapter needs DisplayPort over USB-C (alt mode):
     the OnePlus 8 never offered video out on Android, so check whether the board wires it and
@@ -572,6 +593,27 @@ was running (udev rules + `udevadm trigger` + restarting nftables).
     picture. A DisplayLink adapter (a USB graphics chip) needs the `evdi` kernel module and
     DisplayLink's closed driver instead. Then: does gamescope pick up the second output, and does
     the X3 still charge and work at the same time.
+27. **Bluetooth headphones (Galaxy Buds3 Pro): done on 2026-10-05.** Needed
+    `pipewire-spa-bluez` (now in `audio-step1.sh`) and `51-op8-bluetooth.conf` (no Hands-Free
+    profile, which the kernel cannot serve without RFCOMM and which stopped the headphones from
+    connecting by themselves). A2DP with AAC; they connect by themselves when taken out of the
+    case; after a "Disconnect" from Steam they need a trip to the case. Microphone not wanted.
+    Optional, later: the delay in games is noticeable (mostly the headphones' own buffer). With
+    `CONFIG_BT_RFCOMM=m` in a later kernel, try Samsung's low-latency "Gaming mode":
+    it is switched on the headphones through their serial (SPP) protocol, which
+    [GalaxyBudsClient](https://github.com/timschneeb/GalaxyBudsClient) implements for the Buds3
+    Pro (`Features.GamingMode`, message `GAME_MODE = 135`); a small script could send that one
+    message. Not yet known whether it lowers the delay with a non-Samsung phone.
+28. **`postmarketos-mkinitfs` stuck in an apk error state.** Every `apk add` reports "1 error"
+    and exits non-zero (`apk fix --simulate` would reinstall it). Find out why its script failed
+    before letting apk reinstall it: it writes the boot files in `/boot`.
+29. **Undervolting (research only, suggested by the maintainer 2026-10-05).** Lower voltages at the
+    same clocks would mean less heat, so op8-thermal would limit later and less. Open questions
+    before anything is tried: on SM8250 the CPU voltages come from the clock firmware's tables
+    (qcom-cpufreq-hw, with hardware CPR adjusting them per chip) and the GPU picks power levels
+    through RPMh, so Linux may not be able to set a voltage at all; what Android kernels for this
+    chip (and ROCKNIX/Armada) do, if anything; and how to test stability without risking data.
+    Hardware rule: nothing outside the vendor's tables, and only after checking the sources.
 
 Also solved on 2026-10-02, later:
 

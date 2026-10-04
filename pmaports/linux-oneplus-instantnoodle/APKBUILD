@@ -7,7 +7,7 @@ maintainer=""
 _flavor="oneplus-instantnoodle"
 pkgname=linux-$_flavor
 pkgver=6.16.7
-pkgrel=11
+pkgrel=12
 pkgdesc="OnePlus 8 (instantnoodle) mainline kernel, Xo666 fork"
 arch="aarch64"
 _carch="arm64"
@@ -60,12 +60,22 @@ makedepends="
 #   0006: the 90 Hz mode drove the DSI link at 521 Mbps per lane, because
 #         mainline derives the link rate from the mode; OnePlus runs
 #         652.8 Mbps. A wider horizontal porch (not sent to this
-#         command-mode panel) gives 651.78 Mbps. UNTESTED on hardware as
-#         of 2026-10-04 (test image r11).
+#         command-mode panel) gives 651.78 Mbps. Tested on hardware as
+#         test image r11 (2026-10-04).
 #   0007: tcpm sent a hard reset when the GameSir X3 Pro sent its source
 #         capabilities 337 ms after a power role swap (default wait
 #         310 ms), which broke pass-through charging. Wait 620 ms, the USB
 #         PD maximum (tested as DTB-only image r8w on 2026-10-04).
+#   0008-0010: upstream USB gadget fixes (Linux 7.0-rc4 and later, Cc
+#         stable), backported. When the USB port went from device to host
+#         mode (phone moved from a PC cable or charger into the GameSir
+#         X3), the NCM network device outlived its gadget and the next
+#         interface listing read freed memory (Oops in rtnl_fill_ifinfo,
+#         network lock held, everything hung; seen twice on 2026-10-04).
+#         0008 is adapted to this tree's goto-based ncm_bind() (see its
+#         header); 0009 and 0010 fix a NULL dereference and a race that the
+#         same series exposed. Tested on hardware on 2026-10-05 (test image
+#         r12): PC cable then into the X3, and a boot inside the X3, no Oops.
 #
 # armdeck.config is merged over op8_defconfig: NTSYNC, preemption
 # switchable at runtime (default full), MGLRU and the lockup detectors. See
@@ -88,6 +98,9 @@ source="
 	0005-arm64-dts-qcom-instantnoodle-camera-and-modem-off.patch
 	0006-drm-panel-samsung-amb655uv01-oem-dsi-link-rate.patch
 	0007-arm64-dts-qcom-instantnoodle-wait-longer-for-source-caps.patch
+	0008-usb-gadget-f_ncm-fix-net_device-lifecycle-with-device_move.patch
+	0009-usb-gadget-u_ether-fix-null-pointer-deref-in-eth_get_drvinfo.patch
+	0010-usb-gadget-u_ether-fix-race-between-gether_disconnect-and-eth_stop.patch
 	armdeck.config
 "
 builddir="$srcdir/mainline-instantnoodle-$pkgver"
@@ -142,5 +155,8 @@ f7d5833df5a0bb696366b8d59b25150c053366676dac8e64a789a06b08b49ff6eba8da7d643bcda0
 593d0e489e45b6a0631e67ccd0b044c37a965bda7a3f2ac7c0229425ba5e4aaecb70843ebf7ea5e342f2d935b32581df849e34d1d96b689a3981445af3f309df  0005-arm64-dts-qcom-instantnoodle-camera-and-modem-off.patch
 65778bd911a3c9b6cbbfbc1218a1cd36efbc37485381eb8f789341fc75c954541b77a6a0a6c09964f1252bc5a88a5ed76805f5423f47890c9748469693c0fa93  0006-drm-panel-samsung-amb655uv01-oem-dsi-link-rate.patch
 ee78f07999b4a9763b31068f375ab0d985e4dd66c85b0a2c0fd2df8c00eb45b8c3d7899268c1d8045a5e39f4edbad2d42cb6edd4f918b0a9c92c75ab8f18ca19  0007-arm64-dts-qcom-instantnoodle-wait-longer-for-source-caps.patch
+2e6f8ac4c58df7ae7ecfc222d733bae7b577d1bf91bae7ccd5d3ea08558b65941e73599917c1cd027c4280a0fbb7d9d01774fb7c3f96a958e978e29687071522  0008-usb-gadget-f_ncm-fix-net_device-lifecycle-with-device_move.patch
+6d9614935289ebca330bce642e6a6ea4c7957a28dea910504c10738a9265d598a344f4acae5cd336a014b82a596565bb341e8f212b518a0ee556d69cf6977f92  0009-usb-gadget-u_ether-fix-null-pointer-deref-in-eth_get_drvinfo.patch
+61324d541a218481cac5ac51f5005b48131949041d09bb82e2adabe0ef7783381884c314f1a2e3c90d1e4e6af44dd7848b76393c26e225681548be7724f18934  0010-usb-gadget-u_ether-fix-race-between-gether_disconnect-and-eth_stop.patch
 1efc9b20d75aebc72b002d808e219abc45e8b31ea9818f2bd4e6eb062e03e8243225514903ed93b1c6e4df66f1f26d086073f7ea9b4f91eaf80b5124d27ab4bd  armdeck.config
 "

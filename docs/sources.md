@@ -72,6 +72,9 @@ To add a source, add a row; to stop following one, delete its row.
 | [Podman](https://github.com/containers/podman) | `releases` | The container engine under distrobox. |
 | [PipeWire](https://gitlab.freedesktop.org/pipewire/pipewire) | `tags: ^[0-9]+\.[0-9]+\.[0-9]+$` | Audio server, including the filter chain that protects the speakers. |
 | [WirePlumber](https://gitlab.freedesktop.org/pipewire/wireplumber) | `tags: ^[0-9]+\.[0-9]+\.[0-9]+$` | Audio session manager (routing, volume). |
+| [gamesir-linux-tools](https://github.com/broroeror/gamesir-linux-tools) | `commits` | Linux configuration of GameSir controllers through their vendor HID protocol (G7 Pro, T4 today); watch for GameSir X3 Pro support (fan, pass-through charging). |
+| [SDL GameSir driver](https://github.com/libsdl-org/SDL) | `commits: src/joystick/hidapi/SDL_hidapi_gamesir.c` | SDL's GameSir support (G7 Pro 8K, Tarantula 8K so far); the X3 Pro may be added. |
+| [GalaxyBudsClient](https://github.com/timschneeb/GalaxyBudsClient) | `releases` | Implements the Galaxy Buds' own control protocol, including the low-latency Gaming mode we want to switch on (TODO 27). |
 
 Not followed automatically: single articles, issue threads and mailing list patches (for example
 the upstream USB gadget fix, merged for Linux 7.0-rc4). They are listed where they are used, in

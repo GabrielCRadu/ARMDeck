@@ -12,7 +12,12 @@ this page is the short version, so the same mistake is not made twice.
   secure world. `stress-ng --vm 4 --vm-bytes 8000M` reproduced it in 5 s without any disk activity.
   Lesson: an instant reset with an empty log points at memory the kernel must not touch; check the
   reserved-memory map against the vendor device tree first.
-- **Kernel Oops when the USB port switches from device to host (open, workaround in place).** The
+- **Kernel Oops when the USB port switches from device to host (fixed in r12, 2026-10-05).** Kernel
+  r12 carries the upstream fix and two follow-ups (patches 0008-0010, 0008 adapted to 6.16's
+  goto-based `ncm_bind()` from the 6.12-stable backport). Tested with the gadget active: PC cable,
+  then into the X3: `usb0` moved to `/sys/devices/virtual/net/`, `ip link` answered, no Oops; and
+  a boot inside the X3 with its charger connected went through cleanly. The gadget-off workaround
+  is no longer needed. History: the
   USB network gadget (`usb0`, SSH over the cable) outlives its parent device when the port goes from
   device mode (PC cable, charger) to host mode (GameSir X3). The next program that lists network
   interfaces reads freed memory in `rtnl_fill_ifinfo`, and the Oops keeps the network lock: WiFi,
@@ -95,6 +100,24 @@ this page is the short version, so the same mistake is not made twice.
   USB PD minimum), sent a hard reset and came back as a USB device, so the controller vanished;
   the X3 refuses a data role swap in that state. Lesson: capture the USB PD state machine log
   (tcpm, `op8-usbpd-capture`) before guessing.
+- **Charging when the charger goes into the X3 after the phone (not possible, 2026-10-05).** The X3
+  asks for the power role swap only when the phone is seated; it ignores a swap requested by the
+  phone (`echo sink > /sys/class/typec/port0/power_role`: the request is acknowledged, then no
+  answer for 60 ms, harmless). A software "re-seat" (port_type sink then dual, which opens the CC
+  lines for 100 ms, or repeated for 8 s) made the X3 swap and the phone charged for 2-3 s, then
+  the X3 swapped back by itself, and a later swap ended in a hard reset with the controller gone
+  until the phone was re-seated. GameSir's own FAQ says the same order problem exists on Android:
+  charger into the X3 first, wait for the fan, phone last. Also from the manual: S + D-pad Right
+  toggles pass-through charging (saved across restarts), S + D-pad Up/Down sets the cooler power,
+  and "Extreme Cold" needs a 9 V / 3 A charger. Lesson: read the accessory's FAQ before
+  engineering around it; the limit may be the accessory's.
+- **The X3 stuck as a USB host, controller gone (solved by power-cycling the X3, 2026-10-05).**
+  After the swap experiments above, every attach ended within 0.6 s: the X3's Request came with
+  the data role bit set to DFP (header 0x1062 instead of 0x1042), both ends claimed to be host,
+  and tcpm did an error recovery ("Data role mismatch"), forever. The X3 keeps its state while its
+  charger powers it, so re-seating the phone did not help; phone and charger out for ~15 s, then
+  charger, fan, phone, cleared it. Lesson: when an accessory has its own power, it can carry a bad
+  state across re-seats; power-cycle it before suspecting the phone.
 - **PD chargers could ask for 9 V (solved, patch 0004).** The device tree allowed sink PDOs up to
   12 V, while this phone never used PD above 5 V on Android. Now 5 V only.
 - **Cameras and modem drew power while unused (solved, patch 0005).** Every camera supply had to be
@@ -113,6 +136,25 @@ this page is the short version, so the same mistake is not made twice.
 - **Speakers quiet and earpiece quieter.** The TFA9874 amps are protected by a filter chain with a
   ceiling (now -18 dB) and the earpiece side lowered 3 dB; going louder needs a proper limiter
   first. Never test with a raw `aplay` on the host.
+- **Bluetooth headphones paired but never connected (solved, 2026-10-05).** bluetoothd
+  logged "a2dp-sink profile connect failed: Protocol not available": the PipeWire Bluetooth
+  plugin (`pipewire-spa-bluez`) was not installed, so nothing offered the audio profiles. After
+  `apk add pipewire-spa-bluez` and a WirePlumber restart, Galaxy Buds3 Pro play over A2DP with
+  AAC. The kernel has no RFCOMM (`CONFIG_BT_RFCOMM`), so the Hands-Free profile could never
+  connect, yet the phone advertised it and the headphones tried it first, so they did not
+  connect by themselves. `51-op8-bluetooth.conf` keeps only the audio roles (no Hands-Free; the
+  microphone is not wanted): now they connect by themselves when taken out of the case. After a
+  "Disconnect" from Steam they stop answering ("Host is down") until they go back in the case;
+  the page from the phone gets no answer, so it is the headphones' own behaviour. The delay in
+  games is noticeable (AAC, mostly the headphones' buffer). When they disconnect, the default
+  output falls back to "Speakers (protected)" by priority (2000; headphones 1010, raw speaker
+  100; checked 2026-10-05 with no sound playing), and WirePlumber remembers the headphones as
+  the chosen output, so it switches back to them when they reconnect.
+  Lesson: a Bluetooth device that pairs but does not connect usually means a missing profile
+  provider; read bluetoothd's log first.
+- **`apk add` fails although the package installs.** `postmarketos-mkinitfs` is stuck in an error
+  state from an earlier install, so every `apk add` ends with "1 error" and a non-zero exit, and
+  a command chained with `&&` after it never runs. Use `;` after `apk add` until that is fixed.
 - **Sound card sometimes missing after boot (open, TODO 16).** "AFE failed to vote" in about 5 of
   17 boots; a reboot fixes it.
 

@@ -6,6 +6,9 @@
 # interfaces hits freed memory in rtnl_fill_ifinfo. The Oops leaves the network lock held, so
 # WiFi, podman and the Steam session hang until a forced reboot. Upstream fix: "usb: gadget: Fix
 # net_device lifecycle with device_move" (Linux 7.0-rc4). See docs/gaming-stack.md, TODO 23.
+# NOT NEEDED from kernel r12 on, which carries that fix (patches 0008-0010, tested 2026-10-05):
+# keep the service disabled there (systemctl disable armdeck-usb-gadget-off), so SSH over the USB
+# cable works again. Kept for older kernels.
 #
 # Safe only while the gadget is still bound to the USB controller (device mode): unbind it, then
 # remove the NCM function, which unregisters usb0 while its parent device still exists. If the
