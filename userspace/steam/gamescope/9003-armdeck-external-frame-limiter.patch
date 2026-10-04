@@ -1,0 +1,90 @@
+armdeck: let an in-game limiter apply Steam's frame limit
+
+With ARMDECK_FPS_LIMIT_FILE set, gamescope stops enforcing Steam's frame limit
+(no vblank divisor for the app's frames, no limited refresh cycle for the WSI
+layer, and the limiter is not reported as engaged, so no client is switched to
+FIFO) and writes the requested limit to that file in frames per second
+(0 = no limit), computed like gamescope's own divisor. On the OnePlus 8 the
+built-in limiter gave input delay, and half the requested rate with DXVK;
+MangoHud's sleep-based fps_limit, fed from this file, gives a steady rate
+without the delay. Without the variable, gamescope behaves as upstream.
+
+--- a/src/steamcompmgr.cpp
++++ b/src/steamcompmgr.cpp
+@@ -6715,10 +6715,42 @@
+ 	return dst;
+ }
+ 
++// armdeck: with ARMDECK_FPS_LIMIT_FILE set, gamescope does not enforce Steam's frame limit itself.
++// Holding the app's frames for whole vblanks, and pacing the WSI layer (and DXVK) to the limited
++// refresh cycle, gave noticeable input delay and, with DXVK, half the requested frame rate on a
++// command-mode DSI panel. Instead the limit Steam asked for is written to that file, as frames
++// per second (0 = no limit, computed the same way as gamescope's own vblank divisor), and an
++// in-game, sleep-based limiter (MangoHud's fps_limit) applies it.
++static const char *armdeck_fps_limit_file()
++{
++	static const char *s_pszPath = getenv( "ARMDECK_FPS_LIMIT_FILE" );
++	return ( s_pszPath && *s_pszPath ) ? s_pszPath : nullptr;
++}
++
++static void armdeck_publish_fps_limit( float flFps )
++{
++	static float s_flLast = -1.0f;
++	const char *pszPath = armdeck_fps_limit_file();
++	if ( !pszPath || flFps == s_flLast )
++		return;
++	s_flLast = flFps;
++
++	std::string sTmp = std::string( pszPath ) + ".tmp";
++	FILE *pFile = fopen( sTmp.c_str(), "w" );
++	if ( !pFile )
++		return;
++	fprintf( pFile, "%.3f\n", flFps );
++	fclose( pFile );
++	rename( sTmp.c_str(), pszPath );
++}
++
+ static void
+ update_runtime_info()
+ {
+-	uint32_t limiter_enabled = g_nSteamCompMgrTargetFPS != 0 ? 1 : 0;
++	// armdeck: with an in-game limiter, the WSI layer, Mesa and DXVK are not told that gamescope's
++	// limiter is engaged: they would switch the game to FIFO, adding latency, and DXVK would
++	// recreate its swapchain at every change of the limit.
++	uint32_t limiter_enabled = g_nSteamCompMgrTargetFPS != 0 && !armdeck_fps_limit_file() ? 1 : 0;
+ 
+ 	// The file is a legacy fallback for clients without gamescope_limiter.
+ 	wlserver_set_frame_limiter_state( limiter_enabled );
+@@ -6780,6 +6812,9 @@
+ {
+ 	bool bSendCallback = true;
+ 
++	if ( armdeck_fps_limit_file() )
++		bShouldLimitFPS = false;
++
+ 	int nRefreshHz = gamescope::ConvertmHzToHz( g_nNestedRefresh ? g_nNestedRefresh : g_nOutputRefresh );
+ 	int nTargetFPS = g_nSteamCompMgrTargetFPS;
+ 
+@@ -10344,7 +10379,21 @@
+ 			int nRealRefreshmHz = g_nNestedRefresh ? g_nNestedRefresh : g_nOutputRefresh;
+ 			g_SteamCompMgrAppRefreshCycle = gamescope::mHzToRefreshCycle( nRealRefreshmHz );
+ 			g_SteamCompMgrLimitedAppRefreshCycle = g_SteamCompMgrAppRefreshCycle;
+-			if ( g_nSteamCompMgrTargetFPS )
++
++			if ( armdeck_fps_limit_file() )
++			{
++				float flArmdeckFps = 0.0f;
++				if ( g_nSteamCompMgrTargetFPS )
++				{
++					int nRealRefreshHz = gamescope::ConvertmHzToHz( nRealRefreshmHz );
++					int nTargetFPS = std::min<int>( g_nSteamCompMgrTargetFPS, nRealRefreshHz );
++					int nVblankDivisor = nTargetFPS > 0 ? nRealRefreshHz / nTargetFPS : 1;
++					if ( nVblankDivisor > 1 )
++						flArmdeckFps = nRealRefreshmHz / 1000.0f / nVblankDivisor;
++				}
++				armdeck_publish_fps_limit( flArmdeckFps );
++			}
++			else if ( g_nSteamCompMgrTargetFPS )
+ 			{
+ 				int nRealRefreshHz = gamescope::ConvertmHzToHz( nRealRefreshmHz );
+ 				int nTargetFPS = g_nSteamCompMgrTargetFPS;

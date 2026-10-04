@@ -19,7 +19,14 @@ export GAMESCOPE_FAKE_OUTPUT_MM=152x68
 # used: Alpine's mangoapp (0.7.1) does not understand gamescope 3.16.29's messages (see
 # build-mangoapp-gs.sh). "no_display" until Steam writes the first level, as in ChimeraOS
 # gamescope-session.
-export MANGOHUD_CONFIGFILE="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/mangohud.conf"
+# The file is in /tmp (tmpfs), not in /run/user: games also read it (the in-game MangoHud
+# limiter, see steam-in-container.sh), and Proton games run in Steam's runtime container
+# (pressure-vessel), which shares /tmp and the home directory but only a few sockets of
+# /run/user.
+MANGO_DIR=/tmp/armdeck-$(id -u)
+mkdir -p "$MANGO_DIR"
+chmod 700 "$MANGO_DIR"
+export MANGOHUD_CONFIGFILE="$MANGO_DIR/mangohud.conf"
 echo no_display > "$MANGOHUD_CONFIGFILE"
 
 # EDID for Steam: the DSI panel has no EDID, and without one Steam does not know the real
@@ -56,10 +63,19 @@ fi
 # --xwayland-count 2: Steam gets one Xwayland and games a second one. With -e and more than one
 # Xwayland, gamescope itself exports STEAM_MULTIPLE_XWAYLANDS=1 to Steam (UpdateCompatEnvVars()
 # in gamescope's main.cpp; ChimeraOS sets it too), so it is not set here or in the container.
+#
+# Frame Limit: gamescope-op8 with patch 9003 does not enforce Steam's limit itself (on this
+# device its limiter gave input delay, and half the rate with DXVK); it writes the requested
+# frames per second to ARMDECK_FPS_LIMIT_FILE, and op8-fpslimit + MangoHud in the game apply it
+# (see steam-in-container.sh). Only set for a binary that has the patch.
 GS=gamescope
 if [ -x /home/gabriel/bin/gamescope-op8 ]; then
 	GS=/home/gabriel/bin/gamescope-op8
 	export GAMESCOPE_FORCE_NATIVE_XWAYLAND=1
+	if grep -q ARMDECK_FPS_LIMIT_FILE "$GS" 2>/dev/null; then
+		export ARMDECK_FPS_LIMIT_FILE="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/armdeck-fps-limit"
+		echo 0 > "$ARMDECK_FPS_LIMIT_FILE"
+	fi
 fi
 exec "$GS" -W 2400 -H 1080 --xwayland-count 2 --backend drm \
 	--force-orientation right --default-touch-mode 4 -e -- \

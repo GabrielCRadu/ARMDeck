@@ -1,0 +1,52 @@
+#!/bin/bash
+# op8-fpslimit (armdeck): hands Steam's Frame Limit (Quick Access > Performance) to the in-game
+# MangoHud limiter, for every Vulkan game, while the Steam session lives.
+#
+# gamescope-op8 (patch 9003, ARMDECK_FPS_LIMIT_FILE) no longer enforces the limit itself; it
+# writes the requested frames per second to $ARMDECK_FPS_LIMIT_FILE (0 = no limit). Games run
+# with the MangoHud Vulkan layer (MANGOHUD=1, see steam-in-container.sh), hidden (no_display) and
+# reading Steam's MangoHud file ($MANGOHUD_CONFIGFILE, the one Steam writes the overlay level
+# to). This script keeps one "fps_limit=<n>" line in that file, also after Steam rewrites it;
+# MangoHud reloads the file by itself when it changes (inotify) and rebuilds its limiter, a sleep
+# before each frame like RTSS, without the input delay of gamescope's own limiter.
+#
+# Started by steam-in-container.sh in the background before "exec steam", so its parent becomes
+# the Steam process; when Steam exits, it exits too. It forks nothing in its loop (bash
+# builtins only; the wait is a read with a timeout on a private FIFO). Log: ~/op8-fpslimit.log
+CONF=${MANGOHUD_CONFIGFILE:?MANGOHUD_CONFIGFILE is not set}
+LIM=${ARMDECK_FPS_LIMIT_FILE:?ARMDECK_FPS_LIMIT_FILE is not set}
+LOG=$HOME/op8-fpslimit.log
+STEAM_PID=${OP8_PARENT_PID:-$PPID}
+PERIOD=0.5
+
+FIFO=${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/op8-fpslimit.$$
+mkfifo "$FIFO" || exit 1
+exec 3<>"$FIFO"
+rm -f "$FIFO"
+
+echo "$(date '+%F %T') started, Steam session = $STEAM_PID, limit file $LIM, MangoHud file $CONF" >> "$LOG"
+last=
+while kill -0 "$STEAM_PID" 2>/dev/null; do
+	want=0
+	[ -r "$LIM" ] && read -r want < "$LIM"
+	[ -n "$want" ] || want=0
+	if [ -f "$CONF" ]; then
+		have=
+		others=()
+		while IFS= read -r line || [ -n "$line" ]; do
+			case "$line" in
+				fps_limit=*) have=${line#fps_limit=} ;;
+				*) others+=("$line") ;;
+			esac
+		done < "$CONF"
+		if [ "$have" != "$want" ]; then
+			printf '%s\n' "${others[@]}" "fps_limit=$want" > "$CONF"
+			if [ "$want" != "$last" ]; then
+				echo "$(date '+%F %T') fps_limit=$want" >> "$LOG"
+				last=$want
+			fi
+		fi
+	fi
+	read -r -t "$PERIOD" -u 3 _
+done
+echo "$(date '+%F %T') stopped" >> "$LOG"

@@ -555,9 +555,23 @@ was running (udev rules + `udevadm trigger` + restarting nftables).
     pacing off (`GAMESCOPE_WSI_FRAME_LIMITER_AWARE=0`) gave 30 fps with noticeable input delay.
     MangoHud's in-game limiter (`dnf install mangohud` in the container, then
     `MANGOHUD=1 MANGOHUD_CONFIG=no_display,fps_limit=30,fps_limit_method=late %command%`, Steam's
-    limit off) gave a stable 30 fps with no delay the maintainer could feel. To do: drive MangoHud's
-    `fps_limit` from Steam's Frame Limit slider for every game (our gamescope build stops enforcing
-    the cap and hands the value on).
+    limit off) gave a stable 30 fps with no delay the maintainer could feel. **Solved on
+    2026-10-05**: Steam's Frame Limit slider now drives MangoHud's limiter in every Vulkan game.
+    `gamescope-op8` with patch 9003 (`ARMDECK_FPS_LIMIT_FILE`) no longer enforces the limit nor
+    reports its limiter as engaged (no forced FIFO), and writes the requested rate to a file;
+    `op8-fpslimit` copies it as `fps_limit` into Steam's MangoHud file, now in
+    `/tmp/armdeck-10000/` because Proton games run in pressure-vessel, which does not see
+    `/run/user/10000`; every game runs the MangoHud layer hidden (`MANGOHUD=1`,
+    `MANGOHUD_CONFIG=read_cfg,preset=0,no_display,...`, set in `steam-in-container.sh`), which
+    reloads the file when it changes. Tested in Tomb Raider: 30, 18, 45 and off follow the slider
+    live, with no felt input delay.
+26. **Picture on a TV or monitor through a USB-C to HDMI dongle (to test).** First find out which
+    kind of dongle it is. A plain USB-C to HDMI adapter needs DisplayPort over USB-C (alt mode):
+    the OnePlus 8 never offered video out on Android, so check whether the board wires it and
+    whether the mainline device tree has the DisplayPort controller enabled before expecting a
+    picture. A DisplayLink adapter (a USB graphics chip) needs the `evdi` kernel module and
+    DisplayLink's closed driver instead. Then: does gamescope pick up the second output, and does
+    the X3 still charge and work at the same time.
 
 Also solved on 2026-10-02, later:
 
@@ -587,7 +601,9 @@ Also solved on 2026-10-02, later:
   `userspace/steam/build-mangoapp-gs.sh` builds MangoHud 0.8.4 with gamescope's order, in the
   container (`ipc=host`, so it sees gamescope's message queue); `op8-mangoapp` starts it with the
   session, and gamescope no longer gets `--mangoapp`. Steam writes the level to
-  `/run/user/10000/mangohud.conf`. When gamescope goes back to the old order, the patch must go.
+  `/tmp/armdeck-10000/mangohud.conf` (until 2026-10-05 `/run/user/10000/mangohud.conf`, which
+  games in pressure-vessel cannot see). When gamescope goes back to the old order, the patch must
+  go.
 - **Full screen** (no black bars, games at 2400x1080): Steam stores the panel in its configuration
   as an **external** screen (`config.vdf`: `IsExternalDisplay 1`, "External: OnePlus 8"), although
   gamescope announces it as internal, and at every start asks for Xwayland at 1920x1080

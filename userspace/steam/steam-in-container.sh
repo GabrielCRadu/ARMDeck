@@ -41,8 +41,9 @@ export PROTON_LOG_DIR=/home/gabriel/proton-logs
 # the performance overlay: mangoapp-gs runs here, in the container (op8-mangoapp), and Steam
 # writes the chosen level (preset) to the shared file created by steam-gamescope.sh. The variables
 # are those of ChimeraOS gamescope-session-steam. Without a built mangoapp-gs, Steam does not get
-# them.
-MANGO_CONF="/run/user/$(id -u)/mangohud.conf"
+# them. The file is in /tmp so that games in pressure-vessel can read it too (see
+# steam-gamescope.sh).
+MANGO_CONF="/tmp/armdeck-$(id -u)/mangohud.conf"
 if [ -f "$MANGO_CONF" ] && [ -x /home/gabriel/games/build/mangoapp-gs ]; then
 	export MANGOHUD_CONFIGFILE="$MANGO_CONF"
 	export STEAM_USE_MANGOAPP=1
@@ -51,6 +52,18 @@ if [ -f "$MANGO_CONF" ] && [ -x /home/gabriel/games/build/mangoapp-gs ]; then
 	export STEAM_DISABLE_MANGOAPP_ATOM_WORKAROUND=1
 	# started right before "exec steam" (below), so its parent becomes the Steam process
 	START_MANGOAPP=1
+fi
+
+# Frame Limit from Quick Access for every Vulkan game, without input delay: gamescope-op8 (patch
+# 9003) writes Steam's requested limit to $ARMDECK_FPS_LIMIT_FILE instead of enforcing it,
+# op8-fpslimit copies it as fps_limit into Steam's MangoHud file, and the MangoHud layer in each
+# game (hidden: no_display, preset 0; read_cfg = read that file too) sleeps to that rate. The
+# control socket gets a per-process name so games never take mangoapp's. mangoapp itself is
+# started without these two variables (below), otherwise no_display would hide the overlay.
+if [ -n "${ARMDECK_FPS_LIMIT_FILE:-}" ] && [ -n "${START_MANGOAPP:-}" ]; then
+	export MANGOHUD=1
+	export MANGOHUD_CONFIG="read_cfg,preset=0,no_display,control=armdeck-game-%p,fps_limit_method=late"
+	START_FPSLIMIT=1
 fi
 
 # without LANG the X input method (XOpenIM) does not start
@@ -62,7 +75,8 @@ export LD_LIBRARY_PATH="$CLIENT_DIR:$STEAM/lib/aarch64-linux-gnu"
 # touch as on a Steam Deck, also without a controller (interface = real touch, games = click)
 /home/gabriel/op8-touchmode &
 
-[ -n "${START_MANGOAPP:-}" ] && /home/gabriel/op8-mangoapp &
+[ -n "${START_MANGOAPP:-}" ] && env -u MANGOHUD -u MANGOHUD_CONFIG /home/gabriel/op8-mangoapp &
+[ -n "${START_FPSLIMIT:-}" ] && /home/gabriel/op8-fpslimit &
 
 # the volume buttons: volume on release, continuous volume while held, and both together = the
 # Steam button (replaces the old op8-volbtn on the host; its service must stay disabled)

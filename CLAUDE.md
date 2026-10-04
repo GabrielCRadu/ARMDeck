@@ -46,6 +46,11 @@ maintainer's explicit OK at that moment.
    removing pointless losses (overhead, debug leftovers, bad defaults).
 5. **Final goal:** a stable, efficient system where gaming is genuinely pleasant, like a Steam
    Deck, where every menu and option works.
+6. **Sources are checked for news at least once a day** (set 2026-10-05): every outside project we
+   use is listed in [docs/sources.md](docs/sources.md). At the start of each working session run
+   `python tools/check-sources.py --if-older-than 20` and tell the maintainer, briefly, what is
+   relevant to ARMDeck (fixes for our chip, new versions of what we patch, ideas for other
+   devices). New sources the maintainer mentions go into that list.
 
 ## Project context
 

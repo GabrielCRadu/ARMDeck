@@ -53,6 +53,23 @@ this page is the short version, so the same mistake is not made twice.
   (sleep-based, like RTSS: `MANGOHUD=1 MANGOHUD_CONFIG=no_display,fps_limit=30,fps_limit_method=late`,
   with Steam's limit off and `dnf install mangohud` in the container) gave a stable 30 fps with no
   delay the maintainer could feel (Tomb Raider, 2026-10-04). Next: drive it from Steam's slider.
+- **Steam's slider driving MangoHud's limiter (solved, 2026-10-05).** gamescope patch 9003 hands the
+  requested limit to a file, `op8-fpslimit` copies it into Steam's MangoHud file, and every game
+  runs the MangoHud layer hidden with `read_cfg`. The first test showed no limit at all, although
+  the chain up to the MangoHud file worked (the log shows 45, 30, 18, 0 following the slider).
+  Cause: Proton ARM64 runs games in Steam's runtime container (pressure-vessel,
+  `SteamLinuxRuntime_4-arm64`), which shares `/tmp` and the home directory but only the bus,
+  PipeWire and Pulse sockets of `/run/user/10000`, so the game never saw `mangohud.conf`. The
+  inline test had worked because `fps_limit` was in the environment, not in the file. Found by
+  running a command inside the runtime (`SteamLinuxRuntime_4-arm64/run -- ls /run/user/10000`),
+  after a headless test (`gamescope --backend headless` + `vkcube --c 300` in the container,
+  timed) had shown that MangoHud, the file and the live reload all work. Fix: the file moved to
+  `/tmp/armdeck-10000/`. Also, 9003 had stopped gamescope's pacing but still reported the limiter
+  as engaged, so the gamescope WSI layer switched games to FIFO and DXVK recreated its swapchain
+  at every slider move; the patch now reports it off. Result: Tomb Raider follows the slider
+  (30, 18, 45, off) live, with no input delay the maintainer could feel. Lessons: a file shared
+  "with the container" is not necessarily shared with the game's container, check from inside
+  the runtime; and test a mechanism in isolation before blaming it.
 - **"-r 60" held everything at 60 fps while the panel ran at 90 Hz.** In this DRM setup the nested
   refresh option only paces the apps. Removed from `steam-gamescope.sh`.
 - **Black bars in every game (solved, gamescope patch 9001).** Steam does not treat the panel as an
