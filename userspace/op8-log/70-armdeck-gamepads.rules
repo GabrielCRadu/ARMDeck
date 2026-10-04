@@ -1,7 +1,8 @@
-# armdeck: grupul input are acces la controlere (hidraw, USB si Bluetooth) si la uinput,
-# ca Steam din container (userul gabriel, grupul input) sa le poata folosi. Pe SteamOS face asta
-# steam-devices cu TAG uaccess, care cere o sesiune logata pe ecran; aici nu exista.
-# Numele dispozitivului HID e "bus:VENDOR:PRODUCT.n" (0003 = USB, 0005 = Bluetooth).
+# armdeck: the input group gets access to controllers (hidraw, USB and Bluetooth) and to uinput,
+# so Steam in the container (the user gabriel, input group) can use them. On SteamOS
+# steam-devices does this with TAG uaccess, which needs a session logged in on the screen; there
+# is none here.
+# The HID device name is "bus:VENDOR:PRODUCT.n" (0003 = USB, 0005 = Bluetooth).
 # GameSir/Zikway 3537, Valve 28DE, Microsoft 045E, Sony 054C, Nintendo 057E, 8BitDo 2DC8
 KERNEL=="hidraw*", KERNELS=="*:3537:*", MODE="0660", GROUP="input"
 KERNEL=="hidraw*", KERNELS=="*:28DE:*", MODE="0660", GROUP="input"

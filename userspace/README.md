@@ -41,9 +41,9 @@ postmarketOS (musl, systemd)          distrobox container "steam" (Fedora 44, gl
 | 10 | `power/install-standby.sh`, `power/install-power2.sh` | polkit rule, `op8-standby` instead of kernel suspend, brightness writable by the `video` group | sudo |
 | 11 | `audio/audio-step1.sh` | `pipewire-pulse`, the filter plugins, the UCM link | sudo |
 | 12 | `audio/50-op8-speakers.conf` → `~/.config/pipewire/pipewire.conf.d/`, `audio/50-op8-wireplumber.conf` → `~/.config/wireplumber/wireplumber.conf.d/` | the protected speaker output and the S16LE, no-mmap format | user |
-| 13 | `steam/*.sh`, `steam/op8-touchmode`, `steam/op8-buttons.py`, `steam/op8-mangoapp`, `power/op8-powerbtn`, `op8-log/op8-top` → `~/`; the `.service` files → `~/.config/systemd/user/` | the Steam session and the user services | user, `systemctl --user enable --now ...` |
+| 13 | `steam/*.sh`, `steam/op8-touchmode`, `steam/op8-buttons.py`, `steam/op8-mangoapp`, `power/op8-powerbtn`, `op8-log/op8-top` → `~/`; the `.service` files → `~/.config/systemd/user/` | the Steam session and the user services; `op8-top` is for debugging only (two `top` runs and a `sync` every 2 s), leave its service disabled | user, `systemctl --user enable --now ...` |
 | 14 | `system/install-tune.sh` | GPU polling 16 ms, THP `madvise`, `CAP_SYS_NICE` for gamescope, `/boot` read-only | sudo |
-| 15 | in the container, as root: `dnf install python3-evdev pulseaudio-utils` | `op8-buttons.py`: both volume buttons read together, volume on release and repeating while held, Volume Up + Volume Down = Steam button (Shift+Tab, which Steam registers with gamescope), also in games | root in the container |
+| 15 | in the container, as root: `dnf install python3-evdev pulseaudio-utils gamescope` | `op8-buttons.py`: both volume buttons read together, volume on release and repeating while held, Volume Up + Volume Down = Steam button (Shift+Tab, which Steam registers with gamescope), also in games. `gamescope` (same version as the host, 3.16.29) only for its Vulkan WSI layer: without it in the container, games ignore Steam's Frame Limit | root in the container |
 | 16 | `steam/build-mangoapp-gs.sh` (dependencies in its header) | performance overlay: `mangoapp` from MangoHud 0.8.4 with gamescope 3.16.29's field order (otherwise it does not show in games, gamescope #2430); started by `op8-mangoapp` | user, in the container |
 | 17 | `system/install-thermal.sh` | `op8-thermal`: limits the big cores and the GPU by battery temperature (41-44.5 °C), plus a readout of the PM8150B JEITA thresholds to `/var/log/op8/` | sudo |
 | 18 | `steam/gamescope/build-gamescope-op8.sh` (in WSL on the PC) → `gamescope-op8` in `~/bin/` on the phone | full screen: gamescope with patch 9001, Xwayland always at 2400x1080 (otherwise Steam picks 1920x1080 and black bars appear) | user |
@@ -85,5 +85,5 @@ On the PC: `pc/op8-live.sh [ip]` saves the phone's live log, the samples and a p
 | Steam's sleep/power-off commands | `~/op8-dbus-send.log` |
 | "Switch to Desktop" | `~/op8-session-select.log` |
 | Touch mode | `~/op8-touchmode.log` |
-| Processes every 2 s | `~/op8-top.log` |
+| Processes every 2 s (only while `op8-top` runs, for debugging) | `~/op8-top.log` |
 | Steam crashes (minidumps) | `python3 op8-log/op8-minidump.py /tmp/dumps/crash_*.dmp`, in the container |

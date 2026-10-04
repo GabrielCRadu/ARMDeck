@@ -1,15 +1,15 @@
 #!/bin/sh
-# armdeck: adaptor pentru dbus-send in containerul Steam (/usr/local/bin/dbus-send).
-# Steam suspenda/opreste/reporneste cu "dbus-send --system ... login1.Manager.Suspend boolean:true".
-# logind refuza simplul Suspend cat timp exista blocaje (pe postmarketOS fiecare sesiune SSH tine
-# "inhibit=sleep"): BlockedByInhibitorLock, iar Steam ramane cu ecranul negru. Aici Suspend,
-# PowerOff si Reboot devin ...WithFlags cu SD_LOGIND_SKIP_INHIBITORS (16); polkit permite asta
-# userului gabriel. Orice alt apel trece neschimbat. Jurnal: ~/op8-dbus-send.log
+# armdeck: dbus-send adapter in the Steam container (/usr/local/bin/dbus-send).
+# Steam suspends/powers off/reboots with "dbus-send --system ... login1.Manager.Suspend boolean:true".
+# logind refuses a plain Suspend while inhibitors exist (on postmarketOS every SSH session holds
+# "inhibit=sleep"): BlockedByInhibitorLock, and Steam is left with a black screen. Here Suspend,
+# PowerOff and Reboot become ...WithFlags with SD_LOGIND_SKIP_INHIBITORS (16); polkit allows
+# that for the user gabriel. Every other call passes through unchanged. Log: ~/op8-dbus-send.log
 REAL=/usr/bin/dbus-send
 L="$HOME/op8-dbus-send.log"
 case " $* " in
 	*" org.freedesktop.login1.Manager.Suspend "*|*" org.freedesktop.login1.Manager.PowerOff "*|*" org.freedesktop.login1.Manager.Reboot "*)
-		echo "$(date '+%F %T') primit: $*" >> "$L"
+		echo "$(date '+%F %T') received: $*" >> "$L"
 		for a do
 			shift
 			case "$a" in
@@ -20,10 +20,10 @@ case " $* " in
 			esac
 			set -- "$@" "$a"
 		done
-		echo "$(date '+%F %T') trimis: $*" >> "$L"
+		echo "$(date '+%F %T') sent: $*" >> "$L"
 		"$REAL" "$@" >> "$L" 2>&1
 		rc=$?
-		echo "$(date '+%F %T') cod iesire: $rc" >> "$L"
+		echo "$(date '+%F %T') exit code: $rc" >> "$L"
 		exit $rc
 		;;
 esac

@@ -52,6 +52,10 @@ fi
 # Steam and the games, so "-r 60" held everything at 60 fps while the panel scans out at 90 Hz.
 # Without it, gamescope uses the panel's real rate; Steam's Frame Limit (Quick Access >
 # Performance) caps games at 30 or 45 fps for battery.
+#
+# --xwayland-count 2: Steam gets one Xwayland and games a second one. With -e and more than one
+# Xwayland, gamescope itself exports STEAM_MULTIPLE_XWAYLANDS=1 to Steam (UpdateCompatEnvVars()
+# in gamescope's main.cpp; ChimeraOS sets it too), so it is not set here or in the container.
 GS=gamescope
 if [ -x /home/gabriel/bin/gamescope-op8 ]; then
 	GS=/home/gabriel/bin/gamescope-op8

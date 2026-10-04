@@ -1,18 +1,18 @@
 #!/bin/sh
-# op8-powerbtn (armdeck): butonul de pornire ca pe Steam Deck (steamos-powerbuttond):
-# apasare scurta = steam://shortpowerpress (Steam face sleep), apasare lunga (>= 1 s) =
-# steam://longpowerpress (meniul de alimentare). In standby, de trezire se ocupa op8-standby;
-# 3 secunde dupa trezire butonul se ignora, ca apasarea de trezire sa nu ceara alt sleep.
-# Ruleaza ca serviciu al userului in background.slice (nu e inghetat de op8-standby).
-# Jurnal: journalctl -t op8-powerbtn
+# op8-powerbtn (armdeck): the power button as on a Steam Deck (steamos-powerbuttond):
+# short press = steam://shortpowerpress (Steam goes to sleep), long press (>= 1 s) =
+# steam://longpowerpress (the power menu). In standby, op8-standby handles the wake-up;
+# the button is ignored for 3 seconds after waking, so the wake-up press does not ask for
+# another sleep. Runs as a user service in background.slice (not frozen by op8-standby).
+# Log: journalctl -t op8-powerbtn
 EV=
 for e in /sys/class/input/event*; do
 	[ "$(cat "$e/device/name" 2>/dev/null)" = pm8941_pwrkey ] && EV=/dev/input/$(basename "$e")
 done
 log() { logger -t op8-powerbtn -- "$*"; }
-[ -n "$EV" ] || { log "nu gasesc butonul de pornire (pm8941_pwrkey)"; exit 1; }
+[ -n "$EV" ] || { log "power button not found (pm8941_pwrkey)"; exit 1; }
 T=${XDG_RUNTIME_DIR:-/tmp}/op8-powerbtn-ev
-log "pornit, citesc $EV"
+log "started, reading $EV"
 
 steam_url() {
 	podman exec --user gabriel steam sh -c "cd \$HOME/.local/share/Steam/steamrtarm64 && LD_LIBRARY_PATH=\$PWD:\$HOME/.local/share/Steam/lib/aarch64-linux-gnu ./steam -ifrunning $1" >/dev/null 2>&1 &
@@ -24,7 +24,7 @@ while :; do
 	set -- $(od -An -tu2 -j16 -N4 "$T") 0 0
 	[ "$1" = 1 ] && [ "$2" = 116 ] || continue
 	val=$(od -An -td4 -j20 -N4 "$T" | tr -d ' ')
-	# momentul evenimentului in ms, din timestamp-ul kernelului (tv_sec, tv_usec)
+	# the event time in ms, from the kernel timestamp (tv_sec, tv_usec)
 	set -- $(od -An -tu8 -N16 "$T")
 	ms=$(($1 * 1000 + $2 / 1000))
 	if [ "$val" = 1 ]; then
@@ -37,14 +37,14 @@ while :; do
 	now=$(date +%s)
 	res=$(stat -c %Y /run/op8-standby.resumed 2>/dev/null || echo 0)
 	if [ -e /run/op8-standby.active ]; then
-		log "apasare de ${dur} ms ignorata: standby activ"
+		log "press of ${dur} ms ignored: standby active"
 	elif [ $((now - res)) -lt 3 ]; then
-		log "apasare de ${dur} ms ignorata: trezire acum $((now - res)) s"
+		log "press of ${dur} ms ignored: woke up $((now - res)) s ago"
 	elif [ "$dur" -lt 1000 ]; then
-		log "apasare scurta (${dur} ms) -> steam://shortpowerpress"
+		log "short press (${dur} ms) -> steam://shortpowerpress"
 		steam_url steam://shortpowerpress
 	else
-		log "apasare lunga (${dur} ms) -> steam://longpowerpress"
+		log "long press (${dur} ms) -> steam://longpowerpress"
 		steam_url steam://longpowerpress
 	fi
 done

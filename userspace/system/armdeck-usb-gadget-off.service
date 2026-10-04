@@ -1,0 +1,14 @@
+[Unit]
+Description=armdeck: remove the USB network gadget (kernel f_ncm use-after-free workaround)
+DefaultDependencies=no
+After=local-fs.target
+Before=sysinit.target NetworkManager.service network-pre.target
+Wants=network-pre.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/bin/armdeck-usb-gadget-off
+
+[Install]
+WantedBy=sysinit.target

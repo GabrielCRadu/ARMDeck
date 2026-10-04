@@ -1,16 +1,16 @@
 #!/bin/sh
-# armdeck, etapa A, pasul 2: controlere pentru Steam si SSH pe WiFi doar de la PC.
+# armdeck, stage A, step 2: controllers for Steam, and SSH over WiFi from the PC only.
 set -eu
-# IP-ul PC-ului din reteaua WiFi (singurul de la care SSH-ul pe WiFi e permis)
-PC_IP=${1:?folosire: sudo sh stageA2.sh <IP-ul PC-ului>}
+# the PC's IP address on the WiFi network (the only one allowed to use SSH over WiFi)
+PC_IP=${1:?usage: sudo sh stageA2.sh <the PC IP address>}
 
-# 1. Controlere: Steam (din container, ca userul gabriel, grupul input) trebuie sa poata
-#    deschide hidraw-ul controlerelor si sa creeze controlere virtuale prin uinput.
-#    Pe SteamOS face asta steam-devices cu TAG uaccess, care cere o sesiune pe ecran; aici
-#    nu exista, deci folosim grupul input.
+# 1. Controllers: Steam (in the container, as the user gabriel, input group) must be able to
+#    open the controllers' hidraw devices and create virtual controllers through uinput.
+#    On SteamOS steam-devices does this with TAG uaccess, which needs a session on the screen;
+#    there is none here, so the input group is used.
 mkdir -p /etc/udev/rules.d
 cat > /etc/udev/rules.d/70-armdeck-gamepads.rules <<'EOF'
-# armdeck: acces pentru grupul input la controlere (hidraw) si la uinput
+# armdeck: access for the input group to controllers (hidraw) and to uinput
 # GameSir (Zikway), Valve, Microsoft, Sony, Nintendo, 8BitDo
 KERNEL=="hidraw*", ATTRS{idVendor}=="3537", MODE="0660", GROUP="input"
 KERNEL=="hidraw*", ATTRS{idVendor}=="28de", MODE="0660", GROUP="input"
@@ -23,8 +23,8 @@ EOF
 udevadm control --reload
 udevadm trigger --subsystem-match=misc --subsystem-match=hidraw
 
-# 2. SSH pe WiFi doar de la PC ($PC_IP); restul retelei WiFi ramane blocat (audit S2)
-#    Regula veche se pastreaza si se pune la loc daca cea noua nu trece verificarea.
+# 2. SSH over WiFi from the PC only ($PC_IP); the rest of the WiFi network stays blocked (audit S2)
+#    The old rule is kept and put back if the new one fails the check.
 cp /etc/nftables.d/40_ssh_usb_only.nft /root/40_ssh_usb_only.nft.bak
 cat > /etc/nftables.d/40_ssh_usb_only.nft <<EOF
 table inet filter {
@@ -36,13 +36,13 @@ table inet filter {
 EOF
 if ! nft -c -f /etc/nftables.nft; then
 	cp /root/40_ssh_usb_only.nft.bak /etc/nftables.d/40_ssh_usb_only.nft
-	echo "EROARE: regula noua nu e valida, am pus-o la loc pe cea veche"
+	echo "ERROR: the new rule is not valid, the old one is back in place"
 	exit 1
 fi
 systemctl restart nftables
 
-echo "== verificare"
+echo "== check"
 ls -l /dev/uinput
 cat /etc/udev/rules.d/70-armdeck-gamepads.rules | grep -c MODE
 nft list chain inet filter input | grep -E "dport 22"
-echo "== GATA pasul 2"
+echo "== DONE step 2"

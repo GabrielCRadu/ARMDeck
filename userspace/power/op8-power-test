@@ -1,11 +1,11 @@
 #!/bin/sh
-# op8-power-test (armdeck): masoara curentul din baterie in starile de sleep, fara
-# suspendarea kernelului. Fiecare stare adauga ceva peste cea dinainte, dureaza STAGE_S secunde,
-# iar media se face fara primele SETTLE_S secunde. La final repune totul cum era.
-# Telefonul trebuie sa fie SCOS din priza (altfel curentul de incarcare strica masuratoarea).
-# Rulare (ruleaza mai departe si dupa ce SSH-ul se pierde, cand se opreste WiFi-ul):
+# op8-power-test (armdeck): measures the battery current in the sleep states, without kernel
+# suspend. Each state adds something on top of the one before, lasts STAGE_S seconds, and the
+# average leaves out the first SETTLE_S seconds. At the end everything is put back as it was.
+# The phone must be UNPLUGGED (otherwise the charge current spoils the measurement).
+# Run (keeps running after SSH drops, when WiFi is turned off):
 #   sudo systemd-run --unit=op8-power-test /bin/sh /home/gabriel/op8-power-test
-# Rezultat: /var/log/op8/power-test-<data>.txt
+# Result: /var/log/op8/power-test-<date>.txt
 STAGE_S=${STAGE_S:-120}
 SETTLE_S=${SETTLE_S:-30}
 U=/sys/fs/cgroup/user.slice/user-10000.slice/user@10000.service
@@ -29,7 +29,7 @@ measure() {
 		[ "$i" -gt "$max" ] && max=$i
 		sleep 2
 	done
-	out "$(printf '%-44s medie %5d mA  (min %5d, max %5d, %d citiri)  baterie %s%% %s mV' \
+	out "$(printf '%-44s average %5d mA  (min %5d, max %5d, %d readings)  battery %s%% %s mV' \
 		"$name" $((sum / n)) "$min" "$max" "$n" "$(cat $BAT/capacity)" $(( $(cat $BAT/voltage_now) / 1000 )))"
 }
 
@@ -40,45 +40,45 @@ restore() {
 	trap - EXIT INT TERM
 	rfkill unblock wlan 2>/dev/null; rfkill unblock bluetooth 2>/dev/null
 	systemctl kill -s CONT op8-sampler 2>/dev/null
-	# frecventele CPU intai: cu ele la minim, panoul nu mai porneste (erori DSI, ecran negru)
+	# CPU frequencies first: with them at the minimum the panel does not come back (DSI errors, black screen)
 	for p in policy0 policy4 policy7; do eval "v=\$old_$p"; echo "$v" > "$CF/$p/scaling_max_freq"; done
 	for c in "$U/app.slice" "$U/user.slice"; do echo 0 > "$c/cgroup.freeze"; done
 	sleep 1
 	gsctl drm_sleep_internal_screen 0
 	echo "$old_bl" > "$BL/brightness"
 	rm -f /run/op8-standby.active
-	out "restaurat: luminozitate $(cat $BL/brightness), wifi $(rfkill list wlan | grep -c 'Soft blocked: no') deblocat"
+	out "restored: brightness $(cat $BL/brightness), wifi $(rfkill list wlan | grep -c 'Soft blocked: no') unblocked"
 }
 trap restore EXIT INT TERM
 
 out "op8-power-test $(date '+%F %T'), kernel $(uname -v | cut -c1-40), usb online=$(cat /sys/class/power_supply/tcpm-source-psy-*/online)"
-[ "$(cat /sys/class/power_supply/tcpm-source-psy-*/online)" = 0 ] || out "ATENTIE: telefonul e in priza, masuratoarea include incarcarea"
+[ "$(cat /sys/class/power_supply/tcpm-source-psy-*/online)" = 0 ] || out "WARNING: the phone is plugged in, the measurement includes charging"
 
-# op8-thermal si butoanele stau deoparte cat timp exista marcajul (ca in standby)
+# op8-thermal and the buttons stay out of the way while the marker exists (as in standby)
 touch /run/op8-standby.active
 
-measure "S0 ecran aprins, interfata Steam"
+measure "S0 screen on, Steam interface"
 
 echo 0 > "$BL/brightness"
 for c in "$U/app.slice" "$U/user.slice"; do echo 1 > "$c/cgroup.freeze"; done
 for p in policy4 policy7; do cat "$CF/$p/cpuinfo_min_freq" > "$CF/$p/scaling_max_freq"; done
-measure "S1 sleep-ul actual (iluminare 0, inghetat)"
+measure "S1 the current sleep (backlight 0, frozen)"
 
 for c in "$U/app.slice" "$U/user.slice"; do echo 0 > "$c/cgroup.freeze"; done
 sleep 1
 gsctl drm_sleep_internal_screen 1
 sleep 2
 for c in "$U/app.slice" "$U/user.slice"; do echo 1 > "$c/cgroup.freeze"; done
-measure "S2 + panoul oprit (DPMS prin gamescope)"
+measure "S2 + panel off (DPMS through gamescope)"
 
 systemctl kill -s STOP op8-sampler
 cat "$CF/policy0/cpuinfo_min_freq" > "$CF/policy0/scaling_max_freq"
-measure "S3 + jurnalul pe pauza, nucleele mici la minim"
+measure "S3 + logger paused, little cores at minimum"
 
 rfkill block bluetooth
-measure "S4 + Bluetooth oprit"
+measure "S4 + Bluetooth off"
 
 rfkill block wlan
-measure "S5 + WiFi oprit"
+measure "S5 + WiFi off"
 
-out "gata $(date '+%T')"
+out "done $(date '+%T')"

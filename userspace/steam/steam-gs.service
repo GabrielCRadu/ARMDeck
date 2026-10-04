@@ -1,17 +1,22 @@
 [Unit]
-Description=armdeck: Steam (container Fedora) in gamescope pe ecranul telefonului
-# cel mult 5 porniri pe minut, ca o eroare permanenta sa nu intre in bucla
+Description=armdeck: Steam (Fedora container) in gamescope on the phone screen
+# at most 5 starts per minute, so a permanent error does not loop forever
 StartLimitIntervalSec=60
 StartLimitBurst=5
 
 [Service]
-# la o repornire, containerul poate fi inca in curs de oprire; podman esueaza atunci la
-# /etc/passwd din overlay, gamescope iese curat si sesiunea ramane oprita
+# the phone has no usable real-time clock: until NTP answers, the date is 1970. Steam started
+# then fails its TLS connections and its interface never appears, so wait for the first time
+# sync (or any date from 2026 on), at most 90 s, then start anyway (no network = offline mode)
+ExecStartPre=/bin/sh -c 'for i in $(seq 1 90); do [ -e /run/systemd/timesync/synchronized ] && break; [ "$(date +%%Y)" -ge 2026 ] && break; sleep 1; done; true'
+# on a restart the container may still be stopping; podman then fails on /etc/passwd in the
+# overlay, gamescope exits cleanly and the session stays down
 ExecStartPre=/bin/sh -c 'for i in $(seq 1 30); do [ "$(podman inspect -f "{{.State.Status}}" steam 2>/dev/null)" = stopping ] || break; sleep 1; done; true'
-# directorul Steam e montat (bind) de pe partitia de jocuri; asteapta pana la 30 s
+# the Steam directory is bind-mounted from the games partition; wait up to 30 s
 ExecStartPre=/bin/sh -c 'for i in $(seq 1 30); do grep -q " /home/gabriel/.local/share/Steam " /proc/mounts && break; sleep 1; done; [ -f /home/gabriel/steam-gs.log ] && mv -f /home/gabriel/steam-gs.log /home/gabriel/steam-gs.prev.log; true'
 ExecStart=/bin/sh -c '/home/gabriel/steam-gamescope.sh > /home/gabriel/steam-gs.log 2>&1'
-# sesiunea Steam e "ecranul" consolei: daca se inchide din orice motiv, porneste din nou
+TimeoutStartSec=180
+# the Steam session is the console's "screen": if it closes for any reason, start it again
 Restart=always
 RestartSec=3
 

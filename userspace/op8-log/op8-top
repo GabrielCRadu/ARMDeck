@@ -1,11 +1,12 @@
 #!/bin/sh
-# op8-log (armdeck): procesele care folosesc cel mai mult CPU, la ~2 s, scrise imediat pe
-# disc. Pentru teste de reset. Folosire: op8-top [fisier]   (implicit ~/op8-top.log)
+# op8-log (armdeck): the processes using the most CPU, every ~2 s, written to disk at once.
+# For reset tests only (it costs power: two top runs and a sync every cycle).
+# Usage: op8-top [file]   (default ~/op8-top.log)
 F=${1:-$HOME/op8-top.log}
 while :; do
 	{
 		echo "== up $(cut -d' ' -f1 /proc/uptime)"
-		# a doua iteratie a lui top are procentele de CPU corecte (prima nu are referinta)
+		# the second iteration of top has the right CPU percentages (the first has no reference)
 		top -b -n 2 -d 1 | awk '/^Mem:/ { n++ } n == 2' | head -16
 	} >> "$F"
 	sync "$F"

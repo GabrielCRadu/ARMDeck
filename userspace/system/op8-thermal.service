@@ -1,5 +1,5 @@
 [Unit]
-Description=op8-thermal: protectie termica dupa temperatura bateriei (limiteaza CPU mare si GPU)
+Description=op8-thermal: thermal protection by battery temperature (limits the big CPU cores and the GPU)
 After=local-fs.target op8-tune.service
 
 [Service]

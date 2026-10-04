@@ -1,7 +1,8 @@
 #!/bin/sh
-# op8-log (armdeck, OnePlus 8): un esantion la fiecare $OP8_INTERVAL secunde (implicit 2),
-# o linie CSV scrisa imediat pe disc (sync), ca dupa un reset sa stim ce facea telefonul in
-# ultimele secunde. Doar citire din sysfs/proc. OP8_ONCE=1 = un singur esantion (pentru test).
+# op8-log (armdeck, OnePlus 8): a sample every $OP8_INTERVAL seconds (default 2), one CSV line,
+# so after a reset we know what the phone was doing in its last seconds (written to disk at once
+# only with OP8_SYNC=1, see the end of the loop). Reads sysfs/proc only. OP8_ONCE=1 = one sample
+# (for a test).
 set -u
 D=${OP8_DIR:-/var/log/op8}
 I=${OP8_INTERVAL:-2}
@@ -9,8 +10,8 @@ mkdir -p "$D" /run/op8 2>/dev/null
 chmod 1777 /run/op8 2>/dev/null
 BID=$(cut -c1-8 /proc/sys/kernel/random/boot_id)
 
-# Numarul pornirii (0001, 0002, ...): ordinea fisierelor nu depinde de ceas, care dupa pornire
-# arata 1970 pana la sincronizarea prin retea. Primul script op8 care ruleaza dupa boot il creste.
+# The boot number (0001, 0002, ...): the file order does not depend on the clock, which reads 1970
+# after boot until the network time sync. The first op8 script that runs after boot raises it.
 bootnum() {
 	R=${OP8_RUN:-/run/op8}
 	mkdir -p "$R"
@@ -27,10 +28,10 @@ bootnum() {
 	cat "$R/bootnum"
 }
 NUM=$(bootnum)
-# un fisier nou la fiecare (re)pornire a serviciului: numar pornire, boot_id, uptime
+# a new file at every (re)start of the service: boot number, boot_id, uptime
 F="$D/sample-$NUM-$BID-u$(printf '%06d' "$(cut -d. -f1 /proc/uptime)").csv"
 
-# caile se rezolva o singura data
+# the paths are resolved once
 zone() {
 	for z in /sys/class/thermal/thermal_zone*; do
 		[ "$(cat "$z/type")" = "$1" ] && { echo "$z/temp"; return; }
@@ -50,16 +51,16 @@ USBV=$(ls /sys/class/power_supply/tcpm-source-psy-*/voltage_now 2>/dev/null | he
 CF=/sys/devices/system/cpu/cpufreq
 NET=/sys/class/net/wlan0/statistics
 
-# citeste prima linie dintr-un fisier intr-o variabila, fara proces nou ($1 = variabila, $2 = fisier).
-# Variabila se goleste inainte: read din busybox intoarce eroare pe unele fisiere din /proc
-# chiar daca a citit valoarea (ex. /proc/sys/kernel/tainted), deci codul de iesire nu conteaza.
+# reads the first line of a file into a variable, with no new process ($1 = variable, $2 = file).
+# The variable is emptied first: busybox read returns an error on some /proc files even when it
+# read the value (e.g. /proc/sys/kernel/tainted), so the exit code does not matter.
 rd() { eval "$1="; read -r "$1" < "$2" 2>/dev/null; return 0; }
 
-# pastreaza ultimele 30 de fisiere de esantioane (numele se sorteaza cronologic)
+# keep the last 30 sample files (the names sort in time order)
 ls "$D"/sample-*.csv 2>/dev/null | sort -r | tail -n +31 | xargs -r rm -f
 
 echo "t_up_s,t_unix,bat_mv,bat_ma,bat_pct,bat_dC,usb_mv,cpu_max_mC,gpu_top_mC,gpu_bot_mC,pm8150_mC,pm8150b_mC,pm8150l_mC,wlan_mC,mem_mC,f_cpu0_khz,f_cpu4_khz,f_cpu7_khz,f_gpu_hz,f_ufs_hz,load1,psi_cpu,psi_mem,psi_io,mem_avail_kb,swap_used_kb,wlan_rx_b,wlan_tx_b,ufs_wr_sect,usb_data,usb_power,tainted,mark" > "$F"
-# current.csv arata mereu spre fisierul activ (op8-live.sh de pe PC il urmareste dupa nume)
+# current.csv always points to the active file (op8-live.sh on the PC follows it by name)
 ln -sfn "$(basename "$F")" "$D/current.csv"
 
 while :; do
@@ -91,9 +92,9 @@ while :; do
 	case "$dr" in *"[host]"*) dr=host ;; *"[device]"*) dr=device ;; *) dr=- ;; esac
 	case "$pr" in *"[source]"*) pr=source ;; *"[sink]"*) pr=sink ;; *) pr=- ;; esac
 	rd tn /proc/sys/kernel/tainted
-	# Marcajul il scrie op8-mark ca userul normal. Root nu-l poate goli (fs.protected_regular
-	# interzice O_CREAT pe fisierul altui user intr-un folder public), iar in busybox o
-	# redirectare esuata pe ":" opreste scriptul. Deci se citeste si se sterge.
+	# op8-mark writes the mark as the normal user. Root cannot empty it (fs.protected_regular
+	# forbids O_CREAT on another user's file in a public directory), and in busybox a failed
+	# redirection on ":" stops the script. So it is read and then deleted.
 	mk=
 	if [ -s /run/op8/mark ]; then
 		read -r mk < /run/op8/mark 2>/dev/null || true
@@ -106,7 +107,10 @@ while :; do
 		"$f0" "$f4" "$f7" "$fg" "$fu" \
 		"$l1" "${pc#avg10=}" "${pm#avg10=}" "${pio#avg10=}" "$ma" "$((stt - sf))" \
 		"$rx" "$tx" "$ws" "$dr" "$pr" "$tn" "$mk" >> "$F"
-	sync "$F"
+	# A sync after every sample was for the reset hunt (fixed by kernel patch 0003): it wakes the
+	# UFS disk every 2 s. Now only with OP8_SYNC=1 (Environment=OP8_SYNC=1 in the service);
+	# otherwise the normal page cache writeback puts the samples on disk within about 30 s.
+	[ "${OP8_SYNC:-0}" = 1 ] && sync "$F"
 	[ "${OP8_ONCE:-0}" = 1 ] && break
 	sleep "$I"
 done

@@ -1,13 +1,13 @@
 #!/bin/bash
-# armdeck, etapa A: pregatirea containerului "steam" pentru Steam in modul Deck.
-# Ruleaza in container ca userul normal; sudo de aici e root doar in container.
+# armdeck, stage A: prepares the "steam" container for Steam in Deck mode.
+# Runs in the container as the normal user; sudo here is root only inside the container.
 set -euo pipefail
 
-# Shim-uri SteamOS (dupa pocknix-steamos-shim). Steam pornit cu -steamos3 le cheama;
-# fara ele, configurarea initiala se blocheaza la "Updater apply error: 2".
+# SteamOS shims (after pocknix-steamos-shim). Steam started with -steamos3 calls them; without
+# them the first-time setup stops at "Updater apply error: 2".
 sudo tee /usr/local/bin/steamos-update >/dev/null <<'EOF'
 #!/bin/bash
-# 0 = update disponibil / aplicat, 7 = niciun update (conventia Valve)
+# 0 = update available / applied, 7 = no update (Valve's convention)
 for arg in "$@"; do
 	case "$arg" in
 		--supports-duplicate-detection) exit 0 ;;
@@ -25,14 +25,14 @@ exit 0
 EOF
 sudo tee /usr/local/bin/jupiter-biosupdate >/dev/null <<'EOF'
 #!/bin/bash
-# 0 = niciun update de BIOS
+# 0 = no BIOS update
 exit 0
 EOF
 sudo chmod 755 /usr/local/bin/steamos-update /usr/local/bin/steamos-select-branch /usr/local/bin/jupiter-biosupdate
-# "Switch to Desktop": fara desktop, Steam se inchide si steam-gs il porneste din nou (vezi scriptul)
+# "Switch to Desktop": no desktop, Steam exits and steam-gs starts it again (see the script)
 sudo install -m 755 "$(dirname "$0")/op8-session-select" /usr/local/bin/steamos-session-select
 
-# Registry-ul Steam cu prima configurare marcata ca facuta (dupa pocknix registry.vdf)
+# The Steam registry with the first-time setup marked as done (after pocknix registry.vdf)
 cat > "$HOME/.steam/registry.vdf" <<'EOF'
 "Registry"
 {
@@ -77,7 +77,7 @@ cat > "$HOME/.steam/registry.vdf" <<'EOF'
 }
 EOF
 
-echo "== verificare"
+echo "== check"
 ls -l /usr/local/bin/steamos-update /usr/local/bin/steamos-select-branch /usr/local/bin/jupiter-biosupdate
 grep -c OOBE "$HOME/.steam/registry.vdf"
-echo "== GATA setup container"
+echo "== DONE container setup"

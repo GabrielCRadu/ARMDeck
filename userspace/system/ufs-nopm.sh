@@ -1,9 +1,9 @@
 #!/bin/sh
-# armdeck: test pentru resetarile "warm" din TrustZone. Dezactiveaza managementul de energie
-# al UFS (oprirea ceasului, schimbarea frecventei, hibernarea automata a legaturii) la fiecare
-# pornire. UFS ramane la frecventa maxima; costa putin consum in plus.
-# Anulare: sudo systemctl disable op8-ufs-nopm && sudo reboot
-# Rulare: sudo sh /tmp/op8-log/ufs-nopm.sh
+# armdeck: test for the "warm" resets from TrustZone. Turns off UFS power management (clock
+# gating, frequency scaling, automatic link hibernation) at every boot. UFS stays at its highest
+# frequency; it costs a little extra power.
+# Undo: sudo systemctl disable op8-ufs-nopm && sudo reboot
+# Run: sudo sh /tmp/op8-log/ufs-nopm.sh
 set -eu
 cat > /usr/local/bin/op8-ufs-nopm <<'EOF'
 #!/bin/sh
@@ -16,7 +16,7 @@ EOF
 chmod 755 /usr/local/bin/op8-ufs-nopm
 cat > /etc/systemd/system/op8-ufs-nopm.service <<'EOF'
 [Unit]
-Description=op8: UFS fara clock gating, clock scaling si auto-hibern8 (test resetari)
+Description=op8: UFS without clock gating, clock scaling and auto-hibern8 (reset test)
 After=local-fs.target
 
 [Service]
@@ -31,6 +31,6 @@ sync
 systemctl daemon-reload
 systemctl enable --now op8-ufs-nopm.service
 journalctl -u op8-ufs-nopm -n 1 --no-pager -o cat
-op8-mark "UFS fara clkgate/clkscale/auto_hibern8 (op8-ufs-nopm)"
+op8-mark "UFS without clkgate/clkscale/auto_hibern8 (op8-ufs-nopm)"
 sync
-echo "== GATA UFS"
+echo "== DONE UFS"

@@ -1,5 +1,5 @@
 #!/bin/bash
-# armdeck: mangoapp (the MangoHud performance overlay) built for gamescope 3.16.29, with two patches.
+# armdeck: mangoapp (the MangoHud performance overlay) built for gamescope 3.16.29, with five patches.
 #
 # 1. Frame times: gamescope 3.16.29 sends the app_frametime_ns and visible_frametime_ns fields in
 #    its message to mangoapp in the opposite order from MangoHud (0.7.1 in Alpine, 0.8.x, master).
@@ -16,6 +16,12 @@
 #    GPU; and for mainline Adreno ("msm_dpu") it read neither the temperature nor the clock.
 # 4. GPU load: the per-process GPU statistics (fdinfo) say "drm-driver: msm" while the device
 #    driver is "msm_dpu", so they never matched and the load stayed at 0.
+# 5. Redraw only when needed: mangoapp set its "new_frame" flag once and never cleared it, so it
+#    redrew at the full display rate (90 Hz) even on a still screen: about 35% of a CPU core plus
+#    Xwayland and gamescope work, and gamescope had to recompose every frame. Now it draws when
+#    gamescope sends a new frame time or the config/visibility changes, and otherwise every
+#    500 ms, when it also refreshes the sensors (MangoHud reads temperatures, battery and exec=
+#    lines only when frame times arrive). See docs/compat-perf-audit.md section 9, finding 2.
 #
 # Runs in the "steam" container (Fedora 44) as the normal user; the build dependencies are
 # installed separately, as root in the container:
@@ -24,11 +30,14 @@
 #       libstdc++-static
 #   podman exec -u gabriel steam bash /home/gabriel/build-mangoapp-gs.sh
 # Result: /home/gabriel/games/build/mangoapp-gs (started by op8-mangoapp in the container).
+# A test build that leaves the running binary alone: set B and OUT, e.g.
+#   podman exec -u gabriel -e B=/home/gabriel/build/mangohud-test \
+#       -e OUT=/home/gabriel/build/mangoapp-gs-test steam bash /home/gabriel/build-mangoapp-gs.sh
 set -euo pipefail
 V=0.8.4
 SHA=bbe5a2b976313c53f21dc24b98bbed03226589460a0cce20d923cb2c36c9d8b0
-B=/home/gabriel/games/build/mangohud
-OUT=/home/gabriel/games/build/mangoapp-gs
+B=${B:-/home/gabriel/games/build/mangohud}
+OUT=${OUT:-/home/gabriel/games/build/mangoapp-gs}
 T=MangoHud-v$V-Source.tar.xz
 
 mkdir -p "$B"
@@ -225,6 +234,100 @@ patch(hdr, '            drm_engine_type = "drm-engine-gpu";\n',
       '            drm_memory_type = "drm-resident-memory";  // armdeck: reported by msm (kernel 6.16)\n')
 PY
 grep -n "armdeck" src/gpu_fdinfo.cpp src/gpu_fdinfo.h | tail -3
+
+# --- patch 5: redraw only when something changed
+# Upstream sets new_frame on every frame time from gamescope and on every config reload, and never
+# clears it, so the main loop renders and swaps at the display rate for as long as the overlay is
+# shown. gamescope sends a frame time only when the focused app (Steam or the game) presents a new
+# frame, not when mangoapp's own window updates, so waiting for new_frame does not feed itself.
+python3 - src/app/main.cpp src/overlay.cpp src/overlay.h <<'PY'
+import sys
+main, ovl, ovh = sys.argv[1], sys.argv[2], sys.argv[3]
+
+def patch(path, pairs):
+    s = open(path).read()
+    for old, new in pairs:
+        assert s.count(old) == 1, (path, old)
+        s = s.replace(old, new)
+    open(path, 'w').write(s)
+
+patch(main, [
+    ('#include <thread>\n', '#include <thread>\n#include <chrono>\n'),
+    ('bool new_frame = false;\n',
+     'bool new_frame = false;\n\n'
+     '// armdeck: new_frame now means "something new to draw": a frame time from gamescope\n'
+     '// (msg_read_thread) or a config reload (parse_overlay_config). The main loop clears it after\n'
+     '// each render; ctrl_thread wakes the loop when the overlay is hidden or shown. With nothing\n'
+     '// new, the overlay is redrawn every ARMDECK_IDLE_REFRESH_MS and the sensors are read then,\n'
+     '// since MangoHud otherwise reads them only when frame times arrive.\n'
+     'static constexpr int ARMDECK_IDLE_REFRESH_MS = 500;\n'),
+    ('    std::thread(msg_read_thread).detach();\n',
+     '    // armdeck: start the sensor thread here, before msg_read_thread could also create it\n'
+     '    armdeck_update_hw_only(params, vendorID);\n'
+     '    std::thread(msg_read_thread).detach();\n'),
+    ('    // Main loop\n    while (!glfwWindowShouldClose(window)){\n'
+     '        real_params = get_params();\n        check_keybinds(*real_params);\n'
+     '        if (!real_params->no_display && new_frame){\n',
+     '    // Main loop\n'
+     '    auto armdeck_next_refresh = std::chrono::steady_clock::now();\n'
+     '    while (!glfwWindowShouldClose(window)){\n'
+     '        real_params = get_params();\n        check_keybinds(*real_params);\n'
+     '        // armdeck: wait for a new frame time, a config or visibility change, or the idle refresh\n'
+     '        if (!real_params->no_display && !mangoapp_paused){\n'
+     '            bool idle_refresh;\n'
+     '            {\n'
+     '                std::unique_lock<std::mutex> lk(mangoapp_m);\n'
+     '                idle_refresh = !mangoapp_cv.wait_until(lk, armdeck_next_refresh,\n'
+     '                    []{ return new_frame || get_params()->no_display; });\n'
+     '                new_frame = false;\n'
+     '            }\n'
+     '            real_params = get_params();\n'
+     '            if (real_params->no_display)\n'
+     '                continue;  // hidden while waiting: hide the window in the next round\n'
+     '            if (idle_refresh)\n'
+     '                armdeck_update_hw_only(params, vendorID);\n'
+     '        }\n'
+     '        // armdeck: gamescope gives mangoapp the screen size with the first frame time; until\n'
+     '        // then it is 0x0, and resizing the window to 0x0 is an X error (BadValue in\n'
+     '        // ConfigureWindow) that leaves the overlay dead. Draw nothing before that.\n'
+     '        if (!real_params->no_display && (screenWidth == 0 || screenHeight == 0)){\n'
+     '            armdeck_next_refresh = std::chrono::steady_clock::now() +\n'
+     '                std::chrono::milliseconds(ARMDECK_IDLE_REFRESH_MS);\n'
+     '            if (mangoapp_paused)\n'
+     '                usleep(100000);\n'
+     '            continue;\n'
+     '        }\n'
+     '        if (!real_params->no_display){\n'),
+    ('            glfwSwapBuffers(window);\n        } else if (!mangoapp_paused) {\n',
+     '            glfwSwapBuffers(window);\n'
+     '            armdeck_next_refresh = std::chrono::steady_clock::now() +\n'
+     '                std::chrono::milliseconds(ARMDECK_IDLE_REFRESH_MS);\n'
+     '        } else if (!mangoapp_paused) {\n'),
+])
+
+patch(ovl, [
+    ('static std::unique_ptr<hw_info_updater> hw_update_thread;\n',
+     'static std::unique_ptr<hw_info_updater> hw_update_thread;\n\n'
+     '// armdeck (mangoapp): read the sensors without a new frame time, for the idle refresh in\n'
+     '// app/main.cpp; same thread and same work as the update in update_hud_info_with_frametime()\n'
+     'void armdeck_update_hw_only(const struct overlay_params& params, uint32_t vendorID)\n'
+     '{\n'
+     '   if (!hw_update_thread)\n'
+     '      hw_update_thread = std::make_unique<hw_info_updater>();\n'
+     '   hw_update_thread->update(&params, vendorID);\n'
+     '}\n'),
+])
+
+patch(ovh, [
+    ('void update_hw_info(const struct overlay_params& params, uint32_t vendorID);\n',
+     'void update_hw_info(const struct overlay_params& params, uint32_t vendorID);\n'
+     'void armdeck_update_hw_only(const struct overlay_params& params, uint32_t vendorID);\n'),
+])
+PY
+grep -n "armdeck" src/app/main.cpp src/overlay.cpp src/overlay.h | cut -c1-110
+# check: no render path may depend on new_frame any more, and it must be cleared in the loop
+! grep -n "no_display && new_frame" src/app/main.cpp || { echo "STOPPED: old render condition left"; exit 1; }
+grep -q "^                new_frame = false;" src/app/main.cpp || { echo "STOPPED: new_frame is never cleared"; exit 1; }
 
 meson setup build --buildtype=release -Dmangoapp=true -Dmangohudctl=false -Dtests=disabled \
 	-Dwith_xnvctrl=disabled -Dwith_nvml=disabled -Dwith_wayland=disabled -Dinclude_doc=false \

@@ -1,0 +1,104 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: ARMDeck <noreply@localhost>
+Date: Sun, 4 Oct 2026 20:30:00 +0300
+Subject: [PATCH] drm/panel: samsung-amb655uv01: run the 90 Hz DSI link at the
+ OnePlus rate
+
+The panel runs in DSI command mode with DSC (8 bits per pixel, 8 bits per
+component, two 540x48 slices per line) over 4 lanes. The msm DSI host has
+no fixed link rate for command mode: it derives the pixel, byte and bit
+clocks from the mode (dsi_get_pclk_rate(),
+dsi_adjust_pclk_for_compression(), dsi_byte_clk_get_rate(),
+msm_dsi_host_get_phy_clk_req()):
+
+  pclk = clock * (htotal - hdisplay + hdisplay * 8 / 24) / htotal
+  byte = pclk * 24 / (8 * 4)
+  bit  = byte * 8                                    (per lane)
+
+With clock = htotal * vtotal * 90 / 1000 kHz this reduces to
+bit = 6 * vtotal * 90 * (htotal - 720), about 1.3 Mbps per unit of htotal.
+
+The current 90 Hz mode (htotal 1120, vtotal 2414, 243331 kHz) gives a
+pixel clock of 86.90 MHz and 521.4 Mbps per lane. The DPU sends 360 pixel
+clocks per compressed line, so one frame (2400 lines) takes 9.9 ms of the
+11.1 ms refresh period.
+
+The OnePlus vendor device tree for this panel
+(dsi-panel-oplus19101samsung-amb655uv01-1080-2400-90fps.dtsi) sets
+qcom,mdss-dsi-panel-clockrate = <652800000> in both its 60 Hz and its
+90 Hz timing, with the same porches as this driver (8/24/8). The vendor
+DSI driver uses that value as the per-lane bit clock
+(dsi_ctrl_update_link_freqs(): bit_rate = clk_rate_hz * lanes,
+pclk = bit_rate / 24), so the stock firmware runs a 108.8 MHz pixel clock
+and moves a 90 Hz frame in about 8.0 ms.
+
+Widen the horizontal back porch of the 90 Hz mode from 8 to 108
+(htotal 1220, clock 265057 kHz):
+
+  pclk 108629918 Hz, byte 81472438 Hz, bit 651779504 bps per lane
+
+htotal 1220 is the largest value that stays at or below the vendor's
+652.8 Mbps (htotal 1221 would give 653.08 Mbps). A frame now takes about
+7.95 ms, as on the stock firmware.
+
+Nothing else changes:
+
+- The porches are never sent to a command-mode panel. In command mode
+  dsi_timing_setup() only programs DSI_CMD_MDP_STREAM0_TOTAL (compressed
+  line width and vdisplay), and the DPU interface timing engine is used
+  for video mode only. The front porch (8) and the sync width (24) keep
+  the vendor values; the extra 100 pixels go to the back porch.
+- vtotal and the refresh rate are unchanged (drm_mode_vrefresh() returns
+  90 for the old and the new mode), so the tear check setup (vsync_count,
+  sync height, start position), the DPU line time (4603 ns) and the DPU
+  core clock and bandwidth votes, which are computed from vtotal,
+  hdisplay and the refresh rate, stay the same.
+- The DSC configuration (slice size, bits per pixel) is set at probe and
+  the picture size comes from hdisplay and vdisplay; none of it depends
+  on htotal.
+- The 7nm PHY PLL reaches 651.78 MHz with no output divider. The VCO
+  range of this PHY revision (v4.1) is 600 MHz to 5 GHz in both the
+  mainline and the vendor PLL drivers, so the vendor's 652.8 MHz is
+  reached the same way. The D-PHY timings mainline computes for this
+  rate (00 17 06 07 21 20 06 06 04 02 04 00 16 16) are close to the
+  vendor table for 652.8 Mbps (00 1a 06 06 22 20 07 06 04 02 04 00 16 16).
+- The byte clock (81.5 MHz) stays below the lowest DSI OPP (187.5 MHz),
+  so the voltage vote does not change.
+
+The 60 Hz mode is left as it is: the power-on sequence always sets the
+panel itself to 90 Hz (DCS 0x60 0x10), and a working 60 Hz mode is a
+separate change.
+
+Assisted-by: Claude:claude-opus-5-5
+---
+ drivers/gpu/drm/panel/panel-samsung-amb655uv01.c | 11 +++++++++--
+ 1 file changed, 9 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/gpu/drm/panel/panel-samsung-amb655uv01.c b/drivers/gpu/drm/panel/panel-samsung-amb655uv01.c
+index 265e023..1e82acb 100755
+--- a/drivers/gpu/drm/panel/panel-samsung-amb655uv01.c
++++ b/drivers/gpu/drm/panel/panel-samsung-amb655uv01.c
+@@ -180,11 +180,18 @@ static int samsung_amb655uv01_unprepare(struct drm_panel *panel)
+ 
+ static const struct drm_display_mode samsung_amb655uv01_modes[] = {
+ 	{ /* 90Hz Mode */
+-		.clock = (1080 + 8 + 24 + 8) * (2400 + 4 + 4 + 6) * 90 / 1000,
++		/*
++		 * Command mode: the porches are not sent to the panel, but msm
++		 * DSI derives the link rate from this mode. The 108-pixel back
++		 * porch gives 651.78 Mbps per lane, just below the 652.8 Mbps
++		 * OnePlus uses (qcom,mdss-dsi-panel-clockrate). With the
++		 * vendor porches (htotal 1120) the link ran at 521 Mbps.
++		 */
++		.clock = (1080 + 8 + 24 + 108) * (2400 + 4 + 4 + 6) * 90 / 1000,
+ 		.hdisplay = 1080,
+ 		.hsync_start = 1080 + 8,
+ 		.hsync_end = 1080 + 8 + 24,
+-		.htotal = 1080 + 8 + 24 + 8,
++		.htotal = 1080 + 8 + 24 + 108,
+ 		.vdisplay = 2400,
+ 		.vsync_start = 2400 + 4,
+ 		.vsync_end = 2400 + 4 + 4,
+-- 
+2.43.0
+

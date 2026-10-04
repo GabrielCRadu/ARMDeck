@@ -1,7 +1,7 @@
-// armdeck: userul gabriel (Steam ruleaza in container, fara sesiune logata pe ecran)
-// poate suspenda (la noi: op8-standby, nu suspendarea kernelului), opri si reporni telefonul
-// fara parola, chiar daca sesiunile SSH tin blocaje de sleep. Fara regula, logind raspunde
-// "challenge" si Steam ramane blocat in "suspend operation in progress".
+// armdeck: the user gabriel (Steam runs in a container, with no session logged in on the screen)
+// may suspend (here: op8-standby, not kernel suspend), power off and reboot the phone without a
+// password, even while SSH sessions hold sleep inhibitors. Without this rule logind answers
+// "challenge" and Steam stays stuck at "suspend operation in progress".
 polkit.addRule(function(action, subject) {
 	var ids = [
 		"org.freedesktop.login1.suspend",

@@ -7,7 +7,7 @@ maintainer=""
 _flavor="oneplus-instantnoodle"
 pkgname=linux-$_flavor
 pkgver=6.16.7
-pkgrel=10
+pkgrel=11
 pkgdesc="OnePlus 8 (instantnoodle) mainline kernel, Xo666 fork"
 arch="aarch64"
 _carch="arm64"
@@ -57,6 +57,15 @@ makedepends="
 #         as on Android with the camera closed (2026-10-03).
 #   (a 60 Hz panel patch was tried as r9 on 2026-10-04 and gave a garbled
 #   image; it is not part of the package, see docs/gaming-stack.md TODO 21)
+#   0006: the 90 Hz mode drove the DSI link at 521 Mbps per lane, because
+#         mainline derives the link rate from the mode; OnePlus runs
+#         652.8 Mbps. A wider horizontal porch (not sent to this
+#         command-mode panel) gives 651.78 Mbps. UNTESTED on hardware as
+#         of 2026-10-04 (test image r11).
+#   0007: tcpm sent a hard reset when the GameSir X3 Pro sent its source
+#         capabilities 337 ms after a power role swap (default wait
+#         310 ms), which broke pass-through charging. Wait 620 ms, the USB
+#         PD maximum (tested as DTB-only image r8w on 2026-10-04).
 #
 # armdeck.config is merged over op8_defconfig: NTSYNC, preemption
 # switchable at runtime (default full), MGLRU and the lockup detectors. See
@@ -77,6 +86,8 @@ source="
 	0003-arm64-dts-qcom-instantnoodle-restore-removed_mem-reservation.patch
 	0004-arm64-dts-qcom-instantnoodle-limit-usb-c-sink-to-5V.patch
 	0005-arm64-dts-qcom-instantnoodle-camera-and-modem-off.patch
+	0006-drm-panel-samsung-amb655uv01-oem-dsi-link-rate.patch
+	0007-arm64-dts-qcom-instantnoodle-wait-longer-for-source-caps.patch
 	armdeck.config
 "
 builddir="$srcdir/mainline-instantnoodle-$pkgver"
@@ -129,5 +140,7 @@ f7d5833df5a0bb696366b8d59b25150c053366676dac8e64a789a06b08b49ff6eba8da7d643bcda0
 17b6c3bdfd080d255169bfba53b960177e0b6a7585b0c20a9c08124f2bf1f9d64ddb594c73dc5f2b9a49777b2615c5f4486c7212d163b40a0aa93ac20e4b5b34  0003-arm64-dts-qcom-instantnoodle-restore-removed_mem-reservation.patch
 81ca6a7dc10381f7f4c7f9886631b9f78ca9a775f61a9dd67b4319bace56b45a6bf7ba79b0d59adc00a94c3df3ef85d5ecb9fc6d2b21637b8764f20c46dea1dd  0004-arm64-dts-qcom-instantnoodle-limit-usb-c-sink-to-5V.patch
 593d0e489e45b6a0631e67ccd0b044c37a965bda7a3f2ac7c0229425ba5e4aaecb70843ebf7ea5e342f2d935b32581df849e34d1d96b689a3981445af3f309df  0005-arm64-dts-qcom-instantnoodle-camera-and-modem-off.patch
+65778bd911a3c9b6cbbfbc1218a1cd36efbc37485381eb8f789341fc75c954541b77a6a0a6c09964f1252bc5a88a5ed76805f5423f47890c9748469693c0fa93  0006-drm-panel-samsung-amb655uv01-oem-dsi-link-rate.patch
+ee78f07999b4a9763b31068f375ab0d985e4dd66c85b0a2c0fd2df8c00eb45b8c3d7899268c1d8045a5e39f4edbad2d42cb6edd4f918b0a9c92c75ab8f18ca19  0007-arm64-dts-qcom-instantnoodle-wait-longer-for-source-caps.patch
 1efc9b20d75aebc72b002d808e219abc45e8b31ea9818f2bd4e6eb062e03e8243225514903ed93b1c6e4df66f1f26d086073f7ea9b4f91eaf80b5124d27ab4bd  armdeck.config
 "

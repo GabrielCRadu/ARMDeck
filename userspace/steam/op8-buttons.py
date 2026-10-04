@@ -1,26 +1,27 @@
 #!/usr/bin/python3
-# op8-buttons (armdeck): butoanele de volum ale telefonului, intr-un singur proces care
-# citeste ambele butoane deodata (Volume Up si Volume Down sunt dispozitive de intrare diferite).
-# Inlocuieste op8-volbtn (doua procese sh care se coordonau prin fisiere: combinatia mergea cam o
-# data din trei) si op8-steamkey.
+# op8-buttons (armdeck): the phone's volume buttons, in a single process that reads both buttons
+# together (Volume Up and Volume Down are separate input devices). Replaces op8-volbtn (two sh
+# processes that coordinated through files: the combination worked about one time in three) and
+# op8-steamkey.
 #
-# - apasare scurta pe un buton: +/-5% la eliberare (ca o apasare pe ambele sa nu schimbe volumul)
-# - un buton tinut apasat: dupa HOLD_S, +/-5% la fiecare STEP_S cat timp e tinut (butoanele nu
-#   trimit repetare automata, EV_REP lipseste)
-# - ambele butoane apasate in acelasi timp: la eliberarea lor, Shift+Tab pe o tastatura virtuala.
-#   Steam inregistreaza Shift+Tab la gamescope ca butonul Steam (GuideKeyboardHotkey), deci se
-#   deschide meniul Steam, si in jocuri, fara controler. Se trimite abia dupa eliberare: gamescope
-#   declanseaza combinatia doar daca nicio alta tasta nu e apasata, iar butoanele de volum sunt
-#   si ele tastaturi pentru el.
+# - short press on one button: +/-5% on release (so a press on both does not change the volume)
+# - one button held: after HOLD_S, +/-5% every STEP_S while it is held (the buttons send no
+#   automatic repeat, EV_REP is missing)
+# - both buttons pressed together: on release, Shift+Tab on a virtual keyboard. Steam registers
+#   Shift+Tab with gamescope as the Steam button (GuideKeyboardHotkey), so the Steam menu opens,
+#   also in games, without a controller. It is sent only after release: gamescope triggers the
+#   combination only when no other key is down, and the volume buttons are keyboards to it too.
 #
-# Butoanele sunt inversate: tinut in landscape (ecranul rotit spre dreapta), Volume Up fizic e in
-# stanga, iar bara de volum din Steam creste spre dreapta. Deci KEY_VOLUMEDOWN (dreapta) = mai tare.
-# Volumul e cel al iesirii implicite ("Difuzoare (protejat)"), cu limita 100%; plafonul fizic
-# ramane volumul iesirii directe (-30 dB), pe care butoanele nu-l ating.
+# The buttons are swapped: held in landscape (screen rotated to the right), the physical Volume Up
+# is on the left, and Steam's volume bar grows to the right. So KEY_VOLUMEDOWN (right) = louder.
+# The volume is that of the default output (the protected speaker filter, op8_speakers_protected),
+# capped at 100%; the physical ceiling stays the volume of the direct output (-18 dB), which the
+# buttons do not touch.
 #
-# Ruleaza in containerul "steam" (python3-evdev, pulseaudio-utils), pornit de steam-in-container.sh
-# inainte de "exec steam" (parintele devine procesul Steam; cand Steam se inchide, iese si el).
-# In standby (op8-standby pe gazda) butoanele se ignora. Jurnal: ~/op8-buttons.log
+# Runs in the "steam" container (python3-evdev, pulseaudio-utils), started by
+# steam-in-container.sh before "exec steam" (its parent becomes the Steam process; when Steam
+# exits, it exits too). In standby (op8-standby on the host) the buttons are ignored.
+# Log: ~/op8-buttons.log
 import os
 import re
 import select
@@ -81,15 +82,15 @@ def main():
         if d.name in ("gpio-keys", "pm8941_resin"):
             devs[d.fd] = d
     if not devs:
-        log("nu gasesc gpio-keys / pm8941_resin")
+        log("gpio-keys / pm8941_resin not found")
         return
-    log("pornit: " + ", ".join(f"{d.name} ({d.path})" for d in devs.values()))
+    log("started: " + ", ".join(f"{d.name} ({d.path})" for d in devs.values()))
     kbd = UInput({e.EV_KEY: [e.KEY_LEFTSHIFT, e.KEY_TAB]}, name="ARMDeck Steam key",
                  bustype=e.BUS_VIRTUAL)
 
-    down = {}            # cod -> momentul apasarii
-    held = set()         # coduri care au schimbat deja volumul cat timp erau tinute
-    next_step = {}       # cod -> urmatoarea schimbare de volum la tinere
+    down = {}            # code -> the moment it was pressed
+    held = set()         # codes that already changed the volume while held
+    next_step = {}       # code -> the next volume change while held
     combo = False
     last_steam = 0.0
 
@@ -104,7 +105,7 @@ def main():
             kbd.write(e.EV_KEY, key, val)
             kbd.syn()
             time.sleep(0.04)
-        log("Volume Up + Volume Down -> butonul Steam")
+        log("Volume Up + Volume Down -> Steam button")
 
     try:
         while True:
@@ -145,7 +146,7 @@ def main():
                             held.discard(ev.code)
                         elif not standby:
                             volume_step(ev.code)
-            # tinere: volum continuu dupa HOLD_S, cat timp nu e combinatie
+            # held: continuous volume after HOLD_S, as long as it is not the combination
             if not combo and not standby:
                 for code, t0 in list(down.items()):
                     due = next_step.get(code, t0 + HOLD_S)
@@ -159,7 +160,7 @@ def main():
             os.remove(PIDF)
         except OSError:
             pass
-        log("oprit")
+        log("stopped")
 
 
 if __name__ == "__main__":

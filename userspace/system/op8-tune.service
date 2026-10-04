@@ -1,5 +1,5 @@
 [Unit]
-Description=op8-tune: setari de performanta (polling GPU, THP, prioritate gamescope)
+Description=op8-tune: performance settings (GPU polling, THP, gamescope priority, uclamp, panic on Oops)
 After=local-fs.target
 
 [Service]

@@ -1,45 +1,47 @@
 #!/bin/bash
-# armdeck, etapa A: porneste clientul Steam ARM64 in modul Deck, in containerul "steam".
-# Il porneste steam-gamescope.sh (pe gazda), ca proces copil al lui gamescope.
+# armdeck, stage A: starts the ARM64 Steam client in Deck mode, in the "steam" container.
+# steam-gamescope.sh (on the host) starts it, as a child process of gamescope.
 STEAM="$HOME/.local/share/Steam"
 CLIENT_DIR="$STEAM/steamrtarm64"
 
-# Steam cauta bin/vgui2_s.dll relativ la directorul curent
+# Steam looks for bin/vgui2_s.dll relative to the current directory
 cd "$CLIENT_DIR" || exit 1
 
-# clientul ARM64 cu interfata Deck merge doar pe canalul steamdeck_publicbeta
+# the ARM64 client with the Deck interface only works on the steamdeck_publicbeta channel
 mkdir -p "$STEAM/package"
 echo steamdeck_publicbeta > "$STEAM/package/beta"
 
-# doar Turnip (GPU-ul real), nu llvmpipe (GPU emulat pe procesor)
+# Turnip only (the real GPU), not llvmpipe (a GPU emulated on the processor)
 export VK_DRIVER_FILES=/usr/share/vulkan/icd.d/freedreno_icd.aarch64.json
 
-# magistrala D-Bus de sistem a gazdei (in container nu exista /run/dbus); Steam in modul
-# SteamOS o foloseste pentru retea, Bluetooth si baterie
+# the host's system D-Bus (there is no /run/dbus in the container); Steam in SteamOS mode uses it
+# for network, Bluetooth and battery
 export DBUS_SYSTEM_BUS_ADDRESS=unix:path=/run/host/run/dbus/system_bus_socket
 
-# Controlere conectate dupa pornirea Steam: evenimentele udev nu ajung in containerul fara root
-# (libudev ignora mesajele al caror expeditor nu e root in namespace), deci SDL urmareste direct
-# /dev/input prin inotify.
+# Controllers connected after Steam starts: udev events do not reach the rootless container
+# (libudev ignores messages whose sender is not root in the namespace), so SDL watches /dev/input
+# directly through inotify.
 export SDL_JOYSTICK_DISABLE_UDEV=1
 
-# Panoul (DSI, fara EDID) nu are HDR real; gamescope il anunta totusi, iar Steam cere stream HDR
-# (10 biti) in Remote Play. Test: SDR. Pentru a reveni, sterge linia.
+# The panel (DSI, no EDID) has no real HDR; gamescope announces it anyway, and Steam asks for an
+# HDR (10-bit) stream in Remote Play. Test: SDR. To go back, delete the line.
 export STEAM_GAMESCOPE_HDR_SUPPORTED=0
 
-# Diagnoza unui joc: jurnal Proton in ~/proton-logs/steam-<appid>.log (exceptii, DLL-uri incarcate,
-# mesajele DXVK). Oprit implicit: FEX genereaza multe exceptii, iar jurnalizarea lor scade FPS-ul.
-# Pentru un singur joc e mai bine din Properties > Launch Options: PROTON_LOG=1 %command%
+# Diagnosing a game: Proton log in ~/proton-logs/steam-<appid>.log (exceptions, loaded DLLs, DXVK
+# messages). Off by default: FEX raises many exceptions, and logging them lowers the FPS.
+# For a single game it is better from Properties > Launch Options: PROTON_LOG=1 %command%
 #export PROTON_LOG=1
 export PROTON_LOG_DIR=/home/gabriel/proton-logs
 
-# Diagnoza Remote Play: jurnal SDL3 complet (clientul de streaming foloseste SDL3 pentru video,
-# audio si randare). Temporar, face logul mare.
-export SDL_LOGGING='*=verbose'
+# Remote Play diagnosis: full SDL3 log (the streaming client uses SDL3 for video, audio and
+# rendering). Off by default: it makes the log large and costs CPU time in the client. Uncomment
+# only while debugging streaming.
+#export SDL_LOGGING='*=verbose'
 
-# overlay-ul de performanta: mangoapp-gs ruleaza aici, in container (op8-mangoapp), iar Steam ii
-# scrie nivelul ales (preset) in fisierul comun creat de steam-gamescope.sh. Variabilele sunt cele
-# din ChimeraOS gamescope-session-steam. Fara mangoapp-gs compilat, Steam nu le primeste.
+# the performance overlay: mangoapp-gs runs here, in the container (op8-mangoapp), and Steam
+# writes the chosen level (preset) to the shared file created by steam-gamescope.sh. The variables
+# are those of ChimeraOS gamescope-session-steam. Without a built mangoapp-gs, Steam does not get
+# them.
 MANGO_CONF="/run/user/$(id -u)/mangohud.conf"
 if [ -f "$MANGO_CONF" ] && [ -x /home/gabriel/games/build/mangoapp-gs ]; then
 	export MANGOHUD_CONFIGFILE="$MANGO_CONF"
@@ -47,26 +49,26 @@ if [ -f "$MANGO_CONF" ] && [ -x /home/gabriel/games/build/mangoapp-gs ]; then
 	export STEAM_MANGOAPP_PRESETS_SUPPORTED=1
 	export STEAM_MANGOAPP_HORIZONTAL_SUPPORTED=1
 	export STEAM_DISABLE_MANGOAPP_ATOM_WORKAROUND=1
-	# pornit chiar inainte de "exec steam" (mai jos), ca parintele lui sa devina procesul Steam
+	# started right before "exec steam" (below), so its parent becomes the Steam process
 	START_MANGOAPP=1
 fi
 
-# fara LANG, metoda de input X (XOpenIM) nu porneste
+# without LANG the X input method (XOpenIM) does not start
 export LANG=C.UTF-8
 
-# directorul clientului primul, ca la pocknix
+# the client directory first, as in pocknix
 export LD_LIBRARY_PATH="$CLIENT_DIR:$STEAM/lib/aarch64-linux-gnu"
 
-# touch ca pe Steam Deck si fara controler (interfata = touch real, jocuri = click)
+# touch as on a Steam Deck, also without a controller (interface = real touch, games = click)
 /home/gabriel/op8-touchmode &
 
 [ -n "${START_MANGOAPP:-}" ] && /home/gabriel/op8-mangoapp &
 
-# butoanele de volum: volum la eliberare, volum continuu la tinere, iar ambele deodata = butonul
-# Steam (inlocuieste vechiul op8-volbtn de pe gazda; serviciul lui trebuie sa ramana dezactivat)
+# the volume buttons: volume on release, continuous volume while held, and both together = the
+# Steam button (replaces the old op8-volbtn on the host; its service must stay disabled)
 /home/gabriel/op8-buttons.py &
 
-# Fara -noshaders: acelasi mecanism Steam aduce si video-urile re-codate ale jocurilor
-# (STEAM_COMPAT_TRANSCODED_MEDIA_PATH). Proton nu poate decoda H.264, iar fara ele afiseaza
-# barele de test TV in locul video-urilor (Poppy Playtime, Tiny Rails, 2026-10-02).
+# No -noshaders: the same Steam mechanism also brings the games' re-encoded videos
+# (STEAM_COMPAT_TRANSCODED_MEDIA_PATH). Proton cannot decode H.264, and without them it shows TV
+# test bars instead of the videos (Poppy Playtime, Tiny Rails, 2026-10-02).
 exec "$CLIENT_DIR/steam" -gamepadui -steamos3 -steampal -steamdeck -noverifyfiles

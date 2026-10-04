@@ -42,7 +42,7 @@ pmaports `device/` contains exactly these OnePlus ports:
 | `device/testing/device-oneplus-kebab` | **OnePlus 8T** |
 
 The Pro and the 8T are packaged. The plain OnePlus 8 is not. The doc's parenthetical
-- "`instantnoodle` (sau `instantnoodlep` pentru varianta Pro)" - has the support
+- "`instantnoodle` (or `instantnoodlep` for the Pro variant)" - has the support
 situation backwards.
 
 *Source:* pmaports GitLab API, `repository/tree?path=device/{main,community,testing}`.

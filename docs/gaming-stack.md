@@ -1,491 +1,514 @@
-# Stack-ul de gaming: cercetare și recomandare (2026-10-01)
+# The gaming stack: research and recommendation (2026-10-01)
 
-Ce am verificat: SteamOS, Bazzite, Armada OS și cele două alternative ARM găsite pe parcurs
-(pocknix-os și SteamOS-ARM-Handhelds). Pentru fiecare: dacă se poate instala pe OnePlus 8, ce
-putem prelua de la el și ce e periculos în el. Sursele (cod, issue-uri, README-uri) sunt la
-final. Telefonul a fost citit doar în mod read-only (RAM, partiții, flag-uri CPU, config kernel).
+What was checked: SteamOS, Bazzite, Armada OS and the two ARM alternatives found along the way
+(pocknix-os and SteamOS-ARM-Handhelds). For each one: whether it installs on the OnePlus 8, what we
+can take from it and what is dangerous in it. The sources (code, issues, READMEs) are at the end.
+The phone was only read, never written (RAM, partitions, CPU flags, kernel config).
 
-Termeni folosiți des:
-- *FEX* = traducătorul care rulează programe x86 (Steam pentru PC, jocuri Linux x86) pe ARM.
-- *Proton* = varianta Valve de Wine, rulează jocuri Windows. Versiunea ARM64 folosește tot FEX
-  în interior pentru codul x86 al jocului.
-- *DXVK* = traduce DirectX 9/10/11 în Vulkan. Fără el, jocurile Windows DirectX nu merg.
-- *Turnip* = driverul Vulkan open source pentru GPU-urile Adreno (al nostru e Adreno 650).
-- *gamescope* = compozitorul din "Game Mode" de pe Steam Deck (pornește direct în interfața Steam).
-- *glibc / musl* = două biblioteci C de bază. Aproape tot software-ul Linux binar (inclusiv
-  Steam) e compilat pentru glibc. postmarketOS folosește musl.
-- *ABL* = bootloader-ul Android de pe telefon (cel care face fastboot și pornește `boot.img`).
-
----
-
-## 1. Pe scurt
-
-1. **Niciuna dintre distribuții nu se instalează pe OnePlus 8 așa cum vine.** SteamOS nu are
-   imagine ARM publică, Bazzite e doar x86_64, iar Armada și pocknix pornesc printr-un ABL
-   nesemnat (ROCKNIX ABL) care pe telefonul nostru (`secure: yes`) nu ar porni deloc.
-2. **Kernelurile lor sunt periculoase pentru telefonul nostru**, din două motive găsite în cod:
-   driverul de încărcare cu bug-ul de ~4.87 V și un overclock de GPU la 925 MHz gândit pentru
-   console cu ventilator (secțiunea 3).
-3. **Vestea bună:** Armada și pocknix rulează deja Steam ARM64 + Proton ARM64 + FEX pe
-   **Retroid Pocket 5, care are exact SoC-ul nostru (SM8250)**. Rețeta de userspace e
-   dovedită pe siliciul ăsta.
-4. **Recomandare:** păstrăm kernelul nostru (verificat pe hardware) și construim deasupra un
-   userspace glibc după rețeta pocknix/Armada, în două etape: întâi un test fără niciun flash,
-   în postmarketOS-ul actual, apoi un rootfs Arch Linux ARM nativ (secțiunea 6).
+Terms used often:
+- *FEX* = the translator that runs x86 programs (Steam for PC, x86 Linux games) on ARM.
+- *Proton* = Valve's version of Wine, runs Windows games. The ARM64 build also uses FEX inside for
+  the game's x86 code.
+- *DXVK* = translates DirectX 9/10/11 to Vulkan. Without it, Windows DirectX games do not run.
+- *Turnip* = the open source Vulkan driver for Adreno GPUs (ours is an Adreno 650).
+- *gamescope* = the compositor of the Steam Deck's "Game Mode" (it boots straight into the Steam
+  interface).
+- *glibc / musl* = two base C libraries. Almost all binary Linux software (Steam included) is built
+  for glibc. postmarketOS uses musl.
+- *ABL* = the phone's Android bootloader (the one that does fastboot and starts `boot.img`).
 
 ---
 
-## 2. Proiectele, unul câte unul
+## 1. In short
 
-| Proiect | Bază | Ce SoC-uri | Cum pornește | Pe OP8 așa cum e? | Ce luăm de la el |
+1. **None of the distributions installs on the OnePlus 8 as shipped.** SteamOS has no public ARM
+   image, Bazzite is x86_64 only, and Armada and pocknix boot through an unsigned ABL (the ROCKNIX
+   ABL), which would not start at all on our phone (`secure: yes`).
+2. **Their kernels are dangerous for our phone**, for two reasons found in the code: the charger
+   driver with the ~4.87 V bug, and a GPU overclock to 925 MHz meant for consoles with a fan
+   (section 3).
+3. **The good news:** Armada and pocknix already run Steam ARM64 + Proton ARM64 + FEX on the
+   **Retroid Pocket 5, which has exactly our SoC (SM8250)**. The userspace recipe is proven on this
+   silicon.
+4. **Recommendation:** keep our kernel (checked on the hardware) and build a glibc userspace on top
+   of it after the pocknix/Armada recipe, in two stages: first a test without any flashing, in the
+   current postmarketOS, then a native Arch Linux ARM rootfs (section 6).
+
+---
+
+## 2. The projects, one by one
+
+| Project | Base | SoCs | How it boots | On the OP8 as it is? | What we take from it |
 |---|---|---|---|---|---|
-| SteamOS (Valve) | Arch | x86_64 (Deck); ARM doar pe Steam Frame | imagine Valve | Nu: nu există imagine ARM publică | Nimic direct |
-| Bazzite | Fedora Atomic | doar x86_64 | UEFI | Nu | Nimic |
-| Armada OS | Fedora bootc | SM8250, SM8550, SM8650 etc. (dispozitive ROCKNIX) | ROCKNIX ABL → UEFI → systemd-boot | **Nu**: cere ABL nesemnat | Rețeta: FEX + rootfs Arch, Proton, sesiunea gamescope, inputplumber |
-| pocknix-os | Arch Linux ARM | SM8250 (RP5, Flip 2), SM8550 | ROCKNIX ABL (recomandat) sau meniul ABL Retroid | **Nu**: pe OP8 nu există nici ABL ROCKNIX, nici meniul Retroid | Pachetele de userspace (pacman), DXVK 2.7 pentru Adreno 650 |
-| SteamOS-ARM-Handhelds | imaginea SteamOS a lui Steam Frame | SM8650, SM8550, SM8750, REDMAGIC 6 (SM8350) | ROCKNIX ABL; pe REDMAGIC 6 ABL-ul stock | Nu direct (nu are SM8250), dar metoda REDMAGIC 6 e aplicabilă | Dovada că un telefon cu ABL stock poate porni SteamOS ARM |
-| postmarketOS (ce rulează acum) | Alpine (musl) | instantnoodle, portul nostru | ABL stock, `boot_b` | **Da, rulează** | Kernelul, firmware-ul, procedura de flash |
+| SteamOS (Valve) | Arch | x86_64 (Deck); ARM only on Steam Frame | Valve image | No: there is no public ARM image | Nothing directly |
+| Bazzite | Fedora Atomic | x86_64 only | UEFI | No | Nothing |
+| Armada OS | Fedora bootc | SM8250, SM8550, SM8650 etc. (ROCKNIX devices) | ROCKNIX ABL -> UEFI -> systemd-boot | **No**: needs an unsigned ABL | The recipe: FEX + Arch rootfs, Proton, the gamescope session, inputplumber |
+| pocknix-os | Arch Linux ARM | SM8250 (RP5, Flip 2), SM8550 | ROCKNIX ABL (recommended) or the Retroid ABL menu | **No**: the OP8 has neither the ROCKNIX ABL nor the Retroid menu | The userspace packages (pacman), DXVK 2.7 for the Adreno 650 |
+| SteamOS-ARM-Handhelds | Steam Frame's SteamOS image | SM8650, SM8550, SM8750, REDMAGIC 6 (SM8350) | ROCKNIX ABL; the stock ABL on the REDMAGIC 6 | Not directly (no SM8250), but the REDMAGIC 6 method applies | Proof that a phone with a stock ABL can boot SteamOS ARM |
+| postmarketOS (what runs now) | Alpine (musl) | instantnoodle, our port | stock ABL, `boot_b` | **Yes, it runs** | The kernel, the firmware, the flashing procedure |
 
 ### 2.1 SteamOS
 
-- Singura versiune ARM oficială e cea de pe **Steam Frame** (lansat 2026-09-18, Snapdragon
-  8 Gen 3). Valve nu publică o imagine ARM generică.
-- SteamOS-ARM-Handhelds (2.5) repachetează exact imaginea Frame pentru alte console.
+- The only official ARM version is the one on the **Steam Frame** (released 2026-09-18,
+  Snapdragon 8 Gen 3). Valve does not publish a generic ARM image.
+- SteamOS-ARM-Handhelds (2.5) repackages exactly the Frame image for other consoles.
 
 ### 2.2 Bazzite
 
-- Imagini doar pentru x86_64. Nu are variantă ARM și nu e anunțată una. Iese din discuție.
+- Images for x86_64 only. There is no ARM variant and none is announced. Out of the question.
 
 ### 2.3 Armada OS (github.com/armada-os/armada)
 
-- Fedora bootc (sistem de fișiere imutabil, actualizat ca imagine), cu suport de dispozitive
-  preluat din ROCKNIX. Kernel 7.2.6. SM8250 testat pe Retroid Pocket 5 / Flip 2.
-- Stack: Steam ARM64 (canalul `steamdeck_publicbeta_linuxarm64`), FEX 2609 cu un rootfs Arch
-  x86 montat la `/usr/share/guestos/fex-mesa` (locul unde îl caută instrumentul FEX al
-  Steam-ului), proton-cachyos 11.0 arm64, Turnip cu patch-uri, gamescope + gamescope-session,
-  steamos-manager (cel de pe Steam Frame), inputplumber, Decky cu plugin propriu.
-- **Instalarea cere scrierea ROCKNIX ABL în partiția `abl`.** Pe OnePlus 8 bootloader-ul e
-  semnat și verificat de cip (`secure: yes` în getvar): un ABL nesemnat nu pornește, telefonul
-  ajunge doar în EDL, reparabil numai cu MSM. **Nu se face.**
-- Kernelul conține patch-ul `0011-qcom-pm8150b-charger` (issue-urile #534 și #550 încă deschise)
-  și overclock-ul de GPU (3.2).
+- Fedora bootc (an immutable file system, updated as an image), with device support taken from
+  ROCKNIX. Kernel 7.2.6. SM8250 tested on the Retroid Pocket 5 / Flip 2.
+- Stack: Steam ARM64 (the `steamdeck_publicbeta_linuxarm64` channel), FEX 2609 with an x86 Arch
+  rootfs mounted at `/usr/share/guestos/fex-mesa` (where Steam's FEX tool looks for it),
+  proton-cachyos 11.0 arm64, patched Turnip, gamescope + gamescope-session, steamos-manager (the
+  Steam Frame one), inputplumber, Decky with its own plugin.
+- **Installing it requires writing the ROCKNIX ABL to the `abl` partition.** On the OnePlus 8 the
+  bootloader is signed and checked by the chip (`secure: yes` in getvar): an unsigned ABL does not
+  boot, and the phone only reaches EDL, repairable with MSM alone. **Not done.**
+- The kernel has the `0011-qcom-pm8150b-charger` patch (issues #534 and #550 still open) and the
+  GPU overclock (3.2).
 
 ### 2.4 pocknix-os (github.com/shuuri-labs/pocknix-os)
 
-- Arch Linux ARM, actualizări prin `pacman` (inclusiv kernelul), Steam în gamescope + Plasma
-  Mobile ca desktop. Suportă oficial Retroid Pocket 5 și Flip 2 (SM8250).
-- Descarcă automat Proton 11 ARM64 al lui Valve. **Pe SM8250 înlocuiește DXVK 3 cu DXVK 2.7**
-  (pachetul `pocknix-dxvk2-donor`), pentru că DXVK 3 cere o funcție de GPU pe care Adreno 650 nu
-  o are (3.4).
-- "SM8250 se poate porni fără ROCKNIX ABL" se referă la meniul bootloader-ului **Retroid**
-  (Volume - la pornire, boot de pe card SD). OnePlus 8 nu are nici card SD, nici meniul ăsta.
-- Kernelul (snapshot ROCKNIX din 2026-07-15) conține driverul de încărcare cu bug și
-  overclock-ul de GPU (3.1, 3.2). Implicit are și parolă publică (`pocknix`).
+- Arch Linux ARM, updated through `pacman` (kernel included), Steam in gamescope + Plasma Mobile as
+  the desktop. Officially supports the Retroid Pocket 5 and Flip 2 (SM8250).
+- Downloads Valve's Proton 11 ARM64 by itself. **On SM8250 it replaces DXVK 3 with DXVK 2.7**
+  (the `pocknix-dxvk2-donor` package), because DXVK 3 needs a GPU feature the Adreno 650 lacks
+  (3.4).
+- "SM8250 can boot without the ROCKNIX ABL" refers to the **Retroid** bootloader menu (Volume - at
+  power-on, boot from the SD card). The OnePlus 8 has neither an SD card nor that menu.
+- The kernel (a ROCKNIX snapshot from 2026-07-15) has the buggy charger driver and the GPU
+  overclock (3.1, 3.2). It also ships a public password by default (`pocknix`).
 
 ### 2.5 SteamOS-ARM-Handhelds (github.com/hashtagbasit/SteamOS-ARM-Handhelds)
 
-- Port neoficial al imaginii SteamOS de pe Steam Frame. Stabil pe SM8650, beta pe SM8550 și
-  SM8750. **Nu are SM8250.** Kernel de la ROCKNIX.
-- **Cel mai relevant pentru noi: portul pentru REDMAGIC 6** (telefon, SM8350). Acolo nu există
-  ROCKNIX ABL: pornește din bootloader-ul Nubia deblocat, cu kernelul în `boot`, iar rootfs-ul
-  SteamOS e scris în `userdata`. Exact modelul pe care l-am folosi și noi.
-- Rootfs-ul Frame rulează pe Cortex-X1/A78 (ARMv8.2), aceeași generație de instrucțiuni ca
-  Cortex-A77 din telefonul nostru. Deci nu e compilat doar pentru procesoare noi.
-- Minusuri pentru noi: imaginea Valve e reglată pentru Adreno 750, nu are dispozitivul nostru,
-  actualizările vin ca imagine întreagă, iar redistribuirea imaginii Valve e o zonă gri.
+- An unofficial port of the Steam Frame's SteamOS image. Stable on SM8650, beta on SM8550 and
+  SM8750. **No SM8250.** Kernel from ROCKNIX.
+- **The most relevant for us: the REDMAGIC 6 port** (a phone, SM8350). There is no ROCKNIX ABL
+  there: it boots from the unlocked Nubia bootloader, with the kernel in `boot`, and the SteamOS
+  rootfs is written to `userdata`. Exactly the model we would use too.
+- The Frame rootfs runs on Cortex-X1/A78 (ARMv8.2), the same instruction generation as the
+  Cortex-A77 in our phone. So it is not built only for new processors.
+- The downsides for us: Valve's image is tuned for the Adreno 750, does not include our device,
+  updates come as a whole image, and redistributing Valve's image is a grey area.
 
 ---
 
-## 3. Ce e periculos în kernelurile lor
+## 3. What is dangerous in their kernels
 
-### 3.1 Driverul de încărcare cu tensiunea greșită (confirmat în cod)
+### 3.1 The charger driver with the wrong voltage (confirmed in the code)
 
-Patch-ul `0011-qcom-pm8150b-charger.patch` din pocknix (și același patch în Armada) calculează
-registrul de tensiune maximă cu formula de la alt cip (PMI8998):
+The `0011-qcom-pm8150b-charger.patch` from pocknix (and the same patch in Armada) computes the
+float voltage register with the formula of another chip (PMI8998):
 
 ```
 (voltage_max_design_uv - 3487500) / 7500 + 1
 ```
 
-Pe PM8150B registrul înseamnă 3.6 V + n × 10 mV. Pentru o baterie de 4.435 V rezultă n = 127,
-adică **~4.87 V**. Plus watchdog-ul "mângâiat" la o adresă fără bază (`0x643`) și curentul de
-încărcare niciodată setat. ROCKNIX a reparat driverul pe 2026-09-29, dar Armada și pocknix au
-snapshot-uri mai vechi. Kernelul nostru nu are deloc driverul (plafonul de 4.37 V îl pune
-bootloader-ul la fiecare pornire, verificat pe hardware, `hardware-safety.md` 4.1).
+On the PM8150B the register means 3.6 V + n x 10 mV. For a 4.435 V battery this gives n = 127, that
+is **about 4.87 V**. Add a watchdog "petted" at an address without a base (`0x643`) and a charge
+current that is never set. ROCKNIX fixed the driver on 2026-09-29, but Armada and pocknix carry
+older snapshots. Our kernel has no such driver at all (the bootloader sets the 4.37 V ceiling at
+every boot, checked on the hardware, `hardware-safety.md` 4.1).
 
-### 3.2 Overclock de GPU la 925 MHz
+### 3.2 GPU overclock to 925 MHz
 
-`9998-gpu-tuning.patch` există identic în ROCKNIX, Armada și pocknix. Adaugă trepte de GPU
-până la 925 MHz pe toate dispozitivele SM8250, la nivelul de tensiune `TURBO_L1`. Snapdragon
-865 (al nostru, nu 865+) are maximum 587 MHz la OnePlus, deci e **cu ~58% peste specificație**.
-Pe console cu ventilator (RP5, AYN Thor Lite) căldura se evacuează; OnePlus 8 se răcește pasiv.
-Rezultatul probabil e căldură în plus, throttling și posibil instabilitate. **Nu îl preluăm.**
-Kernelul nostru rămâne la 587 MHz (verificat, `hardware-safety.md` 4.9).
+`9998-gpu-tuning.patch` is identical in ROCKNIX, Armada and pocknix. It adds GPU steps up to
+925 MHz on every SM8250 device, at the `TURBO_L1` voltage level. The Snapdragon 865 (ours, not the
+865+) tops out at 587 MHz on OnePlus, so this is **about 58% above the specification**. On consoles
+with a fan (RP5, AYN Thor Lite) the heat is carried away; the OnePlus 8 is cooled passively. The
+likely result is extra heat, throttling and possibly instability. **We do not take it.** Our kernel
+stays at 587 MHz (checked, `hardware-safety.md` 4.9).
 
-### 3.3 ROCKNIX ABL
+### 3.3 The ROCKNIX ABL
 
-Recomandat de pocknix, obligatoriu pentru Armada. Pe OnePlus 8 = telefon care nu mai pornește
-decât în EDL. Regula există deja (`hardware-safety.md` 3.4), o repet aici pentru că ambele
-README-uri îl prezintă ca pas normal.
+Recommended by pocknix, required by Armada. On the OnePlus 8 = a phone that only boots into EDL.
+The rule already exists (`hardware-safety.md` 3.4); it is repeated here because both READMEs
+present it as a normal step.
 
-### 3.4 Ce e doar inutil pentru noi
+### 3.4 What is merely useless for us
 
-Patch-urile pentru ventilator (`9997-set-boot-fanspeed`), controlerele Retroid, panourile lor
-de ecran: nu se aplică pe OP8, dar nici nu ar strica ceva dacă DTS-ul nostru nu le folosește.
-
----
-
-## 4. Ce știm că merge pe SM8250 (și deci, probabil, și pe noi)
-
-- **Steam ARM64 + Proton ARM64 + FEX rulează pe Retroid Pocket 5** (Armada și pocknix îl
-  suportă oficial). E primul răspuns concret la riscul din `verification-log.md` 7.6.4: FEX-ul
-  actual merge pe ARMv8.2. Issue-ul FEX #4120 (ridicarea cerinței la ARMv8.4) rămâne deschis;
-  dacă se aplică, fixăm o versiune FEX mai veche (autorul a confirmat că rămân disponibile).
-- **Flag-urile CPU ale telefonului** (citite din `/proc/cpuinfo`): `atomics` (LSE) și `lrcpc`
-  prezente, `lse2` și `flagm` absente. Exact profilul ARMv8.2 al RP5.
-- **DXVK 3 nu merge pe Adreno 650.** DXVK 3 cere `storageBuffer8BitAccess`; în Mesa
-  (`freedreno_devices.py`) Turnip activează `storage_8bit` doar pentru familia a7xx. Adreno 650
-  e a6xx. Soluția pocknix: DXVK 2.7.1 din Proton 11 pus în locul lui DXVK 3.
-- **Clientul Steam ARM64 e compilat pentru glibc.** Pe postmarketOS (musl) nu rulează direct,
-  doar într-un container glibc (ghidurile pmOS din `verification-log.md` 7.6.3) sau pe un
-  rootfs glibc.
+The fan patches (`9997-set-boot-fanspeed`), the Retroid controllers, their screen panels: they do
+not apply to the OP8, but they would not break anything if our DTS does not use them.
 
 ---
 
-## 5. Constrângerile OnePlus 8 (citite de pe telefon azi)
+## 4. What we know works on SM8250 (and so, probably, on our phone)
 
-| Ce | Valoare | Ce înseamnă |
+- **Steam ARM64 + Proton ARM64 + FEX run on the Retroid Pocket 5** (Armada and pocknix support it
+  officially). This is the first concrete answer to the risk in `verification-log.md` 7.6.4: the
+  current FEX works on ARMv8.2. FEX issue #4120 (raising the requirement to ARMv8.4) is still open;
+  if it lands, we pin an older FEX version (the author confirmed they stay available).
+- **The phone's CPU flags** (read from `/proc/cpuinfo`): `atomics` (LSE) and `lrcpc` present,
+  `lse2` and `flagm` absent. Exactly the RP5's ARMv8.2 profile.
+- **DXVK 3 does not work on the Adreno 650.** DXVK 3 needs `storageBuffer8BitAccess`; in Mesa
+  (`freedreno_devices.py`) Turnip enables `storage_8bit` only for the a7xx family. The Adreno 650
+  is a6xx. The pocknix solution: DXVK 2.7.1 from Proton 11 put in place of DXVK 3.
+- **The ARM64 Steam client is built for glibc.** On postmarketOS (musl) it does not run directly,
+  only in a glibc container (the pmOS guides in `verification-log.md` 7.6.3) or on a glibc rootfs.
+
+---
+
+## 5. The OnePlus 8 constraints (read from the phone today)
+
+| What | Value | What it means |
 |---|---|---|
-| Pornire | ABL stock semnat, `boot.img` Android v2 în `boot_b` | Orice sistem trebuie să pornească prin `boot.img`, ca acum |
-| RAM | 12 GB (11617 MB) + zram 17 GB | Peste cei 8 GB la care ghidul pmOS raporta OOM |
-| `super` | 14 GiB, rootfs-ul pmOS are 13.1 GiB, **11.8 GiB liberi** | Ajunge pentru Steam + FEX + Proton + un joc mic de test |
-| `userdata` | 219 GiB | Locul pentru jocuri, vezi decizia de mai jos |
-| CPU | Cortex-A77/A55, ARMv8.2 | Ca RP5 |
-| GPU | Adreno 650, maxim 587 MHz | DXVK 2.7, nu 3 |
-| Kernel | 6.16.7 (Xo666, r5) | `UCLAMP_TASK`, `BPF_SYSCALL`, `UHID`, `JOYSTICK_XPAD`, `HID_PLAYSTATION` prezente; **lipsesc `NTSYNC`, `EROFS_FS` și `sched_ext`** |
-| Pachete pe telefon | `gamescope` 3.16.29, `mesa-vulkan-freedreno` 26.2.3 | Disponibile în Alpine edge |
+| Boot | signed stock ABL, Android v2 `boot.img` in `boot_b` | Any system must boot through `boot.img`, as now |
+| RAM | 12 GB (11617 MB) + 17 GB zram | Above the 8 GB at which the pmOS guide reported OOM |
+| `super` | 14 GiB, the pmOS rootfs is 13.1 GiB, **11.8 GiB free** | Enough for Steam + FEX + Proton + a small test game |
+| `userdata` | 219 GiB | The place for games, see the decision below |
+| CPU | Cortex-A77/A55, ARMv8.2 | Like the RP5 |
+| GPU | Adreno 650, 587 MHz maximum | DXVK 2.7, not 3 |
+| Kernel | 6.16.7 (Xo666, r5) | `UCLAMP_TASK`, `BPF_SYSCALL`, `UHID`, `JOYSTICK_XPAD`, `HID_PLAYSTATION` present; **`NTSYNC`, `EROFS_FS` and `sched_ext` missing** |
+| Packages on the phone | `gamescope` 3.16.29, `mesa-vulkan-freedreno` 26.2.3 | Available in Alpine edge |
 
-Explicații: *NTSYNC* = mecanism de sincronizare din kernel pe care Proton îl folosește pentru
-performanță (fără el merge, dar mai încet). *sched_ext* = planificatoare de CPU încărcabile, de
-exemplu `scx_lavd` pe care îl folosește pocknix. Toate trei se pot adăuga într-un kernel r6.
+Explanations: *NTSYNC* = a kernel synchronisation mechanism Proton uses for performance (it works
+without it, but slower). *sched_ext* = loadable CPU schedulers, for example the `scx_lavd` pocknix
+uses. All three can be added in a kernel r6.
 
-**Decizie de luat înainte de etapa B: `userdata`.** Android e deja șters (`super` a fost
-rescris cu pmOS), dar datele vechi din `userdata` sunt încă acolo, criptate de Android.
-Probabil se pot recupera doar restaurând Android din backup și deblocând cu PIN-ul vechi.
-Formatarea `userdata` pentru jocuri le șterge definitiv. Dacă ai acolo ceva de care ai nevoie,
-îl scoatem întâi.
+**Decision needed before stage B: `userdata`.** Android is already wiped (`super` was rewritten
+with pmOS), but the old data in `userdata` is still there, encrypted by Android. It can probably be
+recovered only by restoring Android from the backup and unlocking with the old PIN. Formatting
+`userdata` for games erases it for good. If there is anything you need there, we take it out first.
 
-**Controlerul GameSir X3 Pro** ocupă portul USB-C, deci cât e conectat nu mai avem SSH prin
-cablu (iar pe WiFi l-am blocat intenționat, `security-audit.md` S2). Pentru teste: un controler
-Bluetooth, sau o excepție temporară de firewall doar pentru IP-ul PC-ului. Alimentarea
-controlerului de către telefon (modul OTG) nu e încă verificată (`hardware-safety.md` 4.11).
-
----
-
-## 6. Recomandarea: kernelul nostru + userspace după rețeta pocknix/Armada
-
-### Etapa A: test fără niciun flash (în postmarketOS-ul actual)
-
-Scop: să aflăm dacă GPU-ul, gamescope și Steam ARM64 merg pe telefonul ăsta, înainte să
-schimbăm orice partiție. Nu scrie nimic în afara rootfs-ului deja instalat.
-
-1. Vulkan nativ: `vulkaninfo --summary` și un test simplu (`vkcube`) pe Turnip.
-2. gamescope pe ecranul telefonului (pachetul Alpine), cu o aplicație de test.
-3. Un container glibc (distrobox cu Arch Linux ARM) cu Steam ARM64, FEX și Proton ARM64,
-   copiind configurația Armada (rootfs-ul FEX la `/usr/share/guestos/fex-mesa`) și DXVK 2.7 de
-   la pocknix.
-4. Un joc mic: întâi unul Linux ARM nativ, apoi unul Windows prin Proton.
-5. Temperaturile logate tot timpul (pragurile din `hardware-safety.md` 4.8), difuzoarele cu
-   volum mic (încă nu avem limitator).
-
-Risc: zero pentru hardware și pentru partiții. Dacă ceva nu merge, ștergem containerul.
-
-### Etapa B: rootfs Arch Linux ARM nativ (scrie pe telefon, doar cu OK explicit)
-
-Dacă etapa A merge, scoatem stratul de container:
-
-- Rootfs Arch Linux ARM cu userspace-ul pocknix (pachete `pacman` pentru aarch64) sau refăcut
-  după rețeta Armada. **Fără kernelul lor**: `IgnorePkg` pe pachetele de kernel și firmware.
-- Kernelul nostru, cu un initramfs care montează rootfs-ul din `super` sau `userdata`. Flash
-  doar în `boot_b` (și partiția aleasă pentru rootfs), ca până acum. Drumul înapoi la stock
-  nu se schimbă (backup + MSM, `hardware-safety.md` 3.6).
-- Kernel r6: `NTSYNC`, `EROFS_FS`, eventual `sched_ext`, plus opțiunile de securitate din
-  `security-audit.md` S3. Mai târziu, mutarea DTS-ului și a celor două patch-uri pe 7.2,
-  **fără** driverul de încărcare (până la versiunea reparată de ROCKNIX, verificată de noi) și
-  **fără** overclock-ul de GPU.
-
-### De ce nu celelalte variante
-
-- **pmOS + container ca soluție finală:** merge (ghidurile pmOS), dar e un strat în plus:
-  Steam își pornește propriul container în containerul distrobox, iar ghidul raportează
-  blocări ale `steamwebhelper`. Bun pentru test (etapa A), incomod pentru zi de zi.
-- **SteamOS ARM (imaginea Frame) prin metoda REDMAGIC 6:** cea mai apropiată de un SteamOS
-  real, dar nu e făcută pentru Adreno 650, nimeni nu a rulat-o pe SM8250 și se actualizează
-  ca imagine întreagă. Rămâne un experiment posibil după etapa B, nu punctul de plecare.
-- **Armada / pocknix ca imagini:** nu pornesc pe OP8 fără ABL nesemnat (3.3).
+**The GameSir X3 Pro controller** takes the USB-C port, so while it is connected there is no SSH
+over the cable (and over WiFi it is blocked on purpose, `security-audit.md` S2). For tests: a
+Bluetooth controller, or a temporary firewall exception for the PC's IP only. Powering the
+controller from the phone (OTG mode) is not checked yet (`hardware-safety.md` 4.11).
 
 ---
 
-## 7. Reguli noi (se adaugă la lista din `hardware-safety.md` 3.4)
+## 6. The recommendation: our kernel + a userspace after the pocknix/Armada recipe
 
-- Nu instalăm imaginile Armada, pocknix sau SteamOS-ARM-Handhelds ca atare.
-- Nu folosim kernelurile lor pe OnePlus 8 (încărcare la ~4.87 V, GPU la 925 MHz).
-- Nu preluăm `9998-gpu-tuning.patch` și nici alt tabel de frecvențe GPU peste 587 MHz.
-- Nu formatăm `userdata` fără decizia explicită din secțiunea 5.
+### Stage A: a test without any flashing (in the current postmarketOS)
 
-## 8. Ce rămâne neverificat
+Goal: find out whether the GPU, gamescope and Steam ARM64 work on this phone before changing any
+partition. Writes nothing outside the rootfs already installed.
 
-- Steam ARM64 + FEX + Proton pe telefonul nostru (dovedit doar pe RP5, același SoC).
-- Performanța reală în jocuri și comportamentul termic sub joc susținut.
-- Alimentarea controlerului GameSir X3 Pro prin USB-C (OTG).
-- Dacă userspace-ul pocknix se poate folosi fără pachetele lor de kernel și dispozitiv
-  (`pocknix-device-sm8250` depinde de ele).
+1. Native Vulkan: `vulkaninfo --summary` and a simple test (`vkcube`) on Turnip.
+2. gamescope on the phone screen (the Alpine package), with a test application.
+3. A glibc container (distrobox with Arch Linux ARM) with Steam ARM64, FEX and Proton ARM64,
+   copying the Armada configuration (the FEX rootfs at `/usr/share/guestos/fex-mesa`) and DXVK 2.7
+   from pocknix.
+4. A small game: first a native ARM Linux one, then a Windows one through Proton.
+5. Temperatures logged all the time (the thresholds in `hardware-safety.md` 4.8), the speakers at
+   a low volume (no limiter yet).
 
-## 9. Etapa A pe telefon: ce merge și TODO (2026-10-01)
+Risk: zero for the hardware and for the partitions. If something does not work, we delete the
+container.
 
-Tot ce urmează s-a făcut fără niciun flash, doar în rootfs-ul pmOS și în `/home/gabriel`.
+### Stage B: a native Arch Linux ARM rootfs (writes to the phone, only with an explicit OK)
 
-### Ce merge
+If stage A works, we remove the container layer:
 
-- **GPU:** Turnip Adreno 650, Vulkan 1.3, Mesa 26.2.3, atât pe gazdă cât și în container.
-  Confirmat pe hardware: `storageBuffer8BitAccess = false`, deci DXVK 2.7, nu 3.
-- **gamescope** (Alpine 3.16.29) direct pe ecran: 1080x2400 la 90 Hz, rotit `right` (corect
-  față de controlerul GameSir X3 Pro), touchscreen-ul asociat automat.
-- **Container:** distrobox cu Fedora 44 (imaginea oficială), podman fără root, glibc 2.43.
-- **Steam ARM64** (canalul `steamdeck_publicbeta`, runtime `steamrt3c` 20260824): descărcat
-  direct de la Valve cu sumele de control verificate, auto-actualizat, login făcut, interfața
-  Deck rulează pe ecranul telefonului.
-- **USB OTG:** telefonul trece singur în modul host și alimentează accesoriul. GameSir X3 Pro
-  apare în kernel (`3537:0106`, "Zikway GameSir-X3 Pro", `hid-generic`), un mouse USB merge.
-- **Primul joc Windows (2026-10-01 23:15):** Tiny Rails (Unity, AppID 614630) pornit din Steam
-  prin Proton 11.0 (ARM64), Wine ARM64 + FEX, în runtime-ul Steam Linux Runtime 4 (arm64).
-  Utilizatorul: "mergea chiar ok". De verificat ce randare a folosit (DXVK 2/3 sau wined3d).
-- **Biblioteca Steam** e pe `userdata` (ext4 `op8games`, 215 GB, `/home/gabriel/games`), montată
-  prin bind în `~/.local/share/Steam/steamapps`; rootfs-ul rămâne pentru sistem.
+- An Arch Linux ARM rootfs with the pocknix userspace (aarch64 `pacman` packages) or rebuilt after
+  the Armada recipe. **Without their kernel**: `IgnorePkg` on the kernel and firmware packages.
+- Our kernel, with an initramfs that mounts the rootfs from `super` or `userdata`. Flashing only
+  `boot_b` (and the partition chosen for the rootfs), as so far. The way back to stock does not
+  change (backup + MSM, `hardware-safety.md` 3.6).
+- Kernel r6: `NTSYNC`, `EROFS_FS`, maybe `sched_ext`, plus the security options from
+  `security-audit.md` S3. Later, moving the DTS and the two patches to 7.2, **without** the charger
+  driver (until the version fixed by ROCKNIX, checked by us) and **without** the GPU overclock.
 
-### Capcane rezolvate (de reținut pentru etapa B)
+### Why not the other options
 
-- Lui Fedora îi lipseau pentru Steam: `at-spi2-atk`, `NetworkManager-libnm`. Steam își aduce
-  FFmpeg-ul, dar îl caută ca `libavcodec.so.61` / `libavutil.so.59`, iar `libbz2` ca `.so.1.0`:
-  legături simbolice în `~/.local/share/Steam/lib/aarch64-linux-gnu/`.
-- pmOS are `KillUserProcesses=true`: la ieșirea din SSH se închide tot. Soluția: `loginctl
-  enable-linger` și pornirea ca serviciu al userului (`systemd-run --user --unit=steam-gs`).
-- Fără sesiune logată pe ecran, gamescope pornește cu `LIBSEAT_BACKEND=noop` și userul în
-  grupul `input`.
-- În container nu există `/run/dbus`; magistrala gazdei e la
+- **pmOS + container as the final solution:** it works (the pmOS guides), but it is one more
+  layer: Steam starts its own container inside the distrobox container, and the guide reports
+  `steamwebhelper` hangs. Good for the test (stage A), awkward for every day.
+- **SteamOS ARM (the Frame image) through the REDMAGIC 6 method:** the closest to a real SteamOS,
+  but it is not made for the Adreno 650, nobody has run it on SM8250, and it updates as a whole
+  image. It stays a possible experiment after stage B, not the starting point.
+- **Armada / pocknix as images:** they do not boot on the OP8 without an unsigned ABL (3.3).
+
+---
+
+## 7. New rules (added to the list in `hardware-safety.md` 3.4)
+
+- We do not install the Armada, pocknix or SteamOS-ARM-Handhelds images as they are.
+- We do not use their kernels on the OnePlus 8 (charging at ~4.87 V, the GPU at 925 MHz).
+- We do not take `9998-gpu-tuning.patch` or any other GPU frequency table above 587 MHz.
+- We do not format `userdata` without the explicit decision in section 5.
+
+## 8. What is still unchecked
+
+- Steam ARM64 + FEX + Proton on our phone (proven only on the RP5, the same SoC).
+- Real game performance and the thermal behaviour under sustained play.
+- Powering the GameSir X3 Pro controller over USB-C (OTG).
+- Whether the pocknix userspace can be used without their kernel and device packages
+  (`pocknix-device-sm8250` depends on them).
+
+## 9. Stage A on the phone: what works and TODO (2026-10-01)
+
+Everything below was done without any flashing, only in the pmOS rootfs and in `/home/gabriel`.
+
+### What works
+
+- **GPU:** Turnip on the Adreno 650, Vulkan 1.3, Mesa 26.2.3, both on the host and in the
+  container. Confirmed on the hardware: `storageBuffer8BitAccess = false`, so DXVK 2.7, not 3.
+- **gamescope** (Alpine 3.16.29) straight on the screen: 1080x2400 at 90 Hz, rotated `right`
+  (correct relative to the GameSir X3 Pro controller), the touchscreen associated automatically.
+- **Container:** distrobox with Fedora 44 (the official image), rootless podman, glibc 2.43.
+- **Steam ARM64** (the `steamdeck_publicbeta` channel, runtime `steamrt3c` 20260824): downloaded
+  directly from Valve with the checksums verified, self-updated, logged in, the Deck interface
+  runs on the phone screen.
+- **USB OTG:** the phone switches to host mode by itself and powers the accessory. The GameSir X3
+  Pro shows up in the kernel (`3537:0106`, "Zikway GameSir-X3 Pro", `hid-generic`); a USB mouse
+  works.
+- **The first Windows game (2026-10-01 23:15):** Tiny Rails (Unity, AppID 614630) started from
+  Steam through Proton 11.0 (ARM64), Wine ARM64 + FEX, in the Steam Linux Runtime 4 (arm64). The
+  maintainer: "it ran quite well". To check which renderer it used (DXVK 2/3 or wined3d).
+- **The Steam library** is on `userdata` (ext4 `op8games`, 215 GB, `/home/gabriel/games`),
+  bind-mounted into `~/.local/share/Steam/steamapps`; the rootfs stays for the system.
+
+### Pitfalls solved (to remember for stage B)
+
+- Fedora was missing, for Steam: `at-spi2-atk`, `NetworkManager-libnm`. Steam brings its own
+  FFmpeg, but looks for it as `libavcodec.so.61` / `libavutil.so.59`, and for `libbz2` as
+  `.so.1.0`: symbolic links in `~/.local/share/Steam/lib/aarch64-linux-gnu/`.
+- pmOS has `KillUserProcesses=true`: leaving SSH closes everything. The fix: `loginctl
+  enable-linger` and starting as a user service (`systemd-run --user --unit=steam-gs`).
+- With no session logged in on the screen, gamescope starts with `LIBSEAT_BACKEND=noop` and the
+  user in the `input` group.
+- There is no `/run/dbus` in the container; the host's bus is at
   `/run/host/run/dbus/system_bus_socket` (`DBUS_SYSTEM_BUS_ADDRESS`).
-- Cu `-steamos3`, Steam cheamă `steamos-update`, `steamos-select-branch` și
-  `/usr/bin/steamos-polkit-helpers/jupiter-*`: shim-uri după pocknix.
-- La repornire se așteaptă oprirea completă a containerului, altfel podman eșuează la
-  `/etc/passwd` din overlay.
+- With `-steamos3`, Steam calls `steamos-update`, `steamos-select-branch` and
+  `/usr/bin/steamos-polkit-helpers/jupiter-*`: shims after pocknix.
+- On a restart, wait for the container to stop completely, otherwise podman fails on
+  `/etc/passwd` in the overlay.
 
-### Incident: resetare în timpul descărcării unui joc (2026-10-01 ~21:43)
+### Incident: a reset while a game was downloading (2026-10-01 ~21:43)
 
-Telefonul s-a resetat singur în timp ce Steam descărca Tiny Rails, în același moment în care
-rula `stageA2.sh` (reguli udev + `udevadm trigger` + repornirea nftables).
+The phone reset by itself while Steam was downloading Tiny Rails, at the same moment `stageA2.sh`
+was running (udev rules + `udevadm trigger` + restarting nftables).
 
-- **Registrele PON ale PM8150** (PMIC gen2, subtip `0x04`, motivele la `0x08C0`-`0x08CB`, nu la
-  `0x0808`-`0x080D` ca la gen1): `WARM_RESET_REASON1 = 0x02` (PS_HOLD), `OFF_REASON = 0x80`
-  (secvență normală, nu de eroare), `POFF_REASON1 = 0x02` și `PON_REASON1 = 0x40` (CBL) rămase
-  de la oprirea și pornirea de dinainte. `FAULT_REASON1 = 0x40` (UVLO) e vechi: ultima
-  secvență nu e de eroare.
-- **Concluzie:** reset "warm" cerut de SoC (kernel panic cu `kernel.panic=120` sau watchdog
-  hardware după o blocare). **Nicio protecție electrică a PMIC-ului nu s-a declanșat.**
-  Registrele de încărcare au rămas 4.37 V / 2.0 A / 1.6 A, temperaturile 38-40 °C.
-- **`ramoops` nu ajută:** `/sys/fs/pstore` e gol după reset, nici măcar `console-ramoops`, deci
-  bootloader-ul OnePlus nu păstrează zona de memorie. Jurnalul systemd pierde ultimul minut
-  (scriere pe disc la 5 minute).
-- Cel mai probabil vinovat: WiFi (ath11k + `amss.bin` neverificat) sub trafic mare. De
-  reprodus cu jurnalul kernelului transmis live pe PC.
-- **Cauza reală, găsită pe 2026-10-02 (TODO 2):** nu WiFi și nu discul, ci o zonă de memorie
-  rezervată lipsă din device tree (`removed_mem`). Rezolvat cu patch-ul de kernel `0003`.
+- **The PM8150 PON registers** (PMIC gen2, subtype `0x04`, the reasons at `0x08C0`-`0x08CB`, not at
+  `0x0808`-`0x080D` as on gen1): `WARM_RESET_REASON1 = 0x02` (PS_HOLD), `OFF_REASON = 0x80` (a
+  normal sequence, not a fault one), `POFF_REASON1 = 0x02` and `PON_REASON1 = 0x40` (CBL) left over
+  from the power-off and power-on before. `FAULT_REASON1 = 0x40` (UVLO) is old: the last sequence
+  is not a fault.
+- **Conclusion:** a "warm" reset requested by the SoC (a kernel panic with `kernel.panic=120` or a
+  hardware watchdog after a hang). **No electrical protection of the PMIC was triggered.** The
+  charger registers stayed at 4.37 V / 2.0 A / 1.6 A, temperatures 38-40 °C.
+- **`ramoops` does not help:** `/sys/fs/pstore` is empty after the reset, not even
+  `console-ramoops`, so the OnePlus bootloader does not keep that memory area. The systemd journal
+  loses the last minute (written to disk every 5 minutes).
+- Most likely culprit at the time: WiFi (ath11k + the unchecked `amss.bin`) under heavy traffic.
+  To reproduce with the kernel log streamed live to the PC.
+- **The real cause, found on 2026-10-02 (TODO 2):** neither WiFi nor the disk, but a reserved
+  memory region missing from the device tree (`removed_mem`). Fixed with kernel patch `0003`.
 
 ### TODO
 
-1. ~~Touch ca pe Steam Deck~~ **rezolvat 2026-10-02**: Steam comută modul touch al gamescope
-   (`STEAM_TOUCH_CLICK_MODE`) doar din Steam Input, adică doar cu un controler conectat.
-   `op8-touchmode` urmărește `GAMESCOPE_FOCUSED_APP`: interfața Steam (769) = 4 (touch real,
-   glisare = scroll), jocurile = 1 (click). Gamescope pornește cu `--default-touch-mode 4`.
-2. ~~Resetările din timpul descărcărilor~~ **rezolvat 2026-10-02**: o zonă de memorie
-   rezervată lipsea din device tree. Toate reseturile erau reset "warm" prin PS_HOLD, instant,
-   fără niciun mesaj în kernel (nici în jurnalul brut `/dev/kmsg` trimis live pe PC).
-   - **Cauza:** device tree-ul Xo666 șterge `removed_mem` (0x80b00000) din `sm8250.dtsi` și
-     mută zonele firmware-ului mai sus, la 0x8dc00000, dar nu mai adaugă `removed_mem` înapoi.
-     Bootloader-ul declară RAM 0x80000000-0xb98fffff, deci Linux folosea ~210 MB din memoria
-     lumii sigure (TrustZone/hypervisor) ca RAM obișnuit. Paginile sunt în `ZONE_DMA32`, folosită
-     doar după ce zonele de sus se umplu, de aceea resetul apărea doar cu RAM-ul plin: la
-     descărcări mari, cache-ul de fișiere umple memoria.
-   - **Dovada:** `stress-ng --vm 4 --vm-bytes 8000M` (fără disc) a resetat în 5 s, iar 2000M a
-     trecut. Testele de disc care resetau (H3, H8, H9: 8 × 1,5 GB în lucru) depășeau RAM-ul
-     liber, iar cele care treceau (H1, H6 cu zerouri, H2, H7b) rămâneau sub ~4 GB.
-     Diferența aparentă dintre zerouri și date reale venea din mărimea fișierelor, nu din conținut.
-   - **Reparația:** patch-ul `pmaports/linux-oneplus-instantnoodle/0003` (pkgrel 6) readaugă
-     `removed_mem` cu 0xcd00000, ca în device tree-urile WuerfelDev și ObiKeahloa pentru OnePlus 8.
-     Acoperă și valorile OnePlus (0xAF00000 în Android 11, 0x5300000 în LineageOS 23.2 și în
-     `sm8250.dtsi`). Cu el, RAM2 (2 minute cu 150-350 MB liberi, `--verify` curat) și H9
-     (72 GB scriși în 3 minute, 404 MB/s în medie) au trecut fără reset.
-   - **Testat pe telefon** cu DTB-ul imaginii actuale plus nodul nou (`fdtput`, singura
-     diferență), scris în `boot_b`. DTB-ul compilat din sursă cu 0002 + 0003 e identic cu cel
-     testat. Pachetul r6 încă nu e construit cu pmbootstrap.
-   - **Excluse pe drum** (fiecare cu reset reprodus): power management-ul UFS (`ufs-nopm.sh`),
-     coada UFS redusă la o comandă, cablul USB și încărcarea (test pe baterie, prin WiFi),
-     tensiunea S8C ridicată la 1,352 V, ca în Android (test cu imaginea în `boot_b`, apoi revenire).
-     VCC-ul UFS (2,504 V) e identic cu Android pentru UFS 3.0.
-3. ~~Controlerele în Steam~~ **merg**: GameSir X3 Pro și Xbox pe fir, cu regulile udev pentru
-   `hidraw`/`uinput`. Conectarea la cald prin `SDL_JOYSTICK_DISABLE_UDEV=1` (evenimentele udev
-   nu ajung în containerul fără root). Maparea X3 Pro (`3537:0106`, lipsă din baza SDL) s-a
-   făcut din Steam.
-4. **Controlere Bluetooth (de testat):** `bluez` instalat și pornit. DualSense
-   (`HID_PLAYSTATION`), Xbox Series X prin Bluetooth LE (`HID_MICROSOFT` + `UHID`; în 6.16
-   `CONFIG_BT_LE` adaugă doar audio LE, conexiunile LE merg și fără), DualShock 4 (`HID_SONY`).
-5. ~~Audio~~ **merge 2026-10-02**, cu plafon. Cauze: lipsea legătura UCM
-   `conf.d/sm8250/OnePlus8.conf` (reparat și în pachet), iar amplificatoarele TFA9874 tac dacă
-   PCM-ul e deschis S24_LE sau cu mmap (PipeWire forțat pe S16LE, fără mmap). Ieșirea implicită
-   "Difuzoare (protejat)" (trece-sus 250 Hz + clamp) trimite în ieșirea directă, al cărei volum
-   e plafonul: -30 dB. Butoanele de volum: `op8-buttons.py`. Vezi `userspace/README.md`.
-6. **DXVK 2.7** în locul lui DXVK 3 pentru Proton ARM64, după metoda pocknix. (Jocurile testate
-   până acum, Unity și 2D, au mers și fără.)
-7. ~~Spațiu~~ **rezolvat**: `userdata` formatat ext4 (`op8games`, 215 GB, cu acordul
-   utilizatorului), biblioteca Steam montată de acolo.
-8. **FEX pentru jocuri Linux x86:** rootfs-ul la `/usr/share/guestos/fex-mesa` (ca la Armada).
-   De verificat dacă pe SM8250 (fără LSE2) e nevoie de patch-ul de kernel pentru atomice
-   nealiniate pe care îl au pocknix și Armada (`0504` + `1062`).
-9. **Performanță și prevenirea crash-urilor:** vezi `performance-crash-audit.md`.
-10. **Steam în limba engleză** din registry-ul inițial; se poate schimba din setări.
-11. **Remote Play (streaming de pe PC) nu merge.** Clientul `streaming_client` crapă imediat.
-    Cu decodorul Venus vizibil (`/dev/video14`), crapă în calea V4L2 (`CV4L2Accel::
-    ProcessCompletedOutputBuffers`, scrisă pentru decodorul de pe Steam Frame). Fără Venus, n-are
-    decodor deloc: `streamclient.cpp (699) : m_pVideoDecoder`, apoi SIGSEGV la adresa 0x18 (nu
-    există decodare software ca rezervă). Încercat și cu `STEAM_GAMESCOPE_HDR_SUPPORTED=0`: tot crapă.
-    De încercat: formatul cerut de Steam de la V4L2 față de ce oferă Venus pe SM8250 (NV12 vs
-    QC08C/UBWC), H.264 forțat pe PC, un decodor V4L2 stateless. Analizor: `op8-minidump.py`.
-    **Investigat 2026-10-02 (strace + gdb pe `streaming_client`):**
-    - Clientul ARM64 are doar două decodoare: `CV4L2Accel` (V4L2 hardware) și Pyrowave, dar
-      biblioteca Pyrowave există doar pentru x86 (`steamrt64/libpyrowave-shared.so.0`). Nu are
-      decodare software (fără libavcodec, spre deosebire de clientul x86). Steam-ul de pe PC
-      poate codifica Pyrowave (`libpyrowave-shared-0.dll`).
-    - Venus (`/dev/video14`): H.264 / HEVC / VP8 / VP9 / MPEG-2 la intrare, NV12 și Q08C la
-      ieșire. Pașii clientului reușesc toți: `S_FMT` H.264 1920x1088, `REQBUFS` OUTPUT 16
-      (MMAP), CAPTURE NV12 `REQBUFS` DMABUF 16 => 18 (minimul Venus), 18 buffere DRM dumb,
-      `STREAMON` pe ambele cozi, 18 `QBUF` CAPTURE. Apoi firul de decodare face `G_FMT` pe
-      OUTPUT și crapă (SIGSEGV) **înainte de primul `QBUF` cu date**, în căutarea unui buffer
-      liber din propria listă de buffere OUTPUT (obiect + 712: pointer, + 728: număr de
-      elemente de 16 octeți). Pointerul e corupt (`0xffff00000048`, altă dată `0xaaab00000054`).
-    - `STEAMLINK_V4L2_BUFFER_COUNT=18` (variabilă citită de client) a ajuns la client, dar
-      crash-ul e identic. Scoasă la loc.
-    - Același cod V4L2 e defect și pe alte telefoane Qualcomm: pe Ayn Odin 2 Portal (SM8550,
-      Iris) trimite cadre goale și dă ecran verde (steam-for-linux #13428, deschis din iulie
-      2026, fără răspuns de la Valve).
-    - Conexiunea mergea prin releu SDR (`--transport k_EStreamTransportSDR`, ping 40 ms), nu
-      direct pe LAN: probabil din cauza firewall-ului telefonului (nft, doar SSH de la PC).
-    - **Alternativa propusă:** Moonlight în container (adăugat ca joc non-Steam) + Sunshine
-      sau Apollo pe PC (NVENC pe RTX 3060). Decodare software (FFmpeg) sau Venus prin
-      `h264_v4l2m2m`. Amânat la cererea utilizatorului.
-12. **Jocurile Linux native (x86)** se închid în sub o secundă (Half-Life, Hue, LIMBO, Terraria):
-    Steam le mapează pe unealta `native`. Ocolire: Proton 11.0 (ARM64) forțat din Properties >
-    Compatibility (versiunea Windows). Soluția completă: FEX + rootfs la
-    `/usr/share/guestos/fex-mesa` (punctul 8).
-13. **Muffin Knight:** mici probleme de afișare la text (Proton ARM64).
-14. ~~Full screen~~ **rezolvat 2026-10-02**, cu un gamescope modificat (vezi „Rezolvate tot pe
-    2026-10-02” mai jos). Istoricul investigației: panoul DSI n-are EDID, iar gamescope-ul din Alpine
-    nu generează unul. Steam nu vede rezoluția reală (2400x1080) și alege 1920x1080
-    (`systemdisplaymanager.txt`: "screen resolution: 1920x1080"; în logul gamescope Xwayland trece
-    de la 2400x1080 la 1920x1080 imediat după pornirea Steam). `GAMESCOPE_DISPLAY_EDID_PATH` e doar
-    atomul prin care gamescope îi dă lui Steam EDID-ul (scris în `GAMESCOPE_PATCHED_EDID_FILE`,
-    cu rotația aplicată), nu o cale de a încărca un EDID. Variante:
-    - **B (de încercat întâi):** EDID 1080x2400 (portret) cu timing-urile exacte ale panoului,
-      din sursa kernelului Xo666 (driverul panoului `samsung,amb655uv01`), injectat prin debugfs
-      `edid_override` pe DSI-1 la pornire, înaintea gamescope. Atenție: modurile din EDID înlocuiesc
-      lista panoului; un timing greșit = ecran negru până la repornire. Test manual, apoi permanent.
-    - **A:** gamescope recompilat cu patch-ul Armada
+1. ~~Touch as on a Steam Deck~~ **solved 2026-10-02**: Steam switches gamescope's touch mode
+   (`STEAM_TOUCH_CLICK_MODE`) only from Steam Input, that is only with a controller connected.
+   `op8-touchmode` follows `GAMESCOPE_FOCUSED_APP`: the Steam interface (769) = 4 (real touch,
+   swipe = scroll), games = 1 (click). gamescope starts with `--default-touch-mode 4`.
+2. ~~The resets during downloads~~ **solved 2026-10-02**: a reserved memory region was missing
+   from the device tree. All the resets were "warm" PS_HOLD resets, instant, with no kernel message
+   at all (not even in the raw `/dev/kmsg` stream sent live to the PC).
+   - **The cause:** the Xo666 device tree deletes `removed_mem` (0x80b00000) from `sm8250.dtsi`
+     and moves the firmware regions higher, to 0x8dc00000, but never adds `removed_mem` back. The
+     bootloader declares RAM 0x80000000-0xb98fffff, so Linux used ~210 MB of the secure world's
+     memory (TrustZone/hypervisor) as normal RAM. Those pages are in `ZONE_DMA32`, used only once
+     the higher zones fill up, which is why the reset appeared only with RAM full: during big
+     downloads the file cache fills the memory.
+   - **The proof:** `stress-ng --vm 4 --vm-bytes 8000M` (no disk) reset in 5 s, while 2000M
+     passed. The disk tests that reset (H3, H8, H9: 8 x 1.5 GB in flight) went beyond the free RAM,
+     and those that passed (H1, H6 with zeros, H2, H7b) stayed below ~4 GB. The apparent
+     difference between zeros and real data came from the file sizes, not from the content.
+   - **The fix:** patch `pmaports/linux-oneplus-instantnoodle/0003` (pkgrel 6) adds
+     `removed_mem` back with 0xcd00000, as in the WuerfelDev and ObiKeahloa device trees for the
+     OnePlus 8. It also covers the OnePlus values (0xAF00000 in Android 11, 0x5300000 in
+     LineageOS 23.2 and in `sm8250.dtsi`). With it, RAM2 (2 minutes with 150-350 MB free,
+     `--verify` clean) and H9 (72 GB written in 3 minutes, 404 MB/s on average) passed without a
+     reset.
+   - **Tested on the phone** with the current image's DTB plus the new node (`fdtput`, the only
+     difference), written to `boot_b`. The DTB built from source with 0002 + 0003 is identical to
+     the tested one. The r6 package was not built with pmbootstrap yet at the time.
+   - **Ruled out along the way** (each with a reproduced reset): UFS power management
+     (`ufs-nopm.sh`), the UFS queue cut to one command, the USB cable and charging (test on
+     battery, over WiFi), the S8C voltage raised to 1.352 V as on Android (test with the image in
+     `boot_b`, then back). The UFS VCC (2.504 V) is the same as on Android for UFS 3.0.
+3. ~~Controllers in Steam~~ **work**: the GameSir X3 Pro and an Xbox pad over the cable, with the
+   udev rules for `hidraw`/`uinput`. Hotplug through `SDL_JOYSTICK_DISABLE_UDEV=1` (udev events do
+   not reach the rootless container). The X3 Pro mapping (`3537:0106`, missing from the SDL
+   database) was done in Steam.
+4. **Bluetooth controllers (to test):** `bluez` installed and running. DualSense
+   (`HID_PLAYSTATION`), Xbox Series X over Bluetooth LE (`HID_MICROSOFT` + `UHID`; in 6.16
+   `CONFIG_BT_LE` only adds LE audio, LE connections work without it), DualShock 4 (`HID_SONY`).
+   (2026-10-04: Bluetooth fixed with `bootmac`, an Xbox controller works.)
+5. ~~Audio~~ **works since 2026-10-02**, with a ceiling. Causes: the UCM link
+   `conf.d/sm8250/OnePlus8.conf` was missing (fixed in the package too), and the TFA9874 amps stay
+   silent if the PCM is opened as S24_LE or with mmap (PipeWire forced to S16LE, no mmap). The
+   default output (the protected speaker filter: 250 Hz high-pass + clamp) feeds the direct output,
+   whose volume is the ceiling (now -18 dB). The volume buttons: `op8-buttons.py`. See
+   `userspace/README.md`.
+6. **DXVK 2.7** in place of DXVK 3 for Proton ARM64, after the pocknix method. (The games tested
+   so far, Unity and 2D, ran without it.)
+7. ~~Space~~ **solved**: `userdata` formatted as ext4 (`op8games`, 215 GB, with the maintainer's
+   agreement), the Steam library mounted from there.
+8. **FEX for x86 Linux games:** the rootfs at `/usr/share/guestos/fex-mesa` (as in Armada). To
+   check whether SM8250 (no LSE2) needs the kernel patch for unaligned atomics that pocknix and
+   Armada carry (`0504` + `1062`).
+9. **Performance and crash prevention:** see `performance-crash-audit.md`.
+10. **Steam in English** from the initial registry; it can be changed in the settings.
+11. **Remote Play (streaming from the PC) does not work.** The `streaming_client` crashes at once.
+    With the Venus decoder visible (`/dev/video14`), it crashes in the V4L2 path
+    (`CV4L2Accel::ProcessCompletedOutputBuffers`, written for the Steam Frame's decoder). Without
+    Venus it has no decoder at all: `streamclient.cpp (699) : m_pVideoDecoder`, then SIGSEGV at
+    address 0x18 (there is no software decoding fallback). Also tried with
+    `STEAM_GAMESCOPE_HDR_SUPPORTED=0`: it still crashes. To try: the format Steam asks V4L2 for
+    versus what Venus offers on SM8250 (NV12 vs QC08C/UBWC), H.264 forced on the PC, a stateless
+    V4L2 decoder. Reader: `op8-minidump.py`.
+    **Investigated 2026-10-02 (strace + gdb on `streaming_client`):**
+    - The ARM64 client has only two decoders: `CV4L2Accel` (hardware V4L2) and Pyrowave, but the
+      Pyrowave library exists only for x86 (`steamrt64/libpyrowave-shared.so.0`). It has no
+      software decoding (no libavcodec, unlike the x86 client). Steam on the PC can encode
+      Pyrowave (`libpyrowave-shared-0.dll`).
+    - Venus (`/dev/video14`): H.264 / HEVC / VP8 / VP9 / MPEG-2 in, NV12 and Q08C out. The
+      client's steps all succeed: `S_FMT` H.264 1920x1088, `REQBUFS` OUTPUT 16 (MMAP), CAPTURE
+      NV12 `REQBUFS` DMABUF 16 => 18 (the Venus minimum), 18 DRM dumb buffers, `STREAMON` on both
+      queues, 18 CAPTURE `QBUF`. Then the decoding thread does `G_FMT` on OUTPUT and crashes
+      (SIGSEGV) **before the first `QBUF` with data**, while looking for a free buffer in its own
+      list of OUTPUT buffers (object + 712: pointer, + 728: number of 16-byte elements). The
+      pointer is corrupt (`0xffff00000048`, another time `0xaaab00000054`).
+    - `STEAMLINK_V4L2_BUFFER_COUNT=18` (a variable the client reads) reached the client, but the
+      crash is identical. Removed again.
+    - The same V4L2 code is broken on other Qualcomm devices too: on the Ayn Odin 2 Portal
+      (SM8550, Iris) it sends empty frames and shows a green screen (steam-for-linux #13428, open
+      since July 2026, no answer from Valve).
+    - The connection went through the SDR relay (`--transport k_EStreamTransportSDR`, 40 ms
+      ping), not directly over the LAN: probably because of the phone's firewall (nft, SSH from
+      the PC only).
+    - **The proposed alternative:** Moonlight in the container (added as a non-Steam game) +
+      Sunshine or Apollo on the PC (NVENC on an RTX 3060). Software decoding (FFmpeg) or Venus
+      through `h264_v4l2m2m`. Postponed at the maintainer's request.
+12. **Native (x86) Linux games** close in under a second (Half-Life, Hue, LIMBO, Terraria): Steam
+    maps them to the `native` tool. Workaround: Proton 11.0 (ARM64) forced in Properties >
+    Compatibility (the Windows version). The full solution: FEX + the rootfs at
+    `/usr/share/guestos/fex-mesa` (item 8).
+13. **Muffin Knight:** small display glitches in text (Proton ARM64).
+14. ~~Full screen~~ **solved 2026-10-02**, with a modified gamescope (see "Also solved on
+    2026-10-02" below). The history of the investigation: the DSI panel has no EDID, and Alpine's
+    gamescope does not make one up. Steam does not see the real resolution (2400x1080) and picks
+    1920x1080 (`systemdisplaymanager.txt`: "screen resolution: 1920x1080"; in the gamescope log
+    Xwayland goes from 2400x1080 to 1920x1080 right after Steam starts).
+    `GAMESCOPE_DISPLAY_EDID_PATH` is only the atom through which gamescope gives Steam the EDID
+    (written to `GAMESCOPE_PATCHED_EDID_FILE`, with the rotation applied), not a way to load an
+    EDID. Options:
+    - **B (to try first):** an EDID for 1080x2400 (portrait) with the panel's exact timings, from
+      the Xo666 kernel source (the `samsung,amb655uv01` panel driver), injected through the
+      debugfs `edid_override` on DSI-1 at boot, before gamescope. Careful: the EDID modes replace
+      the panel's list; a wrong timing = a black screen until reboot. Manual test first, then
+      permanent.
+    - **A:** gamescope rebuilt with the Armada patch
       `packages/gamescope/patches/0002-drm-synthesize-edid-for-edidless-internal-panels.patch`
-      (+ `0003` pentru profile de display), adaptat la 3.16.29, construit cu pmbootstrap.
-    - **C:** `-S fill` / `-S stretch` în gamescope (imagine tăiată sau deformată).
-    Referință pentru panouri de telefon 2400x1080: profilul `redmagic6.amoled.lua` din
-    SteamOS-ARM-Handhelds (rate dinamice 60/90/120/144 pe un panou fără EDID).
-    **Încercat pe 2026-10-02:**
-    - **B nu poate merge pe acest panou:** în kernelurile 6.x, `edid_override` se folosește
-      doar pe calea de citire a EDID-ului sau dacă driverul nu dă niciun mod; driverul
-      `panel-samsung-amb655uv01` dă direct două moduri, deci override-ul e ignorat (conectorul
-      rămâne cu EDID 0 octeți).
-    - **EDID pentru Steam fără recompilare:** gamescope îi dă lui Steam EDID-ul doar prin
-      `GAMESCOPE_PATCHED_EDID_FILE` (lipsea), iar fără EDID de la panou scrie acolo un fișier
-      gol. `steam-gamescope.sh` pune acum EDID-ul panoului rotit în landscape
-      (`userspace/system/make_edid.py`, 2400x1080 la 90 și 60 Hz, verificat cu `edid-decode`)
-      și face din `<cale>.tmp` un director, ca scrierea lui gamescope să eșueze. Merge
-      (`GAMESCOPE_DISPLAY_EDID_PATH` arată spre fișierul nostru), dar **nu schimbă nimic**:
-      la ecran intern Steam nu citește modurile din EDID (`OnScreenChanged: ... external: 0
-      modes: 0`).
-    - **Cauza reală:** Steam își pune singur interfața la 1920x1080 (`GAMESCOPE_XWAYLAND_MODE_
-      CONTROL`), iar rezoluția „nativă” a jocurilor e cea a interfeței („Using maximum game
-      resolution: screen resolution: 1920x1080”). O cerere de 2400x1080 trimisă de noi e
-      anulată imediat de Steam. Steam primește de la gamescope dimensiunea fizică a panoului
-      **nerotită** (70 x 151 mm pentru o imagine 2400x1080; `wl_output` geometry) și calculează
-      o scară absurdă (`UIScaleFromDimensions: 1920 x 1080 : 268mm x 39mm`).
-      `GAMESCOPE_FAKE_OUTPUT_MM` nu are efect pe backend-ul DRM în 3.16.29.
-    - **Setarea Steam Settings > Display > Scaling:** lista nu are 2400x1080 (are 2040x1080,
-      2560x1080); 2560x1080 nu umple ecranul.
-    - **Următorul pas:** dimensiunea fizică rotită: patch gamescope (schimbarea între ele a
-      `phys_width`/`phys_height` când imaginea e rotită, în `DRMBackend.cpp`, lângă
-      `wlserver_set_output_info`) sau, mai simplu, `.width_mm = 151, .height_mm = 70` în
-      driverul panoului (kernel r6). Apoi de văzut dacă Steam alege singur 2400x1080; dacă
-      nu, patch-ul Armada 0002/0003 (EDID sintetic în gamescope).
-15. ~~Ieșire din joc fără controler~~ **rezolvat 2026-10-02**: Volume Up + Volume Down apăsate
-    deodată deschid meniul Steam, și în jocuri (vezi mai jos, `op8-buttons.py`).
-16. **Sunetul lipsește uneori după pornire:** când DSP-ul audio răspunde cu eroare la pornire
-    (`qcom-q6afe ... AFE failed to vote (3)`, uneori și `va_macro ... failed with error -110`),
-    placa de sunet nu apare. 5 din 17 porniri pe 2026-10-02, cu imagini diferite, deci nu ține
-    de vreo modificare anume. O repornire o rezolvă. De încercat: un serviciu care, dacă
-    lipsește `/proc/asound/cards`, reîncarcă driverele audio (`unbind`/`bind`) sau repornește
-    DSP-ul (`remoteproc`).
-17. **Încărcare prin controler (passthrough, GameSir X3 Pro):** telefonul trebuie să fie gazdă
-    USB pentru controler și în același timp să primească curent prin el. De testat cu stiva
-    Type-C/PD din kernel (`tcpm`, raportează `PD PD_PPS`). Fără driver de încărcare, PMIC-ul
-    încarcă cu limitele lui hardware (verificate: 4,37 V, 2 A). Bateria e uzată (gauge-ul
-    estimează 1,9-3,1 Ah din 4,27 Ah), iar o baterie nouă nu e în plan.
-    **Încărcătoare USB-C PD (ex. Samsung 45 W): de nefolosit deocamdată.** Conectorul din
-    device tree-ul Xo666 declară `sink-pdos` cu `PDO_VAR(5000, 12000, 5000)`, deci telefonul ar
-    cere unui încărcător PD 9 V. Pe Android, OnePlus 8 nu folosea PD peste 5 V (încărcarea
-    rapidă e Warp, 5 V / 6 A), deci 9 V pe VBUS e netestat pe placa asta. De făcut întâi: patch
-    de device tree cu `sink-pdos = <PDO_FIXED(5000, 3000, ...)>` (doar 5 V), apoi un test
-    urmărit (`tcpm-source-psy-*/voltage_now` trebuie să arate 5 V). Sigure până atunci: portul
-    USB al PC-ului sau un încărcător USB-A de 5 V.
-    **Făcut și testat 2026-10-02:** DTB-ul din `boot_b` are acum `sink-pdos = <0x2601912c>`
-    (doar 5 V / 3 A; `fdtput` pe imaginea cu `removed_mem`, scrisă de utilizator). Încărcătorul
-    Samsung 45 W oferă 5 / 9 / 15 / 20 V și PPS 3,3-21 V; telefonul a negociat PD **5 V / 3 A**
-    (`power_operation_mode = usb_power_delivery`). Bateria primește ~0,9 A cu Steam pornit
-    (portul PC-ului: ~0,35 A). Limita reală e ICL-ul PMIC-ului (1,6 A la 5 V, ~8 W). De pus și
-    în pachetul de kernel (patch `0004`, r7) ca să nu se piardă la următorul build.
-18. **Indicatorul de volum din Steam în colțul stânga jos (opțional):** Steam nu are setare de
-    poziție. Variante: Decky Loader + CSS Loader (netestat în containerul ARM) sau un indicator
-    propriu într-un overlay gamescope, cu volumul schimbat printr-un etaj de filtru separat
-    (atunci Steam nu-și mai arată bara).
-19. ~~Protecție termică după temperatura bateriei~~ **făcut 2026-10-02**
-    (`userspace/system/op8-thermal`, `install-thermal.sh`). Kernelul protejează doar procesorul
-    (frânare la 90 și 95 °C, oprire la 110 °C), iar Android frânează mult mai devreme, după
-    carcasă și baterie. Măsurat: Slime Rancher a dus bateria la 46,5 °C (CPU 93 °C), compilarea
-    pe 8 nuclee la 46,6 °C. `op8-thermal` (serviciu de sistem, la 5 s) limitează nucleele mari,
-    prime și GPU-ul pe 4 niveluri, la 41 / 42 / 43 / 44,5 °C la baterie (cu 1 °C histerezis);
-    nucleele mici rămân libere, iar în standby nu atinge nimic. Telefonul n-are senzor de carcasă.
-    **JEITA în PM8150B** (citit, doar citire): `0x1090 = 0x00`, deci reducerea automată a
-    curentului și a tensiunii la cald e **dezactivată** (în Android o face software-ul OnePlus).
-    Rămân doar pragurile hardware (`0x1094`-`0x109f`, trei perechi de coduri ADC ale
-    termistorului: soft, oprirea încărcării, oprirea de urgență), netransformate în grade. Deci
-    fără driver de încărcare, curentul de încărcare (2,0 A) nu scade la cald: încărcatul în timp
-    ce joci încălzește bateria în plus. De urmărit: o scriere a lui `0x1090` (activare JEITA)
-    ar cere scriere în registrele PMIC, nefăcută.
-20. **Ecran cu zgomot colorat (o dată, cauză necunoscută):** pe 2026-10-02, în Slime Rancher,
-    cu overlay-ul pornit, după o schimbare de luminozitate, tot ecranul a devenit zgomot colorat.
-    A rămas și după sleep și după repornirea gamescope; a dispărut doar la repornirea telefonului
-    (panoul se resetează la întreruperea alimentării). Excluse: luminozitatea singură (10 pași
-    lenți, apoi 60 de valori în 2 s, din sysfs, fără zgomot), slider-ul din Steam în interfață,
-    fereastra `mangoapp` (era ascunsă). Indicii: Steam pune `GAMESCOPE_DISPLAY_HDR_ENABLED=1` deși
-    gamescope raportează `GAMESCOPE_DISPLAY_SUPPORTS_HDR=0`; controlerul de afișaj expune doar
-    `CTM` (fără `GAMMA_LUT`), iar în starea normală `CTM` nu e setat (`drm_info`, instantaneu în
-    `D:\op8-logs\drm_info-normal-*.txt`). Dacă reapare: `drm_info` înainte de repornire și
-    jurnalul proprietăților de culoare (`xprop -root -spy`, filtrat pe `GAMESCOPE_*COLOR/HDR`).
-    Măsură de rezervă: gamescope cu `--disable-color-management`.
-21. **Refresh rate the user can change (60 / 90 Hz).** Kernel patch 0006 (r9) runs the panel at
+      (+ `0003` for display profiles), adapted to 3.16.29, built with pmbootstrap.
+    - **C:** `-S fill` / `-S stretch` in gamescope (a cropped or stretched image).
+    Reference for 2400x1080 phone panels: the `redmagic6.amoled.lua` profile in
+    SteamOS-ARM-Handhelds (dynamic rates 60/90/120/144 on a panel without EDID).
+    **Tried on 2026-10-02:**
+    - **B cannot work on this panel:** in 6.x kernels `edid_override` is used only on the EDID
+      read path or when the driver gives no mode; the `panel-samsung-amb655uv01` driver gives two
+      modes directly, so the override is ignored (the connector keeps a 0-byte EDID).
+    - **An EDID for Steam without rebuilding:** gamescope gives Steam the EDID only through
+      `GAMESCOPE_PATCHED_EDID_FILE` (which was missing), and with no EDID from the panel it writes
+      an empty file there. `steam-gamescope.sh` now puts the panel's EDID, rotated to landscape
+      (`userspace/system/make_edid.py`, 2400x1080 at 90 and 60 Hz, checked with `edid-decode`),
+      in place, and makes `<path>.tmp` a directory so gamescope's write fails. It works
+      (`GAMESCOPE_DISPLAY_EDID_PATH` points at our file), but **changes nothing**: for an internal
+      screen Steam does not read the modes from the EDID (`OnScreenChanged: ... external: 0 modes:
+      0`).
+    - **The real cause:** Steam sets its own interface to 1920x1080
+      (`GAMESCOPE_XWAYLAND_MODE_CONTROL`), and the games' "native" resolution is the interface's
+      ("Using maximum game resolution: screen resolution: 1920x1080"). A 2400x1080 request sent by
+      us is cancelled by Steam at once. Steam gets from gamescope the panel's physical size
+      **unrotated** (70 x 151 mm for a 2400x1080 image; `wl_output` geometry) and computes an
+      absurd scale (`UIScaleFromDimensions: 1920 x 1080 : 268mm x 39mm`).
+      `GAMESCOPE_FAKE_OUTPUT_MM` has no effect on the DRM backend in 3.16.29.
+    - **Steam Settings > Display > Scaling:** the list has no 2400x1080 (it has 2040x1080,
+      2560x1080); 2560x1080 does not fill the screen.
+    - **The next step at the time:** the rotated physical size: a gamescope patch (swapping
+      `phys_width`/`phys_height` when the image is rotated, in `DRMBackend.cpp`, near
+      `wlserver_set_output_info`) or, simpler, `.width_mm = 151, .height_mm = 70` in the panel
+      driver (kernel r6). Then see whether Steam picks 2400x1080 by itself; if not, the Armada
+      patch 0002/0003 (a synthetic EDID in gamescope).
+15. ~~Leaving a game without a controller~~ **solved 2026-10-02**: Volume Up + Volume Down pressed
+    together open the Steam menu, also in games (see below, `op8-buttons.py`).
+16. **Sound sometimes missing after boot:** when the audio DSP answers with an error at boot
+    (`qcom-q6afe ... AFE failed to vote (3)`, sometimes also `va_macro ... failed with error
+    -110`), the sound card does not appear. 5 of 17 boots on 2026-10-02, with different images, so
+    it is not tied to any one change. A reboot fixes it. To try: a service that, if
+    `/proc/asound/cards` is missing, reloads the audio drivers (`unbind`/`bind`) or restarts the
+    DSP (`remoteproc`).
+17. **Charging through the controller (pass-through, GameSir X3 Pro):** the phone must be the USB
+    host for the controller and receive power through it at the same time. To test with the
+    kernel's Type-C/PD stack (`tcpm`, it reports `PD PD_PPS`). Without a charger driver the PMIC
+    charges with its hardware limits (checked: 4.37 V, 2 A). The battery is worn (the gauge
+    estimates 1.9-3.1 Ah out of 4.27 Ah), and a new battery is not planned.
+    **USB-C PD chargers (e.g. Samsung 45 W): not to be used for now.** The connector in the Xo666
+    device tree declares `sink-pdos` with `PDO_VAR(5000, 12000, 5000)`, so the phone would ask a
+    PD charger for 9 V. On Android the OnePlus 8 never used PD above 5 V (its fast charging is
+    Warp, 5 V / 6 A), so 9 V on VBUS is untested on this board. First: a device tree patch with
+    `sink-pdos = <PDO_FIXED(5000, 3000, ...)>` (5 V only), then a watched test
+    (`tcpm-source-psy-*/voltage_now` must read 5 V). Safe until then: the PC's USB port or a 5 V
+    USB-A charger.
+    **Done and tested 2026-10-02:** the DTB in `boot_b` now has `sink-pdos = <0x2601912c>` (5 V /
+    3 A only; `fdtput` on the image with `removed_mem`, written by the maintainer). The Samsung
+    45 W charger offers 5 / 9 / 15 / 20 V and PPS 3.3-21 V; the phone negotiated PD **5 V / 3 A**
+    (`power_operation_mode = usb_power_delivery`). The battery gets ~0.9 A with Steam running
+    (the PC port: ~0.35 A). The real limit is the PMIC's input current limit (1.6 A at 5 V,
+    ~8 W). Now kernel patch `0004` (r7).
+    **Pass-through works (2026-10-04, test image r8w):** the X3 asks for a power role swap
+    (PR_SWAP) only in the first seconds after the phone is plugged in, and only if its own
+    charger is already connected; plugging the charger in later does nothing until the phone is
+    re-seated. After the swap the X3 sends its Source_Capabilities 337 ms after PS_RDY, but tcpm
+    gives up after 310 ms (the USB PD tTypeCSinkWaitCap minimum; the connector is `self-powered`,
+    so tcpm goes straight to a hard reset). The hard reset re-attached the phone as sink and USB
+    device, so the controller vanished, and the X3 rejects a DR_SWAP in that state. Fix:
+    `sink-wait-cap-time-ms = <620>` on the connector (the USB PD maximum; OnePlus' downstream
+    policy engine uses 500 ms). Result: the phone stays USB host and gets PD 5 V / 2 A from the X3
+    (the X3 also offers 9 V / 1.5 A, refused by the 5 V-only sink PDOs); the controller and the
+    X3 fan work, and the battery gains about 0.1 A in the Steam interface. Use: charger into the
+    X3 first, then the phone. Now kernel patch 0007 (r11).
+18. **Steam's volume indicator in the bottom-left corner (optional):** Steam has no position
+    setting. Options: Decky Loader + CSS Loader (untested in the ARM container) or our own
+    indicator in a gamescope overlay, with the volume changed through a separate filter stage
+    (then Steam no longer shows its bar).
+19. ~~Thermal protection by battery temperature~~ **done 2026-10-02**
+    (`userspace/system/op8-thermal`, `install-thermal.sh`). The kernel only protects the processor
+    (throttling at 90 and 95 °C, shutdown at 110 °C), while Android throttles much earlier, by case
+    and battery temperature. Measured: Slime Rancher took the battery to 46.5 °C (CPU 93 °C), a
+    build on 8 cores to 46.6 °C. `op8-thermal` (a system service, every 5 s) limits the big cores,
+    the prime core and the GPU in 4 levels, at 41 / 42 / 43 / 44.5 °C battery temperature (1 °C
+    hysteresis); the little cores stay free, and in standby it touches nothing. The phone has no
+    case sensor.
+    **JEITA in the PM8150B** (read only): `0x1090 = 0x00`, so the automatic reduction of the charge
+    current and voltage when hot is **disabled** (on Android the OnePlus software does it). Only
+    the hardware thresholds remain (`0x1094`-`0x109f`, three pairs of thermistor ADC codes: soft,
+    charge stop, emergency stop), not converted to degrees. So without a charger driver the charge
+    current (2.0 A) does not drop when hot: charging while playing heats the battery further. To
+    follow: enabling JEITA through `0x1090` would need a PMIC register write, not done.
+20. **Screen full of coloured noise (cause not fully known):** on 2026-10-02, in Slime Rancher,
+    with the overlay on, after a brightness change, the whole screen turned to coloured noise. It
+    stayed after sleep and after restarting gamescope; it went away only when the phone rebooted
+    (the panel resets when its power is cut). Ruled out: brightness alone (10 slow steps, then 60
+    values in 2 s, from sysfs, no noise), Steam's slider in the interface, the `mangoapp` window
+    (it was hidden). Clues: Steam sets `GAMESCOPE_DISPLAY_HDR_ENABLED=1` although gamescope reports
+    `GAMESCOPE_DISPLAY_SUPPORTS_HDR=0`; the display controller only exposes `CTM` (no `GAMMA_LUT`),
+    and in the normal state `CTM` is not set (`drm_info`, snapshot in
+    `D:\op8-logs\drm_info-normal-*.txt`). If it comes back: `drm_info` before rebooting and the log
+    of the colour properties (`xprop -root -spy`, filtered on `GAMESCOPE_*COLOR/HDR`). Fallback:
+    gamescope with `--disable-color-management`.
+    **2026-10-04:** it came back for about 13 minutes on kernel r8, with bursts of
+    `dsi_err_worker: status=5` (DSI transfer timeouts), and `gamescopectl
+    drm_sleep_internal_screen 1`, 2 s, then `0` cleared it without a reboot. The DSI link was too
+    slow for 90 Hz (521 Mbps per lane); kernel r11 runs it at the vendor rate (651.78 Mbps) and the
+    boot-time `dsi_err_worker` lines dropped from 13 to 1. Not seen on r11 so far.
+21. **Refresh rate the user can change (60 / 90 Hz).** Kernel patch 0006 of r9 ran the panel at
     60 Hz by default, with 90 Hz only through the boot option
     `panel_samsung_amb655uv01.refresh=90`. Wanted: switching from Steam (the refresh-rate slider
     in Quick Access > Performance), so a game that reaches 90 fps can use it. Needed:
@@ -498,7 +521,8 @@ rula `stageA2.sh` (reguli udev + `udevadm trigger` + repornirea nftables).
     - **Tried on 2026-10-04 and reverted:** kernel r9 (patch 0006: only the 60 Hz mode, DCS
       `60 00`) gave a garbled image (coloured patterns, repeated Steam logos) and many
       `dsi_err_worker: status=5`. The mainline DSI host lowers the link clock with the mode's
-      pixel clock; the vendor driver probably keeps it. To understand before any new test.
+      pixel clock (348 Mbps at 60 Hz), while the vendor keeps 652.8 Mbps for both rates. A 60 Hz
+      mode must keep the link at the vendor rate, as r11 does for 90 Hz (wider porch).
     - Meanwhile gamescope runs without `-r 60` (it held Steam and games at 60 fps while the panel
       scanned out at 90 Hz); games are capped from Steam's Frame Limit.
 22. **Thermal guard level in the MangoHud overlay.** Show which `op8-thermal` level is active
@@ -506,91 +530,123 @@ rula `stageA2.sh` (reguli udev + `udevadm trigger` + repornirea nftables).
     when performance drops because of heat. Idea: `op8-thermal` writes the current level to a
     small file in `/run` (the container sees the host's `/run` as `/run/host/run`), and an
     `exec` line in `mangohud-presets.conf` reads it.
+23. **Kernel Oops when the USB port switches from device to host (2026-10-04).** Seen twice: once
+    when the phone booted inside the X3 with its charger connected (the port then flips between
+    device and host about twice a second from boot), once when the phone moved from the PC cable
+    into the X3. The NCM gadget's network interface (`usb0`, used for SSH over USB) outlives its
+    parent gadget device, and the next program that lists network interfaces (Steam's web helper,
+    the game) hits freed memory in `rtnl_fill_ifinfo`. The Oops happens with the network lock
+    held, so everything that touches networking hangs: NetworkManager, WiFi, podman ("crun: fail
+    startup"), the systemd user manager, and SSH logins. Recovery: `sudo sync && sudo reboot -f`
+    if a shell still works, otherwise Power + both volume buttons held about 30 s. Known upstream
+    bug, fixed in Linux 7.0-rc4 by the series "usb: gadget: Fix net_device lifecycle with
+    device_move" (v2, March 2026), missing from 6.16.7. Workaround in place:
+    `armdeck-usb-gadget-off` removes the gadget at boot, and `op8-tune` sets `panic_on_oops=1`,
+    `panic=10`. To do: backport the fix as a kernel patch, then capture why the port flips at boot
+    inside the X3 (tcpm log).
+24. **Steam started before the clock was set.** The phone has no usable real-time clock, so the
+    date is 1970 until NTP answers (about 40 s after boot on WiFi). Steam started then fails its
+    TLS connections and its interface may never appear. Fixed in `steam-gs.service`: it waits
+    for the first time sync (at most 90 s, then starts anyway for offline use).
+25. **A frame limit set from Quick Access, for every game, without input delay.** Steam's own
+    limiter is applied by gamescope's Vulkan WSI layer inside the game (it was missing from the
+    container: `dnf install gamescope`, the same 3.16.29). With it, a 30 fps cap gave 15-18 fps in
+    Tomb Raider (DXVK's frame pacing misses every other slot on this device), and turning that
+    pacing off (`GAMESCOPE_WSI_FRAME_LIMITER_AWARE=0`) gave 30 fps with noticeable input delay.
+    MangoHud's in-game limiter (`dnf install mangohud` in the container, then
+    `MANGOHUD=1 MANGOHUD_CONFIG=no_display,fps_limit=30,fps_limit_method=late %command%`, Steam's
+    limit off) gave a stable 30 fps with no delay the maintainer could feel. To do: drive MangoHud's
+    `fps_limit` from Steam's Frame Limit slider for every game (our gamescope build stops enforcing
+    the cap and hands the value on).
 
-Rezolvate tot pe 2026-10-02, mai târziu:
+Also solved on 2026-10-02, later:
 
-- **Spațiul din Steam** (Storage arăta 13,1 GB): Steam calculează spațiul liber pe directorul
-  lui de instalare, care era pe partiția de sistem (2,9 GB liberi), nu pe `steamapps`.
-  `userspace/system/move-steam-to-games.sh` mută tot directorul Steam pe partiția de jocuri și
-  îl montează (bind) la aceeași cale; `steam-gs.service` așteaptă acum acel montaj.
-- **Butoanele de volum** (`userspace/steam/op8-buttons.py`, în container, pornit cu sesiunea
-  Steam; înlocuiește `op8-volbtn` de pe gazdă):
-  - inversate: în landscape, Volume Up fizic e în stânga, iar bara din Steam crește spre dreapta;
-  - volumul se schimbă la eliberare, iar la ținere, continuu, după 0,5 s. Butoanele nu trimit
-    repetare automată (`EV=3`, fără `EV_REP`), deci ținerea are cronometrul ei;
-  - **Volume Up + Volume Down deodată = butonul Steam**, și în jocuri: Steam înregistrează la
-    gamescope Shift+Tab ca butonul Steam (`GuideKeyboardHotkey -> [Tab + Shift_L]` în jurnalul
-    gamescope), iar gamescope o interceptează înaintea jocului. Se trimite de pe o tastatură
-    virtuală permanentă, după eliberarea ambelor butoane: gamescope o declanșează doar dacă
-    nicio altă tastă nu e apăsată, iar butoanele de volum sunt și ele tastaturi pentru el.
-    Încercări abandonate: un controler Xbox virtual creat la apăsare (Steam afișa „controller
-    connected”) și o tastatură creată la fiecare apăsare (gamescope nu apuca să o vadă). Două
-    procese `sh`, câte unul pe buton, prindeau combinația cam o dată din trei.
-- **Overlay-ul de performanță** (meniul `...` > Performance): gamescope 3.16.29 trimite către
-  `mangoapp` câmpurile `app_frametime_ns` și `visible_frametime_ns` în ordine inversă față de
-  orice MangoHud (0.7.1 din Alpine, 0.8.4, `master`). `mangoapp` citește atunci mereu „necunoscut”
-  ca timp de cadru vizibil, nu iese din pauză și nu apare în jocurile Steam/Proton
-  ([gamescope #2430](https://github.com/ValveSoftware/gamescope/issues/2430), aceleași simptome).
-  `userspace/steam/build-mangoapp-gs.sh` compilează MangoHud 0.8.4 cu ordinea din gamescope, în
-  container (`ipc=host`, deci vede coada de mesaje a lui gamescope); `op8-mangoapp` îl pornește cu
-  sesiunea, iar gamescope nu mai primește `--mangoapp`. Steam scrie nivelul în
-  `/run/user/10000/mangohud.conf`. Când gamescope revine la ordinea veche, patch-ul trebuie scos.
-- **Full screen** (fără benzi negre, jocurile la 2400x1080): Steam trece panoul în configurația
-  lui ca ecran **extern** (`config.vdf`: `IsExternalDisplay 1`, „External: OnePlus 8”), deși
-  gamescope îl anunță intern, și cere la fiecare pornire Xwayland 1920x1080
-  (`GAMESCOPE_XWAYLAND_MODE_CONTROL = 0, 1920, 1080, 0`); o cerere de 2400x1080 trimisă din
-  afară e anulată imediat. Soluția: gamescope 3.16.29 din Alpine plus patch-ul
-  `userspace/steam/gamescope/9001-armdeck-force-native-xwayland.patch`: cu
-  `GAMESCOPE_FORCE_NATIVE_XWAYLAND`, orice cerere de mod Xwayland devine dimensiunea nativă.
-  Construit cu `build-gamescope-op8.sh` (pmbootstrap, sub qemu: crossdirect eșua cu „cannot
-  execute cc1”), rulat din `~/bin/gamescope-op8` fără instalare; `steam-gamescope.sh` îl
-  folosește dacă există. Verificat: Steam cere 1920x1080 de 5 ori la pornire, apoi se oprește
-  (fără buclă), iar la Tiny Rails jurnalul arată „Using maximum game resolution: screen
-  resolution: 2400x1080”. Limite: binarul din `~/bin` n-are `CAP_SYS_NICE` (op8-tune o pune
-  doar pe `/usr/bin/gamescope`), iar o rezoluție aleasă per joc în Steam e ignorată. De făcut
-  pachet apk și de reconstruit la fiecare actualizare de gamescope.
-- **Încărcarea în sleep:** în standby telefonul nu mai răspunde pe WiFi (ping și SSH), deci
-  verificările de la distanță cer telefonul treaz sau pe cablu.
-- **Primul joc 3D:** Slime Rancher (Unity, Proton 11 ARM64) merge, pornit în modul „safe”
-  (`-lowGraphics`); fără el se închidea uneori la încărcare.
-- **Indicatorul de încărcare care apare și dispare:** de la portul USB al PC-ului telefonul
-  primește ~2,5 W (Type-C fără PD). Sub sarcină consumă mai mult, iar starea bateriei trece între
-  „Charging” și „Discharging”. Cu un încărcător de priză nu apare.
+- **Steam's free space** (Storage showed 13.1 GB): Steam computes the free space on its install
+  directory, which was on the system partition (2.9 GB free), not on `steamapps`.
+  `userspace/system/move-steam-to-games.sh` moves the whole Steam directory to the games partition
+  and bind-mounts it at the same path; `steam-gs.service` now waits for that mount.
+- **The volume buttons** (`userspace/steam/op8-buttons.py`, in the container, started with the
+  Steam session; replaces `op8-volbtn` on the host):
+  - swapped: in landscape the physical Volume Up is on the left, and Steam's bar grows to the
+    right;
+  - the volume changes on release, and while held, continuously, after 0.5 s. The buttons send no
+    automatic repeat (`EV=3`, no `EV_REP`), so holding has its own timer;
+  - **Volume Up + Volume Down together = the Steam button**, also in games: Steam registers
+    Shift+Tab with gamescope as the Steam button (`GuideKeyboardHotkey -> [Tab + Shift_L]` in the
+    gamescope log), and gamescope catches it before the game. It is sent from a permanent virtual
+    keyboard, after both buttons are released: gamescope triggers it only when no other key is
+    down, and the volume buttons are keyboards to it too. Abandoned attempts: a virtual Xbox
+    controller created on press (Steam showed "controller connected") and a keyboard created at
+    every press (gamescope had no time to see it). Two `sh` processes, one per button, caught the
+    combination about one time in three.
+- **The performance overlay** (the `...` menu > Performance): gamescope 3.16.29 sends `mangoapp`
+  the fields `app_frametime_ns` and `visible_frametime_ns` in the reverse order of every MangoHud
+  (0.7.1 from Alpine, 0.8.4, `master`). `mangoapp` then always reads "unknown" as the visible frame
+  time, never leaves pause and does not show in Steam/Proton games
+  ([gamescope #2430](https://github.com/ValveSoftware/gamescope/issues/2430), the same symptoms).
+  `userspace/steam/build-mangoapp-gs.sh` builds MangoHud 0.8.4 with gamescope's order, in the
+  container (`ipc=host`, so it sees gamescope's message queue); `op8-mangoapp` starts it with the
+  session, and gamescope no longer gets `--mangoapp`. Steam writes the level to
+  `/run/user/10000/mangohud.conf`. When gamescope goes back to the old order, the patch must go.
+- **Full screen** (no black bars, games at 2400x1080): Steam stores the panel in its configuration
+  as an **external** screen (`config.vdf`: `IsExternalDisplay 1`, "External: OnePlus 8"), although
+  gamescope announces it as internal, and at every start asks for Xwayland at 1920x1080
+  (`GAMESCOPE_XWAYLAND_MODE_CONTROL = 0, 1920, 1080, 0`); a 2400x1080 request sent from outside is
+  cancelled at once. The solution: Alpine's gamescope 3.16.29 plus a patch in
+  `userspace/steam/gamescope/`: with `GAMESCOPE_FORCE_NATIVE_XWAYLAND`, every Xwayland mode request
+  became the native size (since 2026-10-04, `9001-armdeck-xwayland-panel-aspect.patch` keeps the
+  requested height and gives every mode the panel's 20:9 aspect, so "Maximum game resolution"
+  1280x720 becomes 1600x720). Built with `build-gamescope-op8.sh` (pmbootstrap, under qemu:
+  crossdirect failed with "cannot execute cc1"), run from `~/bin/gamescope-op8` without
+  installing; `steam-gamescope.sh` uses it when present. Checked: Steam asks for 1920x1080 five
+  times at start, then stops (no loop), and for Tiny Rails the log shows "Using maximum game
+  resolution: screen resolution: 2400x1080". Limits: a resolution chosen per game in Steam is
+  ignored. To do: an apk package, rebuilt at every gamescope update.
+- **Charging in sleep:** in standby the phone no longer answers over WiFi (ping and SSH), so
+  remote checks need the phone awake or on the cable.
+- **The first 3D game:** Slime Rancher (Unity, Proton 11 ARM64) works, started in "safe" mode
+  (`-lowGraphics`); without it it sometimes closed while loading.
+- **The charging indicator that comes and goes:** from the PC's USB port the phone gets ~2.5 W
+  (Type-C without PD). Under load it uses more, and the battery state switches between "Charging"
+  and "Discharging". With a wall charger it does not happen.
 
-Rezolvate între timp: SSH pe WiFi doar de la PC (`40_ssh_usb_only.nft`, IP-ul PC-ului),
-profilul WiFi dezlegat de adresa MAC (după reset cipul QCA6390 a raportat alt MAC), jurnalul
-`op8-log` (raport la pornire, eșantioane la 2 s, `journald` la 2 s, `op8-live.sh` pe PC).
+Solved in the meantime: SSH over WiFi from the PC only (`40_ssh_usb_only.nft`, the PC's IP), the
+WiFi profile untied from the MAC address (after a reset the QCA6390 chip reported another MAC),
+the `op8-log` logging (a report at boot, samples every 2 s, `journald` every 2 s, `op8-live.sh` on
+the PC; the 2 s syncs were turned off on 2026-10-04).
 
-Rezolvate pe 2026-10-02 (scripturile în [`../userspace/`](../userspace/README.md)):
+Solved on 2026-10-02 (the scripts in [`../userspace/`](../userspace/README.md)):
 
-- **Slotul de boot devenise nebootabil** ("the current image (boot/recovery) have been
-  destroyed"): bootloader-ul scade contorul de încercări la fiecare pornire, iar nimeni nu
-  marca slotul b ca "successful". Reparat cu `fastboot --set-active=b` (din fastboot, intrat cu
-  telefonul oprit **fără cablu**: Volume Up + Volume Down + Power), apoi `qbootctl` +
-  `qbootctl-systemd` (`qbootctl -m` la fiecare pornire). Pachetul de device depinde acum de
-  `qbootctl`. Schimbarea numelui dispozitivului din Steam nu a avut legătură.
-- **Sleep** (meniul Steam și butonul de pornire): Steam suspendă cu `dbus-send ... login1
-  Suspend`, dar în container nu exista `dbus-send`, polkit cerea parolă ("challenge"), iar
-  sesiunile SSH țin `inhibit=sleep` (`/etc/pam.d/sshd`). Acum: regulă polkit, adaptor
-  `dbus-send` (`SuspendWithFlags` cu ignorarea blocajelor), `systemd-suspend.service` rulează
-  `op8-standby` (fără suspendarea kernelului) și `op8-powerbtn` (scurt = sleep, lung = meniu).
-  Restart și oprirea din meniul Steam trec prin același adaptor.
-- **Luminozitatea din Steam**: fișierul `brightness` scriibil de grupul `video` (udev) +
-  helper `steamos-priv-write` în container.
-- **Sesiunea Steam** repornește singură (`Restart=always`) și așteaptă oprirea containerului.
+- **The boot slot had become unbootable** ("the current image (boot/recovery) have been
+  destroyed"): the bootloader lowers the retry counter at every boot, and nothing marked slot b as
+  "successful". Fixed with `fastboot --set-active=b` (from fastboot, entered with the phone off
+  **without a cable**: Volume Up + Volume Down + Power), then `qbootctl` + `qbootctl-systemd`
+  (`qbootctl -m` at every boot). The device package now depends on `qbootctl`. Renaming the device
+  in Steam had nothing to do with it.
+- **Sleep** (the Steam menu and the power button): Steam suspends with `dbus-send ... login1
+  Suspend`, but there was no `dbus-send` in the container, polkit asked for a password
+  ("challenge"), and the SSH sessions hold `inhibit=sleep` (`/etc/pam.d/sshd`). Now: a polkit
+  rule, a `dbus-send` adapter (`SuspendWithFlags` ignoring the inhibitors),
+  `systemd-suspend.service` runs `op8-standby` (no kernel suspend) and `op8-powerbtn` (short =
+  sleep, long = menu). Restart and power-off from the Steam menu go through the same adapter.
+- **Brightness from Steam**: the `brightness` file writable by the `video` group (udev) + a
+  `steamos-priv-write` helper in the container.
+- **The Steam session** restarts by itself (`Restart=always`) and waits for the container to stop.
 
-## Surse
+## Sources
 
 - Armada OS: https://github.com/armada-os/armada (`packages/kernel/patches/9998-sm8250-gpu-tuning.patch`,
-  `packages/steamos-manager/devices/sm8250.toml`, issue-urile #534 și #550)
+  `packages/steamos-manager/devices/sm8250.toml`, issues #534 and #550)
 - pocknix-os: https://github.com/shuuri-labs/pocknix-os (`README.md`, `kernel/README.md`,
-  `kernel/sm8250/patches/20-sm8250/0011-qcom-pm8150b-charger.patch` linia 2298,
+  `kernel/sm8250/patches/20-sm8250/0011-qcom-pm8150b-charger.patch` line 2298,
   `9998-gpu-tuning.patch`, `packages/soc/pocknix-dxvk2-donor/PKGBUILD`)
 - SteamOS-ARM-Handhelds: https://github.com/hashtagbasit/SteamOS-ARM-Handhelds
   (`docs/redmagic6.md`, `docs/HOW-IT-WORKS.md`, `LICENSE`)
 - ROCKNIX: https://github.com/ROCKNIX/distribution (`projects/ROCKNIX/devices/SM8250/patches/linux/9998-gpu-tuning.patch`,
-  PR-urile #3371 și #3382 pentru driverul de încărcare)
-- Mesa: `src/freedreno/common/freedreno_devices.py` (`storage_8bit = True` doar în `a7xx_base`)
+  PRs #3371 and #3382 for the charger driver)
+- Mesa: `src/freedreno/common/freedreno_devices.py` (`storage_8bit = True` only in `a7xx_base`)
 - FEX: https://github.com/FEX-Emu/FEX/issues/4120
-- Telefonul (read-only, 2026-10-01): `/proc/cpuinfo`, `free`, `df`, partițiile din
+- The phone (read only, 2026-10-01): `/proc/cpuinfo`, `free`, `df`, the partitions in
   `/sys/class/block`, `/proc/config.gz`, `apk policy`
+- USB gadget fix: "usb: gadget: Fix net_device lifecycle with device_move" v2,
+  https://lkml.iu.edu/2603.1/01502.html (merged for Linux 7.0-rc4)

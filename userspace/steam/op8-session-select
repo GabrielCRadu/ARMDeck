@@ -1,18 +1,18 @@
 #!/bin/sh
-# armdeck: steamos-session-select in containerul Steam (/usr/local/bin/steamos-session-select).
-# La "Switch to Desktop", fara serviciul SteamOSManager, Steam ruleaza `steamos-session-select plasma`
-# (calea "legacy" din steamui.so) si asteapta sa fie oprit de sesiune. Fara comanda, interfata
-# ramanea blocata. ARMDeck nu are desktop: Steam se inchide, iar steam-gs.service (Restart=always)
-# il porneste din nou in Game Mode. Jurnal: ~/op8-session-select.log
+# armdeck: steamos-session-select in the Steam container (/usr/local/bin/steamos-session-select).
+# On "Switch to Desktop", without the SteamOSManager service, Steam runs `steamos-session-select
+# plasma` (the "legacy" path in steamui.so) and waits for the session to stop it. Without this
+# command the interface stayed frozen. ARMDeck has no desktop: Steam exits, and steam-gs.service
+# (Restart=always) starts it again in Game Mode. Log: ~/op8-session-select.log
 L="$HOME/op8-session-select.log"
 STEAM="$HOME/.local/share/Steam"
 CLIENT_DIR="$STEAM/steamrtarm64"
-echo "$(date '+%F %T') steamos-session-select $*: fara desktop, Steam se inchide si porneste din nou" >> "$L"
-# Steam asteapta terminarea comenzii (system()), deci oprirea se cere in fundal
+echo "$(date '+%F %T') steamos-session-select $*: no desktop, Steam exits and starts again" >> "$L"
+# Steam waits for the command to finish (system()), so the shutdown is requested in the background
 (
 	sleep 1
 	cd "$CLIENT_DIR" &&
 	LD_LIBRARY_PATH="$CLIENT_DIR:$STEAM/lib/aarch64-linux-gnu" ./steam -shutdown >> "$L" 2>&1
-	echo "$(date '+%F %T') steam -shutdown: cod $?" >> "$L"
+	echo "$(date '+%F %T') steam -shutdown: exit code $?" >> "$L"
 ) </dev/null >/dev/null 2>&1 &
 exit 0

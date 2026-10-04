@@ -1,18 +1,18 @@
 #!/bin/sh
-# armdeck: marcheaza slotul curent (b) ca "successful" la fiecare pornire, ca pe Android.
-# Fara asta, bootloader-ul scade contorul de incercari la fiecare boot; dupa ~7 porniri slotul
-# devine "unbootable" si apare ecranul "current image (boot/recovery) have been destroyed"
-# (s-a intamplat pe 2026-10-02, reparat cu fastboot --set-active=b).
-# qbootctl + qbootctl-systemd: aceleasi ca in postmarketOS (qbootctl -m la multi-user.target).
-# Rulare: sudo sh /tmp/op8-log/install-qbootctl.sh
+# armdeck: marks the current slot (b) as "successful" at every boot, as Android does.
+# Without it the bootloader lowers the retry counter at every boot; after about 7 boots the slot
+# becomes "unbootable" and the screen "current image (boot/recovery) have been destroyed" appears
+# (happened on 2026-10-02, fixed with fastboot --set-active=b).
+# qbootctl + qbootctl-systemd: the same as in postmarketOS (qbootctl -m at multi-user.target).
+# Run: sudo sh /tmp/op8-log/install-qbootctl.sh
 set -eu
 apk add qbootctl
-echo "== inainte"
+echo "== before"
 qbootctl 2>&1 || true
 systemctl enable qbootctl.service
 qbootctl -m
 sync
-echo "== dupa"
+echo "== after"
 qbootctl 2>&1 || true
 systemctl is-enabled qbootctl.service
-echo "== GATA qbootctl"
+echo "== DONE qbootctl"

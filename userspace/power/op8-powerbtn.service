@@ -1,8 +1,8 @@
 [Unit]
-Description=op8-powerbtn: butonul de pornire ca pe Steam Deck (scurt = sleep, lung = meniu)
+Description=op8-powerbtn: the power button as on a Steam Deck (short = sleep, long = menu)
 
 [Service]
-# background.slice: op8-standby ingheata doar app.slice si user.slice
+# background.slice: op8-standby freezes only app.slice and user.slice
 Slice=background.slice
 ExecStart=/home/gabriel/op8-powerbtn
 Restart=always

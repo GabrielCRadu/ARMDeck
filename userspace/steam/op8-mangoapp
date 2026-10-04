@@ -1,17 +1,17 @@
 #!/bin/sh
-# op8-mangoapp (armdeck): ruleaza mangoapp-gs (MangoHud compilat pentru gamescope 3.16.29,
-# vezi build-mangoapp-gs.sh) in containerul "steam", cat timp traieste sesiunea Steam.
-# Il porneste steam-in-container.sh in fundal, chiar inainte de "exec steam", deci parintele lui
-# devine procesul Steam; cand Steam se inchide, bucla se opreste.
-# Containerul are ipc=host, deci mangoapp vede coada de mesaje a lui gamescope de pe gazda.
-# Jurnal: ~/op8-mangoapp.log
+# op8-mangoapp (armdeck): runs mangoapp-gs (MangoHud built for gamescope 3.16.29, see
+# build-mangoapp-gs.sh) in the "steam" container for as long as the Steam session lives.
+# steam-in-container.sh starts it in the background right before "exec steam", so its parent
+# becomes the Steam process; when Steam exits, the loop stops.
+# The container has ipc=host, so mangoapp sees gamescope's message queue on the host.
+# Log: ~/op8-mangoapp.log
 BIN=/home/gabriel/games/build/mangoapp-gs
 LOG=/home/gabriel/op8-mangoapp.log
 PIDF=${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/op8-mangoapp.pid
 
 [ -x "$BIN" ] || exit 0
 
-# o singura instanta: opreste bucla si mangoapp ramase de la o sesiune anterioara
+# one instance only: stop the loop and the mangoapp left over from an earlier session
 if [ -f "$PIDF" ] && kill -0 "$(cat "$PIDF")" 2>/dev/null; then
 	kill "$(cat "$PIDF")" 2>/dev/null
 fi
@@ -19,13 +19,13 @@ pkill -x mangoapp-gs 2>/dev/null
 echo $$ > "$PIDF"
 
 STEAM_PID=$PPID
-# gamescope si mangoapp aleg coada cu ftok("mangoapp", 65), relativ la directorul curent; fara
-# un fisier "mangoapp" in ambele directoare, cheia e aceeasi (-1), deci rulam din /
+# gamescope and mangoapp pick the queue with ftok("mangoapp", 65), relative to the current
+# directory; with no "mangoapp" file in either directory the key is the same (-1), so run from /
 cd /
-echo "$(date '+%F %T') pornit, sesiunea Steam = $STEAM_PID" >> "$LOG"
+echo "$(date '+%F %T') started, Steam session = $STEAM_PID" >> "$LOG"
 while kill -0 "$STEAM_PID" 2>/dev/null; do
 	"$BIN" >> "$LOG" 2>&1
-	echo "$(date '+%F %T') mangoapp-gs a iesit cu $?" >> "$LOG"
+	echo "$(date '+%F %T') mangoapp-gs exited with $?" >> "$LOG"
 	sleep 2
 done
 rm -f "$PIDF"

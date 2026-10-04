@@ -24,11 +24,18 @@ state() {
 out "op8-usbpd-capture $(date '+%F %T'), $SECONDS_ s, tcpm debugfs: ${T:-missing}"
 [ -n "$T" ] && cat "$T/log" > /dev/null 2>&1   # empty the ring buffer so the log starts now
 last=
+n=0
+TL=/run/op8-tcpm-log.$$
+: > "$TL"
 end=$(( $(cut -d. -f1 /proc/uptime) + SECONDS_ ))
 while [ "$(cut -d. -f1 /proc/uptime)" -lt "$end" ]; do
 	cur="$(cat $P/data_role $P/power_role 2>/dev/null) $(lsusb 2>/dev/null | grep -vc 'Linux Foundation')"
-	[ "$cur" != "$last" ] && state
+	# a line on every role change, and every 2 s anyway (battery current over time)
+	if [ "$cur" != "$last" ] || [ $((n % 10)) -eq 0 ]; then state; fi
 	last=$cur
+	n=$((n + 1))
+	# reading the tcpm log empties it, so collect it as we go
+	[ -n "$T" ] && cat "$T/log" >> "$TL" 2>/dev/null
 	sleep 0.2
 done
 state
@@ -39,7 +46,9 @@ for d in /sys/class/usb_power_delivery/*/source-capabilities/* /sys/class/usb_po
 	out "$d: $(for f in $d/*; do [ -f $f ] && printf '%s=%s ' $(basename $f) $(cat $f); done)"
 done
 out "== tcpm log"
-[ -n "$T" ] && cat "$T/log" >> "$OUT"
+[ -n "$T" ] && cat "$T/log" >> "$TL" 2>/dev/null
+cat "$TL" >> "$OUT"
+rm -f "$TL"
 out "== kernel"
 dmesg | grep -iE "tcpm|typec|ucsi|pd |vbus|xhci|dwc3|usb [0-9]|role" | tail -60 >> "$OUT"
 echo "$OUT"

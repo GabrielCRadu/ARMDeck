@@ -1,8 +1,8 @@
 #!/bin/sh
-# op8-log (armdeck): marcheaza un moment in log, de exemplu: op8-mark start descarcare
-# Apare in jurnalul systemd (op8-mark) si in coloana "mark" a urmatorului esantion.
+# op8-log (armdeck): marks a moment in the log, for example: op8-mark download start
+# It appears in the systemd journal (op8-mark) and in the "mark" column of the next sample.
 m="$*"
-[ -n "$m" ] || { echo "folosire: op8-mark <text>"; exit 2; }
+[ -n "$m" ] || { echo "usage: op8-mark <text>"; exit 2; }
 logger -t op8-mark -- "$m"
 printf '%s\n' "$m" > /run/op8/mark
-echo "marcat: $m"
+echo "marked: $m"

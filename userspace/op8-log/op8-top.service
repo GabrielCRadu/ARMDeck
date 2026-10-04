@@ -1,8 +1,8 @@
 [Unit]
-Description=op8-log: procesele cu cel mai mult CPU la ~2 s, scrise imediat pe disc
+Description=op8-log: the processes using the most CPU every ~2 s (debugging only)
 
 [Service]
-# peste 20 MB, logul vechi devine op8-top.prev.log
+# above 20 MB the old log becomes op8-top.log.prev
 ExecStartPre=/bin/sh -c 'f=/home/gabriel/op8-top.log; [ -f "$f" ] && [ $(wc -c < "$f") -gt 20000000 ] && mv -f "$f" "$f.prev"; true'
 ExecStart=/home/gabriel/op8-top /home/gabriel/op8-top.log
 Restart=always

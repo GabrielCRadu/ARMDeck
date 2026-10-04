@@ -1,5 +1,5 @@
 [Unit]
-Description=op8-log: esantion la 2 s (baterie, temperaturi, frecvente, I/O), scris imediat pe disc
+Description=op8-log: a sample every 2 s (battery, temperatures, frequencies, I/O)
 After=local-fs.target
 
 [Service]

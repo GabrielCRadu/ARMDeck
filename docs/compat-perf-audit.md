@@ -335,6 +335,18 @@ active; gamescope has CAP_SYS_NICE and its threads run at nice -20; memory and I
 Chromium uses hardware GL through ANGLE on freedreno; the boot-time `dsi_err_worker: status=5`
 lines (timeout + FIFO flags, no underflow) stop before Steam starts.
 
+**Result of finding 3 (kernel r11, 2026-10-04):** patch 0006 widens the 90 Hz back porch to 108
+pixels, so the DSI link runs at 651.78 Mbps per lane (OnePlus: 652.8). Measured with the overlay:
+Quick Access about 80 -> 88 fps, Home while scrolling about 50 -> 53 fps (peak 58), no visual
+artefacts. The `dsi_err_worker` lines at boot dropped from 13 to 1 (the one left comes from
+gamescope's first mode set). Home is now limited mainly by Steam drawing its interface at
+2400x1080 and by the overlay's own redraws (finding 2, mangoapp patch 5).
+
+**Result of finding 2 (mangoapp patch 5, 2026-10-04):** with preset 2 shown and the interface
+still, CPU time over 10 s went from 24.5% to 1.5% of a core for mangoapp, 15.8% to 0.6% for
+Xwayland and 12.5% to 1.4% for gamescope (about half a core saved). Home while scrolling went
+from about 53 to about 60 fps.
+
 ## Sources
 
 - Proton, DXVK, VKD3D-Proton, FEX: read from `steamapps/common` on the phone (`version`, strings

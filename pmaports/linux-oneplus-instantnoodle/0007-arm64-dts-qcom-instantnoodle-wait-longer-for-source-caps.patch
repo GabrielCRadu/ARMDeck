@@ -1,0 +1,54 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: ARMDeck <noreply@localhost>
+Date: Sun, 4 Oct 2026 20:45:00 +0300
+Subject: [PATCH] arm64: dts: qcom: sm8250-oneplus-instantnoodle: wait longer
+ for the source capabilities
+
+The GameSir X3 Pro is a controller with a USB-C pass-through charging
+port. When a charger is plugged into it, it takes over the power supply
+from the phone with a power role swap, and after its PS_RDY it sends its
+Source_Capabilities 337 ms later (measured on a OnePlus 8 on 2026-10-04).
+tcpm waits only PD_T_SINK_WAIT_CAP, 310 ms, the lower end of the
+310-620 ms range USB PD gives for tTypeCSinkWaitCap, and then sends a
+hard reset. After that reset the phone stayed a USB device and the
+pass-through charging did not work.
+
+Set sink-wait-cap-time-ms to 620 ms, the upper end of the range in the
+USB PD specification and in the usb-connector binding. The OnePlus PD
+stack on Android waits 500 ms (SINK_WAIT_CAP_TIME in
+drivers/usb/pd/policy_engine.c of the vendor kernel), which also covers
+the 337 ms; 620 ms leaves more margin for slower sources. Only this
+timeout changes, no voltage or current limit.
+
+Tested on a OnePlus 8 (IN2013) on 2026-10-04 with the same property added
+to the DTB through fdtput (test image r8w): the X3 Pro takes over the
+supply without a hard reset and pass-through charging works.
+
+Assisted-by: Claude:claude-opus-5-5
+---
+ .../arm64/boot/dts/qcom/sm8250-oneplus-instantnoodle.dts | 9 +++++++++
+ 1 file changed, 9 insertions(+)
+
+diff --git a/arch/arm64/boot/dts/qcom/sm8250-oneplus-instantnoodle.dts b/arch/arm64/boot/dts/qcom/sm8250-oneplus-instantnoodle.dts
+index 53773b5..c61d01e 100644
+--- a/arch/arm64/boot/dts/qcom/sm8250-oneplus-instantnoodle.dts
++++ b/arch/arm64/boot/dts/qcom/sm8250-oneplus-instantnoodle.dts
+@@ -1298,6 +1298,15 @@
+ 				       PDO_FIXED_USB_COMM |
+ 				       PDO_FIXED_DATA_SWAP)>;
+ 
++		/*
++		 * Wait up to 620 ms (the USB PD maximum) for the source's
++		 * capabilities: after a power role swap the GameSir X3 Pro sends
++		 * them 337 ms after PS_RDY, past the 310 ms default, and the hard
++		 * reset that followed stopped pass-through charging. The OnePlus
++		 * stack on Android waits 500 ms.
++		 */
++		sink-wait-cap-time-ms = <620>;
++
+ 		ports {
+ 			#address-cells = <1>;
+ 			#size-cells = <0>;
+-- 
+2.43.0
+

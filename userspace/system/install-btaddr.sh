@@ -1,24 +1,25 @@
 #!/bin/sh
-# armdeck: adresa Bluetooth la fiecare pornire (bootmac), ca bluetoothd sa vada controlerul.
-# Cipul QCA6390 raporteaza adresa implicita din firmware; driverul (btqca.c) cere atunci adresa
-# din device tree (local-bd-address), care lipseste, si lasa controlerul "neconfigurat": hci0
-# exista, dar bluetoothctl nu vede niciun controler si nu gaseste dispozitive.
-# bootmac (pachetul postmarketOS) calculeaza o adresa fixa din numarul de serie si o seteaza cu
-# btmgmt. Regula lui pentru WiFi e mascata: adresa WiFi ramane cea de acum (altfel se poate
-# schimba IP-ul primit de la router).
-# apk poate raporta o eroare la regenerarea initramfs (/boot e montat doar citire): inofensiv,
-# /boot si partitia de boot raman neatinse; kernelul se instaleaza separat (install-kernel.sh).
+# armdeck: the Bluetooth address at every boot (bootmac), so bluetoothd sees the controller.
+# The QCA6390 chip reports the firmware's default address; the driver (btqca.c) then asks for the
+# address from the device tree (local-bd-address), which is missing, and leaves the controller
+# "unconfigured": hci0 exists, but bluetoothctl sees no controller and finds no devices.
+# bootmac (the postmarketOS package) derives a fixed address from the serial number and sets it
+# with btmgmt. Its WiFi rule is masked: the WiFi address stays as it is now (otherwise the IP
+# address from the router could change).
+# apk may report an error while regenerating the initramfs (/boot is mounted read-only):
+# harmless, /boot and the boot partition stay untouched; the kernel is installed separately
+# (install-kernel.sh).
 #   sudo sh install-btaddr.sh
 if ! apk info -e bootmac bootmac-systemd >/dev/null; then
 	apk add bootmac bootmac-systemd
 fi
-apk info -e bootmac bootmac-systemd >/dev/null || { echo "bootmac nu s-a instalat, opresc"; exit 1; }
+apk info -e bootmac bootmac-systemd >/dev/null || { echo "bootmac did not install, stopping"; exit 1; }
 set -e
 ln -sf /dev/null /etc/udev/rules.d/90-bootmac-wifi.rules
 udevadm control --reload
 systemctl start bootmac@bluetooth.service
 sleep 2
-echo "== verificare"
+echo "== check"
 ls -l /etc/udev/rules.d/90-bootmac-wifi.rules
 systemctl --no-pager is-active bootmac@bluetooth.service
 journalctl -b -u bootmac@bluetooth.service --no-pager | tail -5

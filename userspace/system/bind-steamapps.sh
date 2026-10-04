@@ -1,25 +1,25 @@
 #!/bin/sh
-# armdeck: biblioteca Steam (steamapps) sta pe partitia de jocuri si e montata (bind) in
-# locul ei vechi, ca Steam sa vada exact aceeasi cale. Rulare: sudo sh /tmp/op8-log/bind-steamapps.sh
+# armdeck: the Steam library (steamapps) lives on the games partition and is bind-mounted in its
+# old place, so Steam sees exactly the same path. Run: sudo sh /tmp/op8-log/bind-steamapps.sh
 set -eu
-die() { echo "OPRIT: $*"; exit 1; }
+die() { echo "STOPPED: $*"; exit 1; }
 SRC=/home/gabriel/games/steamapps
 DST=/home/gabriel/.local/share/Steam/steamapps
 
-grep -q " /home/gabriel/games " /proc/mounts || die "partitia de jocuri nu e montata"
-[ -d "$SRC/common" ] || die "$SRC nu arata ca o biblioteca Steam"
-[ -d "$DST" ] || die "$DST lipseste"
-[ -z "$(ls -A "$DST")" ] || die "$DST nu e gol"
-grep -q " $DST " /etc/fstab && die "$DST exista deja in fstab"
+grep -q " /home/gabriel/games " /proc/mounts || die "the games partition is not mounted"
+[ -d "$SRC/common" ] || die "$SRC does not look like a Steam library"
+[ -d "$DST" ] || die "$DST is missing"
+[ -z "$(ls -A "$DST")" ] || die "$DST is not empty"
+grep -q " $DST " /etc/fstab && die "$DST is already in fstab"
 
 cp /etc/fstab /etc/fstab.op8steam.bak
 echo "$SRC $DST none bind,nofail,x-systemd.requires-mounts-for=/home/gabriel/games 0 0" >> /etc/fstab
 systemctl daemon-reload
 mount "$DST"
 
-echo "== verificare"
+echo "== check"
 grep " $DST " /etc/fstab
 grep " $DST " /proc/mounts | cut -d' ' -f1-3
 ls "$DST/common"
 df -h "$DST" | tail -1
-echo "== GATA biblioteca Steam"
+echo "== DONE Steam library"

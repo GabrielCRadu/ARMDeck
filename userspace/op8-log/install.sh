@@ -1,23 +1,24 @@
 #!/bin/sh
-# armdeck, etapa A, pasul 3: Bluetooth (bluez), reguli controlere USB + Bluetooth, op8-log.
-# Rulare: sudo sh /tmp/op8-log/install.sh
+# armdeck, stage A, step 3: Bluetooth (bluez), rules for USB + Bluetooth controllers, op8-log.
+# Run: sudo sh /tmp/op8-log/install.sh
 set -eu
 S=$(dirname "$0")
 
-echo "== 0. WiFi: profilul nu mai e legat de adresa MAC a cipului"
-# Dupa resetul din 2026-10-01 cipul QCA6390 a raportat alta adresa MAC decat 00:03:7F:12:77:C7,
-# iar NetworkManager refuza profilul legat de ea. Fara WiFi nu se poate instala bluez.
+echo "== 0. WiFi: the profile is no longer tied to the chip's MAC address"
+# After the reset of 2026-10-01 the QCA6390 chip reported a MAC address other than
+# 00:03:7F:12:77:C7, and NetworkManager refused the profile tied to it. Without WiFi bluez cannot
+# be installed.
 for c in $(nmcli -t -f UUID,TYPE con show | grep ':802-11-wireless$' | cut -d: -f1); do
 	nmcli con modify "$c" 802-11-wireless.mac-address ""
-	nmcli con up "$c" || echo "ATENTIE: conectarea la WiFi a esuat"
+	nmcli con up "$c" || echo "WARNING: connecting to WiFi failed"
 done
 ip -4 -o addr show wlan0
 
-echo "== 1. bluez (doar pachete noi)"
+echo "== 1. bluez (new packages only)"
 apk add bluez
 systemctl enable --now bluetooth
 
-echo "== 2. reguli udev pentru controlere (USB si Bluetooth)"
+echo "== 2. udev rules for controllers (USB and Bluetooth)"
 mkdir -p /etc/udev/rules.d
 install -m 644 "$S/70-armdeck-gamepads.rules" /etc/udev/rules.d/
 udevadm control --reload
@@ -34,8 +35,8 @@ systemctl enable op8-bootreport.service op8-sampler.service
 systemctl start op8-sampler.service
 systemctl start op8-bootreport.service
 
-echo "== verificare"
+echo "== check"
 systemctl is-active bluetooth op8-sampler
 ls -l /var/log/op8/
-grep -hE "^(PON_REASON1|WARM_RESET1|OFF_REASON|FAULT_REASON1)|tensiune maxima|ATENTIE" /var/log/op8/boot-*.txt | tail -6
-echo "== GATA pasul 3"
+grep -hE "^(PON_REASON1|WARM_RESET1|OFF_REASON|FAULT_REASON1)|float voltage|WARNING" /var/log/op8/boot-*.txt | tail -6
+echo "== DONE step 3"

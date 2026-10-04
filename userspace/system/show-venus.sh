@@ -1,7 +1,7 @@
 #!/bin/sh
-# armdeck: face din nou vizibil decodorul video hardware Venus (anuleaza hide-venus.sh).
-# Fara Venus, clientul Steam Remote Play ARM64 nu are decodor deloc (m_pVideoDecoder nul).
-# Rulare: sudo sh /tmp/op8-log/show-venus.sh
+# armdeck: makes the Venus hardware video decoder visible again (undoes hide-venus.sh).
+# Without Venus, the ARM64 Steam Remote Play client has no decoder at all (m_pVideoDecoder null).
+# Run: sudo sh /tmp/op8-log/show-venus.sh
 set -eu
 rm -f /etc/udev/rules.d/71-armdeck-venus.rules
 udevadm control --reload
@@ -11,4 +11,4 @@ sync
 for v in /sys/class/video4linux/video*; do
 	case "$(cat "$v/name")" in qcom-venus-*) ls -l "/dev/$(basename "$v")" ;; esac
 done
-echo "== GATA Venus vizibil"
+echo "== DONE, Venus visible"

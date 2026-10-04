@@ -1,25 +1,39 @@
 #!/bin/sh
-# op8-tune (armdeck, OnePlus 8): setari de performanta aplicate la fiecare pornire.
-# Toate sunt reversibile: systemctl disable op8-tune si repornire.
-# Vezi docs/performance-crash-audit.md, P3, P4, P7.
+# op8-tune (armdeck, OnePlus 8): performance settings applied at every boot.
+# All are reversible: systemctl disable op8-tune and reboot.
+# See docs/performance-crash-audit.md, P3, P4, P7.
 G=/sys/class/devfreq/3d00000.gpu
 
-# P3: GPU-ul isi reevalueaza frecventa la 16 ms in loc de 50 ms; limitele raman 305-587 MHz
+# P3: the GPU re-evaluates its frequency every 16 ms instead of 50 ms; the limits stay 305-587 MHz
 [ -w "$G/polling_interval" ] && echo 16 > "$G/polling_interval"
 
-# P7: transparent huge pages doar la cerere (mai putine sacadari din compactarea memoriei)
+# P7: transparent huge pages only on request (fewer stutters from memory compaction)
 echo madvise > /sys/kernel/mm/transparent_hugepage/enabled
 
-# P4: gamescope poate ridica prioritatea firelor lui, ca pe SteamOS. Se reaplica la fiecare
-# pornire, pentru ca un update al pachetului gamescope inlocuieste fisierul si pierde capabilitatea.
+# Real-time tasks (PipeWire's audio threads, among others) no longer push the CPU clock to its
+# maximum by themselves: the kernel default 1024 is tuned for performance and costs battery
+# (Documentation/admin-guide/sysctl/kernel.rst); Pixel phones set 0 too. Tested 2026-10-04 with
+# Tomb Raider: no audio crackles. Back to the old behaviour: write 1024.
+UC=/proc/sys/kernel/sched_util_clamp_min_rt_default
+[ -w "$UC" ] && echo 0 > "$UC"
+
+# A kernel Oops usually dies holding a lock (the f_ncm one on 2026-10-04 held the network lock),
+# and the phone then hangs half alive: SSH answers but cannot log in, and only Power + both volume
+# buttons held about 30 s get it back. Reboot by itself 10 s after an Oops instead. The Oops text
+# is lost with the reboot unless pstore keeps it.
+echo 1 > /proc/sys/kernel/panic_on_oops
+echo 10 > /proc/sys/kernel/panic
+
+# P4: gamescope may raise the priority of its threads, as on SteamOS. Applied again at every boot,
+# because an update of the gamescope package replaces the file and loses the capability.
 SETCAP=$(command -v setcap)
 if [ -x /usr/bin/gamescope ] && [ -n "$SETCAP" ]; then
 	"$SETCAP" cap_sys_nice+ep /usr/bin/gamescope
 fi
-# La fel pentru gamescope-op8 (gamescope cu patch-ul de full screen, rulat din ~/bin, vezi
-# userspace/steam/gamescope/). Fara capabilitate, gamescope scrie "No CAP_SYS_NICE, falling back to
-# regular-priority compute and threads". O copie noua a fisierului pierde capabilitatea, de aceea
-# se reaplica la fiecare pornire. Doar daca fisierul apartine userului si nu e scriibil de altii.
+# The same for gamescope-op8 (gamescope with the full screen patch, run from ~/bin, see
+# userspace/steam/gamescope/). Without the capability gamescope writes "No CAP_SYS_NICE, falling
+# back to regular-priority compute and threads". A new copy of the file loses the capability, so it
+# is applied again at every boot. Only if the file belongs to the user and others cannot write it.
 GSOP8=/home/gabriel/bin/gamescope-op8
 if [ -x "$GSOP8" ] && [ -n "$SETCAP" ] && [ "$(stat -c %U "$GSOP8")" = gabriel ] &&
 	[ -z "$(find "$GSOP8" -perm /022)" ]; then
@@ -28,5 +42,7 @@ fi
 
 echo "op8-tune: gpu_polling=$(cat "$G/polling_interval" 2>/dev/null) ms," \
 	"thp=$(cat /sys/kernel/mm/transparent_hugepage/enabled)," \
+	"uclamp_min_rt=$(cat "$UC" 2>/dev/null)," \
+	"panic_on_oops=$(cat /proc/sys/kernel/panic_on_oops) panic=$(cat /proc/sys/kernel/panic)," \
 	"gamescope=$(getcap /usr/bin/gamescope 2>/dev/null)," \
 	"gamescope-op8=$(getcap "$GSOP8" 2>/dev/null)"

@@ -1,13 +1,13 @@
 #!/bin/sh
-# armdeck: /usr/bin/steamos-polkit-helpers/steamos-priv-write in containerul Steam.
-# Steam scrie luminozitatea prin acest helper ("steamos-priv-write <cale> <valoare>"). Permite
-# doar luminozitatea ecranului; fisierul e scriibil de grupul video pe gazda (regula udev
-# 72-armdeck-backlight.rules), iar userul gabriel e in video.
+# armdeck: /usr/bin/steamos-polkit-helpers/steamos-priv-write in the Steam container.
+# Steam writes the brightness through this helper ("steamos-priv-write <path> <value>"). Only the
+# screen brightness is allowed; the file is writable by the video group on the host (udev rule
+# 72-armdeck-backlight.rules), and the user gabriel is in video.
 case "$1" in
 	/sys/class/backlight/*/brightness) ;;
-	*) echo "steamos-priv-write: cale nepermisa: $1" >&2; exit 1 ;;
+	*) echo "steamos-priv-write: path not allowed: $1" >&2; exit 1 ;;
 esac
 case "$2" in
-	''|*[!0-9]*) echo "steamos-priv-write: valoare invalida: $2" >&2; exit 1 ;;
+	''|*[!0-9]*) echo "steamos-priv-write: invalid value: $2" >&2; exit 1 ;;
 esac
 printf '%s' "$2" > "$1"

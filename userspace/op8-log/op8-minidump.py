@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-# op8-log (armdeck): analizor minimal de minidump Breakpad pentru ARM64, fara dependente.
-# Arata semnalul, adresa, modulul + offsetul pentru PC si LR ale firului care a crapat si
-# adresele de intoarcere probabile gasite prin scanarea stivei (module + offset).
-# Folosire: python3 op8-minidump.py /tmp/dumps/crash_XXXX.dmp
+# op8-log (armdeck): a minimal Breakpad minidump reader for ARM64, with no dependencies.
+# Shows the signal, the address, module + offset for the PC and LR of the crashed thread, and the
+# likely return addresses found by scanning the stack (module + offset).
+# Usage: python3 op8-minidump.py /tmp/dumps/crash_XXXX.dmp
 import struct
 import sys
 
@@ -13,7 +13,7 @@ def main(path):
     d = open(path, "rb").read()
     sig, ver, nstreams, dir_rva = struct.unpack_from("<IIII", d, 0)
     if sig != 0x504D444D:
-        sys.exit("nu e minidump")
+        sys.exit("not a minidump")
     streams = {}
     for i in range(nstreams):
         stype, size, rva = struct.unpack_from("<III", d, dir_rva + 12 * i)
@@ -23,7 +23,7 @@ def main(path):
         n = struct.unpack_from("<I", d, rva)[0]
         return d[rva + 4:rva + 4 + n].decode("utf-16-le", "replace")
 
-    # module: (baza, marime, nume)
+    # modules: (base, size, name)
     mods = []
     if 4 in streams:
         _, rva = streams[4]
@@ -41,15 +41,15 @@ def main(path):
         return "?"
 
     if 6 not in streams:
-        sys.exit("fara exceptie in dump")
+        sys.exit("no exception in the dump")
     _, rva = streams[6]
     tid = struct.unpack_from("<I", d, rva)[0]
     code, flags, rec, addr = struct.unpack_from("<IIQQ", d, rva + 8)
     ctx_size, ctx_rva = struct.unpack_from("<II", d, rva + 8 + 152)
-    print("fir %d: semnal %s (%d), cod/flags 0x%x, adresa 0x%x" % (
+    print("thread %d: signal %s (%d), code/flags 0x%x, address 0x%x" % (
         tid, SIGNALS.get(code, "?"), code, flags, addr))
 
-    # context ARM64 Breakpad: flags(4) cpsr(4) x0..x30 sp pc
+    # Breakpad ARM64 context: flags(4) cpsr(4) x0..x30 sp pc
     regs = struct.unpack_from("<II31QQQ", d, ctx_rva)
     x = regs[2:33]
     sp, pc = regs[33], regs[34]
@@ -57,7 +57,7 @@ def main(path):
     print("LR  0x%x  %s" % (x[30], where(x[30])))
     print("SP  0x%x" % sp)
 
-    # stiva firului care a crapat (lista de fire, stream 3)
+    # the stack of the crashed thread (thread list, stream 3)
     if 3 in streams:
         _, rva = streams[3]
         n = struct.unpack_from("<I", d, rva)[0]
@@ -67,7 +67,7 @@ def main(path):
             if t != tid:
                 continue
             start, msize, mrva = struct.unpack_from("<QII", d, o + 24)
-            print("stiva: 0x%x, %d octeti; adrese de intoarcere probabile (scanare):" % (start, msize))
+            print("stack: 0x%x, %d bytes; likely return addresses (scan):" % (start, msize))
             shown = 0
             for off in range(max(0, sp - start), msize - 7, 8):
                 v = struct.unpack_from("<Q", d, mrva + off)[0]
@@ -78,7 +78,7 @@ def main(path):
                     if shown >= 25:
                         break
 
-    print("module incarcate: %d" % len(mods))
+    print("modules loaded: %d" % len(mods))
 
 
 if __name__ == "__main__":

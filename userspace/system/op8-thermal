@@ -1,16 +1,17 @@
 #!/bin/sh
-# op8-thermal (armdeck): protectie termica dupa temperatura bateriei.
-# Kernelul protejeaza doar procesorul (franare la 90 si 95 C, oprire la 110 C). Android franeaza
-# dupa temperatura carcasei si a bateriei, mult mai devreme; aici lipsea, iar un joc 3D a dus
-# bateria la 46,5 C (2026-10-02). Telefonul n-are senzor de carcasa; bateria (gauge-ul bq27411)
-# e cel mai aproape de mana si e componenta care sufera cel mai mult de la caldura.
+# op8-thermal (armdeck): thermal protection by battery temperature.
+# The kernel only protects the processor (throttling at 90 and 95 C, shutdown at 110 C). Android
+# throttles by case and battery temperature, much earlier; that was missing here, and a 3D game
+# took the battery to 46.5 C (2026-10-02). The phone has no case sensor; the battery (the bq27411
+# gauge) is the closest to the hand and the part that suffers most from heat.
 #
-# Pe niveluri, cu histerezis: se urca imediat la nivelul atins, se coboara cate unul, abia cand
-# bateria scade cu HYST sub pragul nivelului curent. Limitele sunt frecvente maxime; frecventa
-# reala o alege tot kernelul, sub ele. In standby (op8-standby) nu se atinge nimic: op8-standby
-# tine atunci nucleele mari la minim si le restaureaza singur; dupa trezire limita se reaplica.
-# Jurnal: journalctl -t op8-thermal (si coloanele de frecvente din op8-sampler).
-# "op8-thermal restore" scoate toate limitele (la oprirea serviciului).
+# In levels, with hysteresis: it goes up at once to the level reached and comes down one level
+# at a time, only once the battery drops HYST below the current level's threshold. The limits are
+# maximum frequencies; the kernel still picks the real frequency below them. In standby
+# (op8-standby) nothing is touched: op8-standby then keeps the big cores at their minimum and
+# restores them itself; after waking up the limit is applied again.
+# Log: journalctl -t op8-thermal (and the frequency columns of op8-sampler).
+# "op8-thermal restore" removes every limit (when the service stops).
 BAT=/sys/class/power_supply/bq27411-0/temp
 CF=/sys/devices/system/cpu/cpufreq
 GPU=/sys/class/devfreq/3d00000.gpu
@@ -21,7 +22,7 @@ HYST=10
 
 log() { logger -t op8-thermal -- "$*"; }
 
-# pragul de intrare al unui nivel, in zecimi de grad
+# the entry threshold of a level, in tenths of a degree
 enter() {
 	case "$1" in
 		1) echo 410 ;;
@@ -31,8 +32,8 @@ enter() {
 	esac
 }
 
-# limitele unui nivel: nuclee mari (policy4, kHz), nucleul prime (policy7, kHz), GPU (Hz);
-# "max" = fara limita. Nucleele mici (policy0) nu se limiteaza.
+# the limits of a level: big cores (policy4, kHz), the prime core (policy7, kHz), GPU (Hz);
+# "max" = no limit. The little cores (policy0) are not limited.
 caps() {
 	case "$1" in
 		0) echo "max max max" ;;
@@ -43,7 +44,7 @@ caps() {
 	esac
 }
 
-# scrie o limita doar daca difera de cea curenta
+# writes a limit only if it differs from the current one
 set_max() {
 	f=$1
 	v=$2
@@ -66,32 +67,32 @@ apply() {
 if [ "${1:-}" = restore ]; then
 	apply 0
 	rm -f "$STATE"
-	log "limite scoase"
+	log "limits removed"
 	exit 0
 fi
 
 level=0
 echo 0 > "$STATE"
-log "pornit: praguri 41/42/43/44,5 C la baterie, histerezis $((HYST / 10)) C"
+log "started: battery thresholds 41/42/43/44.5 C, hysteresis $((HYST / 10)) C"
 while :; do
 	if ! t=$(cat "$BAT" 2>/dev/null) || [ -z "$t" ]; then
 		sleep "$PERIOD"
 		continue
 	fi
 	new=$level
-	# urcare: cel mai mare nivel al carui prag e atins
+	# going up: the highest level whose threshold is reached
 	for l in 4 3 2 1; do
 		if [ "$t" -ge "$(enter "$l")" ]; then
 			[ "$l" -gt "$new" ] && new=$l
 			break
 		fi
 	done
-	# coborare: cate un nivel, sub pragul nivelului curent minus HYST
+	# going down: one level at a time, below the current level's threshold minus HYST
 	if [ "$new" = "$level" ] && [ "$level" -gt 0 ] && [ "$t" -lt $(( $(enter "$level") - HYST )) ]; then
 		new=$((level - 1))
 	fi
 	if [ "$new" != "$level" ]; then
-		log "baterie $((t / 10)).$((t % 10)) C: nivel $level -> $new ($(caps "$new"))"
+		log "battery $((t / 10)).$((t % 10)) C: level $level -> $new ($(caps "$new"))"
 		level=$new
 		echo "$level" > "$STATE"
 	fi

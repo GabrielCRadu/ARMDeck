@@ -1,0 +1,29 @@
+#!/bin/sh
+# armdeck-usb-gadget-off: removes the USB network gadget (usb0, SSH over the USB cable) that the
+# postmarketOS initramfs sets up. Workaround for a kernel bug in 6.16 (f_ncm): the usb0 network
+# interface outlives its parent gadget device when the port switches from device mode (PC cable,
+# charger, nothing plugged in) to host mode (GameSir X3), and the next program that lists network
+# interfaces hits freed memory in rtnl_fill_ifinfo. The Oops leaves the network lock held, so
+# WiFi, podman and the Steam session hang until a forced reboot. Upstream fix: "usb: gadget: Fix
+# net_device lifecycle with device_move" (Linux 7.0-rc4). See docs/gaming-stack.md, TODO 23.
+#
+# Safe only while the gadget is still bound to the USB controller (device mode): unbind it, then
+# remove the NCM function, which unregisters usb0 while its parent device still exists. If the
+# controller already went away (the phone booted inside the X3 with its charger), usb0 is already
+# dangling and touching it could crash, so it is left alone. SSH keeps working over WiFi.
+G=/sys/kernel/config/usb_gadget/g1
+[ -d "$G" ] || { echo "no USB gadget, nothing to do"; exit 0; }
+if [ -n "$(cat "$G/UDC" 2>/dev/null)" ]; then
+	echo "" > "$G/UDC"
+elif [ -e /sys/class/net/usb0 ]; then
+	echo "WARNING: usb0 exists but the gadget lost its USB controller (booted in host mode?);" \
+		"not touching it. Reboot outside the X3 to be safe."
+	exit 0
+fi
+for f in "$G"/configs/*/ncm.*; do
+	[ -L "$f" ] && rm -f "$f"
+done
+for f in "$G"/functions/ncm.*; do
+	[ -d "$f" ] && rmdir "$f"
+done
+echo "USB network gadget removed; usb0 present: $([ -e /sys/class/net/usb0 ] && echo yes || echo no)"

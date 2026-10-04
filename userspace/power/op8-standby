@@ -1,12 +1,12 @@
 #!/bin/sh
-# op8-standby (armdeck, OnePlus 8): "sleep" sigur, FARA suspendarea kernelului (s2idle
-# nu e testat pe kernelul nostru; daca nu se trezeste, ramane doar un reset fortat).
-# Steam -> dbus-send login1 Suspend -> systemd-suspend.service -> acest script (in locul
-# systemd-sleep). Ecran negru, aplicatiile userului inghetate, nucleele mari la frecventa
-# minima; asteapta butonul de pornire, apoi restaureaza totul. Steam vede un ciclu normal de
-# sleep/wake. Dupa modelul konkr-standby din SteamOS-ARM-Handhelds.
-# Jurnal: journalctl -t op8-standby. Marcaje pentru op8-powerbtn: /run/op8-standby.active
-# (cat timp ruleaza) si /run/op8-standby.resumed (momentul iesirii).
+# op8-standby (armdeck, OnePlus 8): a safe "sleep" WITHOUT kernel suspend (s2idle is not tested
+# on our kernel; if it does not wake up, only a forced reset is left).
+# Steam -> dbus-send login1 Suspend -> systemd-suspend.service -> this script (instead of
+# systemd-sleep). Black screen, the user's apps frozen, the big cores at their minimum frequency;
+# waits for the power button, then restores everything. Steam sees a normal sleep/wake cycle.
+# Modeled on konkr-standby from SteamOS-ARM-Handhelds.
+# Log: journalctl -t op8-standby. Markers for op8-powerbtn: /run/op8-standby.active
+# (while it runs) and /run/op8-standby.resumed (the moment it ends).
 U=/sys/fs/cgroup/user.slice/user-10000.slice/user@10000.service
 CF=/sys/devices/system/cpu/cpufreq
 BL=$(ls -d /sys/class/backlight/* 2>/dev/null | head -1)
@@ -18,7 +18,7 @@ log() { logger -t op8-standby -- "$*"; }
 
 touch /run/op8-standby.active
 old_bl=$(cat "$BL/brightness" 2>/dev/null)
-log "intrare in standby: luminozitate $old_bl, buton $EV, uptime $(cut -d' ' -f1 /proc/uptime)"
+log "entering standby: brightness $old_bl, button $EV, uptime $(cut -d' ' -f1 /proc/uptime)"
 
 restore() {
 	trap - EXIT INT TERM
@@ -31,49 +31,49 @@ restore() {
 	[ -n "$old_bl" ] && echo "$old_bl" > "$BL/brightness"
 	rm -f /run/op8-standby.active
 	touch /run/op8-standby.resumed
-	log "iesire din standby: luminozitate $(cat "$BL/brightness"), app.slice inghetat=$(cat "$U/app.slice/cgroup.freeze"), max cpu4=$(cat "$CF/policy4/scaling_max_freq") cpu7=$(cat "$CF/policy7/scaling_max_freq")"
+	log "leaving standby: brightness $(cat "$BL/brightness"), app.slice frozen=$(cat "$U/app.slice/cgroup.freeze"), max cpu4=$(cat "$CF/policy4/scaling_max_freq") cpu7=$(cat "$CF/policy7/scaling_max_freq")"
 }
 trap restore EXIT INT TERM
 
-# 1. ecran negru
+# 1. black screen
 [ -n "$BL" ] && echo 0 > "$BL/brightness"
-log "pas 1: luminozitate $(cat "$BL/brightness")"
-# 2. Steam, gamescope, jocul si containerul inghetate; PipeWire (session.slice) ramane pornit
+log "step 1: brightness $(cat "$BL/brightness")"
+# 2. Steam, gamescope, the game and the container frozen; PipeWire (session.slice) keeps running
 for c in "$U/app.slice" "$U/user.slice"; do
 	[ -w "$c/cgroup.freeze" ] && echo 1 > "$c/cgroup.freeze"
 done
 sleep 1
-log "pas 2: app.slice $(grep frozen "$U/app.slice/cgroup.events"), user.slice $(grep frozen "$U/user.slice/cgroup.events" 2>/dev/null)"
-# 3. nucleele mari la frecventa minima
+log "step 2: app.slice $(grep frozen "$U/app.slice/cgroup.events"), user.slice $(grep frozen "$U/user.slice/cgroup.events" 2>/dev/null)"
+# 3. the big cores at their minimum frequency
 for p in policy4 policy7; do
 	cat "$CF/$p/scaling_max_freq" > "/run/op8-standby-$p"
 	cat "$CF/$p/scaling_min_freq" > "$CF/$p/scaling_max_freq"
 done
-log "pas 3: max cpu4=$(cat "$CF/policy4/scaling_max_freq") cpu7=$(cat "$CF/policy7/scaling_max_freq"); astept butonul de pornire"
+log "step 3: max cpu4=$(cat "$CF/policy4/scaling_max_freq") cpu7=$(cat "$CF/policy7/scaling_max_freq"); waiting for the power button"
 
-# 4. asteapta butonul de pornire: input_event pe 64 de biti = 24 de octeti,
-#    tip la octetul 16 (EV_KEY = 1), cod la 18 (KEY_POWER = 116), valoare la 20 (1 = apasat).
-#    Apasarile din primele 2 secunde se ignora (aceeasi apasare care a cerut sleep).
-#    Iesire de rezerva: fisierul /run/op8-wake (sudo touch /run/op8-wake, prin SSH).
+# 4. wait for the power button: a 64-bit input_event = 24 bytes, type at byte 16 (EV_KEY = 1),
+#    code at 18 (KEY_POWER = 116), value at 20 (1 = pressed).
+#    Presses in the first 2 seconds are ignored (the same press that asked for sleep).
+#    Fallback exit: the file /run/op8-wake (sudo touch /run/op8-wake, over SSH).
 start=$(cut -d. -f1 /proc/uptime)
 while :; do
 	if [ -e /run/op8-wake ]; then
 		rm -f /run/op8-wake
-		log "trezire prin /run/op8-wake"
+		log "woken through /run/op8-wake"
 		break
 	fi
 	if [ -n "$EV" ]; then
 		if ! dd if="$EV" bs=24 count=1 of=/run/op8-standby-ev 2>/dev/null; then
-			log "citire esuata din $EV"
+			log "read from $EV failed"
 			sleep 1
 			continue
 		fi
 		set -- $(od -An -tu2 -j16 -N4 /run/op8-standby-ev) 0 0
 		val=$(od -An -td4 -j20 -N4 /run/op8-standby-ev | tr -d ' ')
 		now=$(cut -d. -f1 /proc/uptime)
-		[ "$1" = 1 ] && log "eveniment tip=$1 cod=$2 valoare=$val la +$((now - start)) s"
+		[ "$1" = 1 ] && log "event type=$1 code=$2 value=$val at +$((now - start)) s"
 		if [ "$1" = 1 ] && [ "$2" = 116 ] && [ "$val" = 1 ] && [ $((now - start)) -ge 2 ]; then
-			log "trezire prin butonul de pornire"
+			log "woken by the power button"
 			break
 		fi
 	else

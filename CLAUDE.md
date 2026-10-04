@@ -33,6 +33,20 @@ against the vendor sources and the real device before it is handed over, and nev
 the manufacturer's values. Never write to the phone (flash, erase, set slots) without the
 maintainer's explicit OK at that moment.
 
+## Working rules (set by the maintainer, 2026-10-04)
+
+1. **Everything that reaches GitHub is in English**: documents, code comments, script output,
+   commit messages, file names.
+2. **One thing at a time.** Finish the task in progress before starting another. If the
+   maintainer starts something new while a task is open, say so and finish or explicitly park
+   the open task first.
+3. **Every problem is a lesson.** Record each problem met and how it was solved (or why it is
+   still open) in [docs/lessons-learned.md](docs/lessons-learned.md), right when it happens.
+4. **Goal for games:** almost every game compatible, and squeeze out every bit of performance by
+   removing pointless losses (overhead, debug leftovers, bad defaults).
+5. **Final goal:** a stable, efficient system where gaming is genuinely pleasant, like a Steam
+   Deck, where every menu and option works.
+
 ## Project context
 
 See [docs/verification-log.md](docs/verification-log.md) for the verified state of the project.
