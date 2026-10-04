@@ -29,6 +29,8 @@ sudo tee /usr/local/bin/jupiter-biosupdate >/dev/null <<'EOF'
 exit 0
 EOF
 sudo chmod 755 /usr/local/bin/steamos-update /usr/local/bin/steamos-select-branch /usr/local/bin/jupiter-biosupdate
+# "Switch to Desktop": fara desktop, Steam se inchide si steam-gs il porneste din nou (vezi scriptul)
+sudo install -m 755 "$(dirname "$0")/op8-session-select" /usr/local/bin/steamos-session-select
 
 # Registry-ul Steam cu prima configurare marcata ca facuta (dupa pocknix registry.vdf)
 cat > "$HOME/.steam/registry.vdf" <<'EOF'

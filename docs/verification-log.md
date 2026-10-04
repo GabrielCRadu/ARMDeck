@@ -1,11 +1,12 @@
 # Verification Log
 
-Every load-bearing claim in [`Gaming Mainline OnePlus 8.md`](../Gaming%20Mainline%20OnePlus%208.md),
-checked against primary sources. The original document is research output with no
-citations to working code; this log records what survived contact with the actual
-kernel tree, device tree, and package repositories.
+Every load-bearing claim in [`Gaming Mainline OnePlus 8.md`](https://github.com/GabrielCRadu/ARMDeck/blob/3560179/Gaming%20Mainline%20OnePlus%208.md),
+checked against primary sources. The original document (an early research draft in
+Romanian, no longer in the repository tree; the link points to its last version in the git
+history) is research output with no citations to working code; this log records what survived
+contact with the actual kernel tree, device tree, and package repositories.
 
-**Target device:** OnePlus 8, global IN2013/IN2010, codename `instantnoodle`, SM8250 (kona).
+**Target device:** OnePlus 8, IN2013 (Europe and Asia), codename `instantnoodle`, SM8250 (kona).
 **Intended use:** dedicated Linux handheld. Android wiped. No modem/calls/SMS required.
 
 **All checks performed 2026-08-24.** Anything marked OPEN needs hardware to settle.
@@ -25,7 +26,7 @@ Verdict key: **CONFIRMED** · **WRONG** · **PARTIAL** - right in outline, wrong
 
 ### 1.1 `instantnoodle` is supported in postmarketOS - **WRONG**
 
-The doc's install flow ([line 141](../Gaming%20Mainline%20OnePlus%208.md#L141)) says to run `pmbootstrap init`
+The doc's install flow ([line 141](https://github.com/GabrielCRadu/ARMDeck/blob/3560179/Gaming%20Mainline%20OnePlus%208.md#L141)) says to run `pmbootstrap init`
 and choose codename `instantnoodle`. That fails today: there is no such device package.
 
 pmaports `device/` contains exactly these OnePlus ports:
@@ -241,7 +242,7 @@ image into `/lib/firmware/qcom/sm8250/OnePlus/`:
 | `slpi.mbn` | Sensor DSP | No sensors (already broken) |
 
 Note the vendor subdirectory `.../sm8250/OnePlus/` - the doc says `/lib/firmware/qcom/sm8250/`
-([line 39](../Gaming%20Mainline%20OnePlus%208.md#L39)), which is the wrong path.
+([line 39](https://github.com/GabrielCRadu/ARMDeck/blob/3560179/Gaming%20Mainline%20OnePlus%208.md#L39)), which is the wrong path.
 
 Additionally from `linux-firmware` (open, not device-specific): `a650_sqe.fw`, `a650_gmu.bin`,
 ath11k QCA6390 WiFi, and QCA Bluetooth firmware.
@@ -284,10 +285,10 @@ at all" framing, but still not indefinite. "Plug in and play forever" remains un
 
 The doc's remedies are correspondingly unreliable:
 
-- Fixing the PD profile at 5 V/3 A in DTS ([line 36](../Gaming%20Mainline%20OnePlus%208.md#L36)) -
+- Fixing the PD profile at 5 V/3 A in DTS ([line 36](https://github.com/GabrielCRadu/ARMDeck/blob/3560179/Gaming%20Mainline%20OnePlus%208.md#L36)) -
   the DTS already declares this; no evidence it's the problem.
 - `echo 0 > /sys/class/power_supply/battery/charging_enabled`
-  ([line 186](../Gaming%20Mainline%20OnePlus%208.md#L186)) - a **downstream** sysfs node. Mainline
+  ([line 186](https://github.com/GabrielCRadu/ARMDeck/blob/3560179/Gaming%20Mainline%20OnePlus%208.md#L186)) - a **downstream** sysfs node. Mainline
   `power_supply` exposes `charge_control_limit` / `input_current_limit` instead. This command
   will almost certainly fail.
 
@@ -313,7 +314,7 @@ Frame**, a Snapdragon 8 Gen 3 device running SteamOS - an Adreno a6xx-family GPU
 Turnip driver lineage as the Adreno 650. Valve publishes ARM64 build instructions for Proton.
 
 The ARM64EC / thunking model the doc describes at
-[line 77](../Gaming%20Mainline%20OnePlus%208.md#L77) matches how this actually works.
+[line 77](https://github.com/GabrielCRadu/ARMDeck/blob/3560179/Gaming%20Mainline%20OnePlus%208.md#L77) matches how this actually works.
 
 *Sources:* GamingOnLinux, Phoronix, ValveSoftware/Proton#7553.
 
@@ -325,7 +326,7 @@ Drakulix's [detailed write-up of running it on postmarketOS](https://blog.drakul
 - It is "totally oblivious to being compiled for arm64" and defaults to launching an x86_64 runtime.
 - Valve does build SteamLinuxRuntime 4.0 and Proton for arm64, but the client won't fetch either.
 - The Proton arm64 depot **ships without a `toolmanifest.vdf`**, so you must write one -
-  which **vindicates the doc's step at [line 84](../Gaming%20Mainline%20OnePlus%208.md#L84)**.
+  which **vindicates the doc's step at [line 84](https://github.com/GabrielCRadu/ARMDeck/blob/3560179/Gaming%20Mainline%20OnePlus%208.md#L84)**.
 - Making it work requires real plumbing: SteamRT4 arm64 as the client's own runtime, a
   `steam-runtime-launcher-service` on a custom bus name, and a `fexwrap` shim injecting FEX
   and graphics drivers into the pressure-vessel `bwrap` invocation.
@@ -379,7 +380,7 @@ translation overhead, which is the larger unknown. Treat the table as an upper b
 
 ## 7. Rewrite status
 
-**Done (2026-08-24), first pass.** [`Gaming Mainline OnePlus 8.md`](../Gaming%20Mainline%20OnePlus%208.md)
+**Done (2026-08-24), first pass.** [`Gaming Mainline OnePlus 8.md`](https://github.com/GabrielCRadu/ARMDeck/blob/3560179/Gaming%20Mainline%20OnePlus%208.md)
 was corrected against every WRONG/PARTIAL/OPEN item logged at that point: the
 device-enablement chapter now describes the Xo666/ObiKeahloa forks instead of a fictional
 `pmbootstrap init instantnoodle` flow, touchscreen/panel/audio/UFS claims match the DTS,

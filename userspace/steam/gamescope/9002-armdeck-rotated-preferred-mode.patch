@@ -1,0 +1,15 @@
+--- a/src/Backends/DRMBackend.cpp
++++ b/src/Backends/DRMBackend.cpp
+@@ -1143,6 +1143,12 @@
+ 	if ( drm->preferred_width != 0 || drm->preferred_height != 0 || drm->preferred_refresh != 0 )
+ 	{
+ 		mode = find_mode(best->GetModeConnector(), drm->preferred_width, drm->preferred_height, gamescope::ConvertmHzToHz( drm->preferred_refresh ));
++		// armdeck: phone panels list their modes in portrait (OnePlus 8: 1080x2400) while gamescope
++		// is given the landscape output size (-W 2400 -H 1080, rotated with --force-orientation).
++		// The preferred refresh (-r) was then never found and the panel's first mode (90 Hz) was
++		// used. Try the rotated size as well.
++		if ( !mode )
++			mode = find_mode(best->GetModeConnector(), drm->preferred_height, drm->preferred_width, gamescope::ConvertmHzToHz( drm->preferred_refresh ));
+ 	}
+ 
+ 	if (!mode && best->GetScreenType() == gamescope::GAMESCOPE_SCREEN_TYPE_EXTERNAL) {

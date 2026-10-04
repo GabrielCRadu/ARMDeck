@@ -1,0 +1,45 @@
+#!/bin/sh
+# op8-usbpd-capture (armdeck): read only. Records what happens on the USB-C port for SECONDS
+# (default 90): Type-C roles, the partner's power offers, VBUS, the USB host controller and the
+# kernel's USB PD state machine log (tcpm, in debugfs, root only). Used to understand charging
+# through a controller with pass-through charging (GameSir X3 Pro) before changing anything.
+#   sudo sh op8-usbpd-capture [seconds]
+# During the capture: plug the charger into the controller, wait, unplug it, as asked.
+# Result: /var/log/op8/usbpd-<date>.txt
+SECONDS_=${1:-90}
+OUT=/var/log/op8/usbpd-$(date +%Y%m%d-%H%M%S).txt
+P=/sys/class/typec/port0
+T=$(ls -d /sys/kernel/debug/usb/tcpm-* 2>/dev/null | head -1)
+
+out() { echo "$*" >> "$OUT"; }
+state() {
+	src=$(ls -d /sys/class/power_supply/tcpm-source-psy-* 2>/dev/null | head -1)
+	out "$(date +%T) data=$(cat $P/data_role 2>/dev/null) power=$(cat $P/power_role 2>/dev/null)" \
+		"mode=$(cat $P/power_operation_mode 2>/dev/null) partner=$([ -e ${P}-partner ] && echo yes || echo no)" \
+		"vbus_online=$(cat $src/online 2>/dev/null) vbus_mV=$(( $(cat $src/voltage_now 2>/dev/null || echo 0) / 1000 ))" \
+		"ibus_mA=$(( $(cat $src/current_max 2>/dev/null || echo 0) / 1000 )) usb=$(lsusb 2>/dev/null | grep -vc 'Linux Foundation')" \
+		"bat_mA=$(( $(cat /sys/class/power_supply/bq27411-0/current_now) / 1000 ))"
+}
+
+out "op8-usbpd-capture $(date '+%F %T'), $SECONDS_ s, tcpm debugfs: ${T:-missing}"
+[ -n "$T" ] && cat "$T/log" > /dev/null 2>&1   # empty the ring buffer so the log starts now
+last=
+end=$(( $(cut -d. -f1 /proc/uptime) + SECONDS_ ))
+while [ "$(cut -d. -f1 /proc/uptime)" -lt "$end" ]; do
+	cur="$(cat $P/data_role $P/power_role 2>/dev/null) $(lsusb 2>/dev/null | grep -vc 'Linux Foundation')"
+	[ "$cur" != "$last" ] && state
+	last=$cur
+	sleep 0.2
+done
+state
+out "== partner and its power offers"
+for f in ${P}-partner/*; do [ -f "$f" ] && out "$(basename $f): $(cat $f 2>/dev/null)"; done
+for d in /sys/class/usb_power_delivery/*/source-capabilities/* /sys/class/usb_power_delivery/*/sink-capabilities/*; do
+	[ -d "$d" ] || continue
+	out "$d: $(for f in $d/*; do [ -f $f ] && printf '%s=%s ' $(basename $f) $(cat $f); done)"
+done
+out "== tcpm log"
+[ -n "$T" ] && cat "$T/log" >> "$OUT"
+out "== kernel"
+dmesg | grep -iE "tcpm|typec|ucsi|pd |vbus|xhci|dwc3|usb [0-9]|role" | tail -60 >> "$OUT"
+echo "$OUT"

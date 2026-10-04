@@ -1,124 +1,175 @@
 <p align="center">
-  <img src="docs/images/armdeck-banner.png" alt="ARMDeck" width="640">
+  <img src="docs/images/armdeck-banner.png" alt="ARMDeck" width="620">
 </p>
 
 <p align="center">
   <b>Turn a Snapdragon phone into a Linux gaming handheld.</b><br>
-  Mainline Linux, Steam in Game Mode, Windows games through Proton ARM64. No Android.
+  Mainline Linux, Steam in Game Mode and Windows games through Proton ARM64. No Android.
 </p>
 
----
+<p align="center">
+  <img src="https://img.shields.io/badge/status-experimental-orange" alt="Status: experimental">
+  <img src="https://img.shields.io/badge/devices-1-informational" alt="Devices: 1">
+  <img src="https://img.shields.io/badge/based%20on-postmarketOS-009900" alt="Based on postmarketOS">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="License: MIT"></a>
+</p>
 
-## What is ARMDeck
+<!--
+  Hero image goes here once it exists, for example:
+  <p align="center"><img src="docs/images/hero.jpg" width="80%" alt="ARMDeck running Steam on a OnePlus 8"></p>
+-->
 
-ARMDeck takes a Snapdragon phone, wipes Android, and boots it into a mainline Linux kernel
-(postmarketOS) with the Steam ARM64 client running in Game Mode under gamescope, the same
-compositor the Steam Deck uses. Windows games run through Proton ARM64 and FEX (an x86
-emulator). The phone becomes a dedicated console: no modem, no calls, no Android apps.
+> [!WARNING]
+> ARMDeck replaces Android completely. The phone is wiped, and calls, SMS and mobile data stop
+> working. Read [Hardware safety](docs/hardware-safety.md) before you flash anything.
 
-The goal is not for one person to port every phone. ARMDeck provides the shared stack and a
-strict contribution process so the community can add and maintain support for more devices.
+## What it is
 
-## Supported devices
+ARMDeck takes a phone with a Qualcomm Snapdragon chip, wipes Android and boots a mainline Linux
+kernel on postmarketOS. On top of that runs the Steam client for ARM64 in Game Mode, inside
+gamescope, the same compositor the Steam Deck uses. Windows games run through Proton ARM64 and
+the FEX x86 emulator. The result is a dedicated console: no apps, no notifications, just Steam.
 
-Each device has a **profile**: its kernel, device tree, firmware packaging and tuning.
+One person cannot port every phone. ARMDeck is the shared stack plus a contribution process,
+so the community can bring it to more devices and keep them working.
 
-| Device | Profile | SoC / GPU | Variants verified | Status |
-|---|---|---|---|---|
-| OnePlus 8 | `instantnoodle` | SM8250 / Adreno 650 | IN2013 (global) | Daily use: Steam, Proton games, sound, touch, buttons, 5 V charging |
+## How it works
 
-Phones sold under one name often differ by region (different modem, RF board, sometimes
-different panels or memory). A profile lists the exact variants that were tested on real
-hardware; anything else is unverified until someone reports it.
+```mermaid
+flowchart TB
+    subgraph host["postmarketOS (host)"]
+        kernel["Mainline Linux kernel<br/>device tree, drivers, power"]
+        gs["gamescope<br/>compositor on the phone screen"]
+        sys["ARMDeck services<br/>buttons, sleep, thermal guard, audio limiter"]
+    end
+    subgraph box["Fedora container (distrobox)"]
+        steam["Steam ARM64 client<br/>Game Mode UI"]
+        proton["Proton ARM64 + FEX<br/>DXVK, VKD3D-Proton"]
+    end
+    game["Windows x86 game"]
+    kernel --> gs
+    gs --> steam
+    steam --> proton --> game
+    sys -.-> steam
+```
+
+- **postmarketOS** runs the hardware. Steam needs glibc, postmarketOS uses musl, so Steam runs
+  in a Fedora container that shares the GPU, sound and home folder with the host. It is not a
+  virtual machine and costs no performance.
+- **Steam** starts in its Steam Deck mode. Its power, brightness and update calls are answered
+  by small ARMDeck adapters on the host.
+- **Proton** translates Windows calls to Linux, **FEX** translates x86 code to ARM64, and
+  **Turnip** (Mesa) drives the Adreno GPU through Vulkan.
+
+## Devices
+
+| Device | Variants tested | SoC / GPU | Status |
+|---|---|---|---|
+| OnePlus 8 (`instantnoodle`) | IN2013 | Snapdragon 865 / Adreno 650 | Daily use |
+
+Phones sold under one name often differ by region: modem, radio board, sometimes the panel.
+Each entry lists the exact variants tested on real hardware. Anything else is untested until
+someone reports it. Want your phone here? See [Contributing](CONTRIBUTING.md).
 
 ## What works on the OnePlus 8
 
-- Steam ARM64 in Game Mode, full screen at the native 2400x1080 (patched gamescope).
-- Windows games through Proton 11.0-2 ARM64 (DXVK 2.7, Unity and 2D games run well).
-- Performance overlay (MangoHud), Steam menu on Volume Up + Volume Down.
-- Kernel with NTSYNC, full preemption and MGLRU.
-- Sound (behind a fixed volume ceiling for the speaker amplifier), touch, buttons.
-- USB-C limited to 5 V input, battery-temperature thermal guard.
+- Steam Game Mode, full screen at the native 2400x1080, touch like on a Steam Deck
+- Windows games through Proton 11 ARM64, performance overlay (MangoHud)
+- Controllers over USB and Bluetooth (tested: Xbox, GameSir X3 Pro)
+- Sound through a protected speaker output, Wi-Fi, Bluetooth
+- Volume Up + Volume Down opens the Steam menu, even in games
+- Kernel with NTSYNC, full preemption and MGLRU
+- Charging limited to 5 V, battery-temperature thermal guard
 
-Known limits: Proton Experimental ARM64 (DXVK 3) fails on Adreno 650, native x86 Linux
-games need a missing x86 Mesa, Remote Play hits a Valve ARM64 client bug, and real deep
-sleep is still being worked on. Details in [docs/compat-perf-audit.md](docs/compat-perf-audit.md).
+**Not yet:** deep sleep (the screen-off drain is being reduced step by step), native x86 Linux
+games (they need an x86 Mesa for FEX; use the Windows version through Proton for now), Proton
+Experimental ARM64 (its DXVK 3 needs a GPU feature the Adreno 650 lacks) and Remote Play
+(a bug in Valve's ARM64 client). Details in the
+[compatibility and performance audit](docs/compat-perf-audit.md).
 
-## Read before flashing
+## Install
 
-This wipes the phone. Read [docs/hardware-safety.md](docs/hardware-safety.md) first. Some
-community kernels for these phones contain settings that can damage hardware (for example a
-charger driver that programs the battery to about 4.87 V); ARMDeck documents which ones to
-avoid and why.
+There is no one-step installer yet. Today an install means building the kernel and device
+packages with pmbootstrap, flashing the phone, then running the setup scripts:
+
+1. [Hardware safety](docs/hardware-safety.md): what can go wrong and how to back up first.
+2. [Build environment](docs/build-environment.md): building the packages and the image.
+3. [Userspace setup](userspace/README.md): Steam session, buttons, sound, sleep, logging.
 
 ## Contributing
 
-A contribution guide with strict safety rules, device profile templates and a device report
-tool is being written. Until then, open an issue with your phone model, exact variant
-(for example IN2013) and what you tested.
+Device ports, game reports, fixes and documentation are all welcome. The rules are short and
+about fairness: be honest about what you tested, keep hardware changes within the
+manufacturer's limits, credit other people's work, say when AI helped you, and respect the
+projects we build on. Read [CONTRIBUTING.md](CONTRIBUTING.md) and the
+[Code of Conduct](CODE_OF_CONDUCT.md).
 
 ## How this is built
 
-This project is developed with AI assistance (Claude models) doing research, source
-verification, packaging and build work alongside the author. Every non-obvious claim in
-[docs/verification-log.md](docs/verification-log.md) is traced to a primary source (a real
-file, a real build, a real measurement) so the work can be checked rather than taken on faith.
+The maintainer develops ARMDeck with AI assistance (Claude models), for research, source
+verification, packaging and build work. Every non-obvious claim is traced to a primary
+source (a vendor file, a real build, a measurement on the phone) in the
+[verification log](docs/verification-log.md), so the work can be checked rather than taken on
+faith. If AI involvement rules a project out for you, that is a fair choice.
 
-## Repo layout
+## Thanks
 
-- `pmaports/` - postmarketOS packages for the device (kernel with ARMDeck patches, device
-  port, firmware, ALSA config). Not part of upstream pmaports.
-- `userspace/` - what turns the flashed image into a handheld: Steam session in gamescope,
-  buttons, overlay, thermal guard, power tests. Start with `userspace/README.md`.
-- `docs/` - safety, build environment, gaming stack research, audits and the verification
-  log. Some older documents are in Romanian.
-- `reference/dts/` - the three community device trees for the OnePlus 8, kept for comparison.
-- `tools/` - helper scripts.
-- `Gaming Mainline OnePlus 8.md` - the original research draft (Romanian). It contains errors
-  corrected in the verification log; do not treat it as a source of truth.
+### Inspired by
 
-## License and attribution
+- [DroidDeck](https://github.com/Droid-Deck/DroidDeck): Steam on Android handhelds; the model
+  for this README and for device reports.
+- [pocknix-os](https://github.com/shuuri-labs/pocknix-os): Steam ARM64 in Game Mode on a
+  handheld, the first-run registry and the DXVK approach for Proton ARM64.
+- [Armada](https://github.com/armada-os/armada): EDID handling for internal panels and the
+  x86 Mesa root for FEX.
+- [SteamOS-ARM-Handhelds](https://github.com/hashtagbasit/SteamOS-ARM-Handhelds): display
+  profiles for phone panels.
+- [ROCKNIX](https://github.com/ROCKNIX/distribution): Linux on ARM handhelds, x86 Mesa for FEX.
+- [Nova-Deck](https://github.com/Nova-Deck/os-build): the DXVK 3 findings on the Adreno 650.
+- [SteamOS and the Steam Deck](https://store.steampowered.com/steamdeck), and
+  [Bazzite](https://bazzite.gg): what a Linux gaming handheld should feel like.
 
-This repo's own content (the documents, the verification log, `tools/inline-doc-values.py`,
-and the drafted `pmaports/` packaging files, which follow the same MIT convention the real
-postmarketOS pmaports project uses for packaging metadata) is MIT licensed - see `LICENSE`.
+### Built on
 
-The three files under `reference/dts/` are not original to this repo. They are device tree
-source files pulled verbatim from three independent community kernel forks for this phone,
-kept here for side-by-side comparison:
+- [postmarketOS](https://postmarketos.org): the base system, pmbootstrap, mkinitfs,
+  [bootmac](https://gitlab.postmarketos.org/postmarketOS/bootmac). Please note that
+  postmarketOS does not accept AI-assisted contributions; see [CONTRIBUTING.md](CONTRIBUTING.md).
+- Kernel and device trees for the OnePlus 8:
+  [Xo666/mainline-instantnoodle](https://github.com/Xo666/mainline-instantnoodle) (the kernel
+  ARMDeck uses), [ObiKeahloa/linux](https://gitlab.com/ObiKeahloa/linux),
+  [WuerfelDev/linux-sm8250](https://gitlab.postmarketos.org/WuerfelDev/linux-sm8250), and the
+  [LineageOS OnePlus SM8250 kernel](https://github.com/LineageOS/android_kernel_oneplus_sm8250),
+  used as the vendor reference for every hardware value.
+- Valve: the Steam client, [Proton](https://github.com/ValveSoftware/Proton) and
+  [gamescope](https://github.com/ValveSoftware/gamescope).
+- [FEX](https://github.com/FEX-Emu/FEX), [DXVK](https://github.com/doitsujin/dxvk),
+  [VKD3D-Proton](https://github.com/HansKristian-Work/vkd3d-proton),
+  [Mesa](https://gitlab.freedesktop.org/mesa/mesa) (Turnip and Freedreno).
+- [MangoHud](https://github.com/flightlessmango/MangoHud) and the session setup from
+  [ChimeraOS gamescope-session-steam](https://github.com/ChimeraOS/gamescope-session-steam).
+- [Fedora](https://fedoraproject.org), [distrobox](https://github.com/89luca89/distrobox),
+  [Podman](https://github.com/containers/podman),
+  [PipeWire](https://gitlab.freedesktop.org/pipewire/pipewire) and
+  [WirePlumber](https://gitlab.freedesktop.org/pipewire/wireplumber),
+  [python-evdev](https://github.com/gvalkov/python-evdev),
+  [qbootctl](https://github.com/linux-msm/qbootctl), Alpine Linux.
 
-- `sm8250-oneplus-instantnoodle.dts` - from
-  [Xo666/mainline-instantnoodle](https://github.com/Xo666/mainline-instantnoodle) (Xiaoou),
-  licensed `GPL-2.0 OR BSD-3-Clause`.
-- `sm8250-oneplus-instantnoodle-obikeahloa.dts` - from
-  [ObiKeahloa/linux](https://gitlab.com/ObiKeahloa/linux), licensed
-  `GPL-2.0-only OR BSD-2-Clause`.
-- `sm8250-oneplus-instantnoodle-wuerfeldev.dts` - from
-  [WuerfelDev/linux-sm8250](https://gitlab.postmarketos.org/WuerfelDev/linux-sm8250),
-  licensed `GPL-2.0-only OR BSD-2-Clause`.
+## License
 
-Each file carries its own SPDX header and copyright notice; those are not altered here. All
-three are dual-licensed with a permissive option, which is why the repo as a whole can stay
-MIT rather than being pulled entirely under GPL by their presence - but the credit for
-writing them belongs to their respective authors and forks, not to this project.
-
-The firmware referenced (but not included - see `.gitignore`) by
-`pmaports/firmware-oneplus-instantnoodle/` is proprietary Qualcomm/OnePlus-signed material
-with no clear redistribution license; see `docs/verification-log.md` for the caveat.
+ARMDeck's own files (documents, scripts, packaging) are MIT licensed, see [LICENSE](LICENSE).
+Kernel patches are GPL-2.0, like the kernel they apply to. The device trees under
+`reference/dts/` come from the kernel forks listed above and keep their own SPDX headers
+(GPL-2.0 or BSD, dual licensed). Firmware is never included: it is proprietary and is copied
+from your own phone.
 
 ## Disclaimer
 
-This is an independent, unofficial research project. It is not affiliated with, endorsed
-by, or sponsored by OnePlus, Qualcomm, or any of their partners; not affiliated with the
-individual authors or maintainers of the third-party kernel forks or drivers referenced
-here; and not affiliated with Valve or Steam. All trademarks belong to their respective
+ARMDeck is an independent project. It is not affiliated with, endorsed or sponsored by Valve,
+OnePlus, Qualcomm, Google, the postmarketOS project or the authors of the kernel forks it uses.
+Steam and Steam Deck are trademarks of Valve Corporation; all trademarks belong to their
 owners.
 
-Everything in this repo is provided as-is, with no warranty of any kind. Flashing a phone
-with a custom kernel and bootloader-unlocked firmware carries real risk, including
-permanently bricking the device, data loss, and hardware damage. The author and
-contributors to this project accept no responsibility or liability for any damage, data
-loss, security vulnerability, or other harm, material or otherwise, resulting from using
-anything in this repository, whether by following the documented instructions, using the
-drafted packages, or otherwise. By using this project to install any of this on a real
-device, you accept that risk yourself and agree to this disclaimer.
+Everything here is provided as is, without warranty of any kind. Flashing a phone carries real
+risk, including a bricked device, data loss and hardware damage. The authors and contributors
+accept no liability for any damage or loss from using this project. By installing it on a
+device you accept that risk.

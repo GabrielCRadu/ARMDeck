@@ -1,0 +1,26 @@
+--- a/src/steamcompmgr.cpp
++++ b/src/steamcompmgr.cpp
+@@ -7217,6 +7217,23 @@
+ 			{
+ 				width = std::min<int>(width, currentOutputWidth);
+ 				height = std::min<int>(height, currentOutputHeight);
++			}
++
++			// armdeck: Steam does not treat this EDID-less 2400x1080 phone panel as an internal screen:
++			// it believes the panel is 1920x1080 and asks for 16:9 Xwayland modes, which leave black bars
++			// at the sides. With GAMESCOPE_FORCE_NATIVE_XWAYLAND set, every Xwayland server keeps the
++			// requested height but gets the panel's aspect ratio, so every mode fills the screen: Steam's
++			// 1920x1080 becomes the native 2400x1080, and a 1280x720 "Maximum game resolution" becomes
++			// 1600x720, which gamescope upscales.
++			static const bool s_bForceNativeXwayland = getenv( "GAMESCOPE_FORCE_NATIVE_XWAYLAND" ) != nullptr;
++			if ( s_bForceNativeXwayland && currentOutputWidth && currentOutputHeight && height > 0 )
++			{
++				int nHeight = std::min<int>( height, int( currentOutputHeight ) );
++				int nWidth = int( ( uint64_t( currentOutputWidth ) * nHeight + currentOutputHeight / 2 ) / currentOutputHeight ) & ~1;
++				if ( width != nWidth || height != nHeight )
++					xwm_log.infof( "armdeck: Xwayland mode request %dx%d -> %dx%d (panel aspect ratio)", width, height, nWidth, nHeight );
++				width = nWidth;
++				height = nHeight;
+ 			}
+ 
+ 			gamescope_xwayland_server_t *server = wlserver_get_xwayland_server( server_idx );

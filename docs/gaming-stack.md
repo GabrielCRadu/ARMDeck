@@ -485,6 +485,27 @@ rula `stageA2.sh` (reguli udev + `udevadm trigger` + repornirea nftables).
     `D:\op8-logs\drm_info-normal-*.txt`). Dacă reapare: `drm_info` înainte de repornire și
     jurnalul proprietăților de culoare (`xprop -root -spy`, filtrat pe `GAMESCOPE_*COLOR/HDR`).
     Măsură de rezervă: gamescope cu `--disable-color-management`.
+21. **Refresh rate the user can change (60 / 90 Hz).** Kernel patch 0006 (r9) runs the panel at
+    60 Hz by default, with 90 Hz only through the boot option
+    `panel_samsung_amb655uv01.refresh=90`. Wanted: switching from Steam (the refresh-rate slider
+    in Quick Access > Performance), so a game that reaches 90 fps can use it. Needed:
+    - the panel driver offers both modes again and sends the matching DCS command when the mode
+      changes, as OnePlus does with `qcom,mdss-dsi-timing-switch-command` (`F0 5A 5A`,
+      `60 00` or `60 10`, `F0 A5 A5`; 16 ms wait after it when going to 60 Hz);
+    - gamescope patch 9002 (the preferred mode is looked up with the rotated size too) and
+      Steam's dynamic refresh list: gamescope only offers the rates of an internal panel when
+      it finds several modes of the same size; Steam reported `modes: 0`.
+    - **Tried on 2026-10-04 and reverted:** kernel r9 (patch 0006: only the 60 Hz mode, DCS
+      `60 00`) gave a garbled image (coloured patterns, repeated Steam logos) and many
+      `dsi_err_worker: status=5`. The mainline DSI host lowers the link clock with the mode's
+      pixel clock; the vendor driver probably keeps it. To understand before any new test.
+    - Meanwhile gamescope runs without `-r 60` (it held Steam and games at 60 fps while the panel
+      scanned out at 90 Hz); games are capped from Steam's Frame Limit.
+22. **Thermal guard level in the MangoHud overlay.** Show which `op8-thermal` level is active
+    (0 = none, 1-4 = big cores and GPU limited) next to the battery temperature, to see at once
+    when performance drops because of heat. Idea: `op8-thermal` writes the current level to a
+    small file in `/run` (the container sees the host's `/run` as `/run/host/run`), and an
+    `exec` line in `mangohud-presets.conf` reads it.
 
 Rezolvate tot pe 2026-10-02, mai târziu:
 

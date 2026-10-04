@@ -40,10 +40,11 @@ restore() {
 	trap - EXIT INT TERM
 	rfkill unblock wlan 2>/dev/null; rfkill unblock bluetooth 2>/dev/null
 	systemctl kill -s CONT op8-sampler 2>/dev/null
+	# frecventele CPU intai: cu ele la minim, panoul nu mai porneste (erori DSI, ecran negru)
+	for p in policy0 policy4 policy7; do eval "v=\$old_$p"; echo "$v" > "$CF/$p/scaling_max_freq"; done
 	for c in "$U/app.slice" "$U/user.slice"; do echo 0 > "$c/cgroup.freeze"; done
 	sleep 1
 	gsctl drm_sleep_internal_screen 0
-	for p in policy0 policy4 policy7; do eval "v=\$old_$p"; echo "$v" > "$CF/$p/scaling_max_freq"; done
 	echo "$old_bl" > "$BL/brightness"
 	rm -f /run/op8-standby.active
 	out "restaurat: luminozitate $(cat $BL/brightness), wifi $(rfkill list wlan | grep -c 'Soft blocked: no') deblocat"

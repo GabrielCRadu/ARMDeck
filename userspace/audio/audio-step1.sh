@@ -1,13 +1,13 @@
 #!/bin/sh
-# armdeck, sunet pasul 1: pachetele PipeWire lipsa si legatura UCM.
-# Profilul nostru e in ucm2/OnePlus/, dar ALSA il cauta dupa driver si nume de placa
-# (conf.d/sm8250/OnePlus8.conf); fara legatura, PipeWire nu creeaza nicio iesire.
-# Nu porneste niciun sunet. Rulare: sudo sh /tmp/op8-log/audio-step1.sh
+# armdeck, sound step 1: the missing PipeWire packages and the UCM link.
+# Our profile is in ucm2/OnePlus/, but ALSA looks it up by driver and card name
+# (conf.d/sm8250/OnePlus8.conf); without the link, PipeWire creates no output at all.
+# Plays no sound. Run: sudo sh audio-step1.sh
 set -eu
 apk add pipewire-pulse pipewire-filter-graph pipewire-filter-graph-builtin
 ln -sfn ../../OnePlus/OnePlus8.conf /usr/share/alsa/ucm2/conf.d/sm8250/OnePlus8.conf
 sync
-echo "== verificare"
+echo "== check"
 ls -l /usr/share/alsa/ucm2/conf.d/sm8250/
 ls /usr/lib/spa-0.2/filter-graph/
-echo "== GATA sunet pasul 1"
+echo "== DONE sound step 1"

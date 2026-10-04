@@ -1,0 +1,64 @@
+name: Device report
+description: Report a new device, a new variant of a supported device, or a port in progress.
+title: "[Device] "
+labels: ["device"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Phones sold under one name often differ by region, so the exact variant matters.
+        See [Device variants](https://github.com/GabrielCRadu/ARMDeck/blob/main/CONTRIBUTING.md#device-variants). Remove the serial
+        number and any other private data before posting.
+  - type: input
+    id: model
+    attributes:
+      label: Model and variant code
+      placeholder: "OnePlus 8, IN2013"
+    validations:
+      required: true
+  - type: input
+    id: codename
+    attributes:
+      label: Codename and SoC
+      placeholder: "instantnoodle, Snapdragon 865 (SM8250)"
+    validations:
+      required: true
+  - type: textarea
+    id: board
+    attributes:
+      label: Board information
+      description: The `androidboot.*` hardware and project entries from `/proc/cmdline` under Linux, or `adb shell getprop | grep ro.boot` under Android. Remove `serialno`.
+      render: text
+  - type: input
+    id: firmware
+    attributes:
+      label: Android or OxygenOS version before flashing
+  - type: dropdown
+    id: stage
+    attributes:
+      label: Where are you?
+      options:
+        - Not started, asking what is needed
+        - Boots Linux
+        - Display, input and storage work
+        - Steam runs
+        - Games run
+    validations:
+      required: true
+  - type: textarea
+    id: status
+    attributes:
+      label: What works and what does not
+      description: Display, touch, buttons, Wi-Fi, Bluetooth, sound, charging, sleep, GPU, games. Say for each whether it is verified on hardware, only builds, or untested.
+  - type: textarea
+    id: sources
+    attributes:
+      label: Kernel, device tree and sources used
+      description: Kernel fork, vendor kernel used as reference, links.
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Hardware safety
+      options:
+        - label: Voltages, charging, thermal and frequency limits are equal to or below the vendor kernel's values, or I list every difference above.
+          required: true

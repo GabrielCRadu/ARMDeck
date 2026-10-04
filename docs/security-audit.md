@@ -1,106 +1,112 @@
-# Audit de securitate (2026-10-01)
+# Security audit (2026-10-01)
 
-Complementar lui [`hardware-safety.md`](hardware-safety.md), care tratează riscurile fizice.
-Aici: ce poate fi exploatat sau poate scăpa (date, acces la telefon, acces la PC). Fiecare
-constatare are dovada verificată și măsura recomandată. Ordinea e de la cel mai important.
+Complements [`hardware-safety.md`](hardware-safety.md), which covers the physical risks. Here:
+what can be exploited or can leak (data, access to the phone, access to the PC). Each finding
+has its verified evidence and the recommended measure. Ordered from most to least important.
 
-## S1. Kernel ieșit din suport (ridicat)
+## S1. A kernel out of support (high)
 
-- **Dovadă:** kernelul folosit e Xo666 6.16.7 (septembrie 2025, branch neactualizat din ianuarie
-  2026). Pe kernel.org, seria 6.16 nu mai există în lista întreținută; acum sunt suportate 7.2,
-  6.18 LTS, 6.12 LTS. Lipsesc deci aproximativ un an de corecturi de securitate.
-- **De ce contează:** suprafața la distanță e WiFi (`ath11k`), Bluetooth și stiva de rețea; local,
-  jocurile rulate prin Proton/FEX sunt cod străin care rulează pe telefon.
-- **Măsuri acum:** Bluetooth oprit când nu e folosit, fără rețele WiFi publice/necunoscute,
-  firewall-ul activ (vezi S2).
-- **Pe termen mediu:** mutarea DTS-ului și a celor două patch-uri pe un kernel întreținut (de
-  exemplu kernelul postmarketOS SM8250 7.x), **fără** driverul lui de încărcare până e reparat
+- **Evidence:** the kernel in use is Xo666 6.16.7 (September 2025, a branch not updated since
+  January 2026). On kernel.org, the 6.16 series is no longer in the maintained list; 7.2, 6.18
+  LTS and 6.12 LTS are supported now. So about a year of security fixes is missing.
+- **Why it matters:** the remote attack surface is Wi-Fi (`ath11k`), Bluetooth and the network
+  stack; locally, games run through Proton/FEX are foreign code running on the phone.
+- **Measures now:** Bluetooth off when not in use, no public or unknown Wi-Fi networks, the
+  firewall active (see S2).
+- **In the medium term:** moving the DTS and the ARMDeck patches to a maintained kernel (for
+  example the postmarketOS SM8250 7.x kernel), **without** its charger driver until it is fixed
   (`hardware-safety.md` 4.1).
 
-## S2. SSH deschis pe toate interfețele, cu parolă (ridicat pe WiFi)
+## S2. SSH open on every interface, with a password (high on Wi-Fi)
 
-- **Dovadă:** firewall-ul postmarketOS blochează implicit tot ce intră (politica `drop` din
-  `nftables.nft` Alpine), dar pachetul `openssh-nftrules` adaugă `tcp dport 22 accept` fără
-  restricție de interfață, iar configurația pmOS pentru `sshd` setează doar `UsePAM yes`, deci
-  autentificarea cu parolă rămâne activă (implicit OpenSSH).
-- **Risc:** pe orice WiFi la care te conectezi, oricine din rețea poate încerca parole pe SSH.
-- **Măsuri:**
-  1. Parolă lungă la `pmbootstrap install` (e și parola SSH).
-  2. Cheie SSH: `pmbootstrap init` se oferă să copieze cheile tale publice. După primul login
-     cu cheie, pe telefon: `PasswordAuthentication no` într-un fișier din `/etc/ssh/sshd_config.d/`.
-  3. Opțional, SSH doar prin cablu: înlocuiești `/etc/nftables.d/50_sshd.nft` cu o regulă care
-     acceptă portul 22 doar pe `usb*`.
+- **Evidence:** the postmarketOS firewall drops all incoming traffic by default (the `drop`
+  policy in Alpine's `nftables.nft`), but the `openssh-nftrules` package adds
+  `tcp dport 22 accept` with no interface restriction, and the pmOS configuration for `sshd` only
+  sets `UsePAM yes`, so password authentication stays on (the OpenSSH default).
+- **Risk:** on any Wi-Fi you join, anyone on the network can try passwords on SSH.
+- **Measures:**
+  1. A long password at `pmbootstrap install` (it is also the SSH password).
+  2. An SSH key: `pmbootstrap init` offers to copy your public keys. After the first login with
+     the key, on the phone: `PasswordAuthentication no` in a file in `/etc/ssh/sshd_config.d/`.
+  3. Optionally, SSH only over the cable: replace `/etc/nftables.d/50_sshd.nft` with a rule that
+     accepts port 22 only on `usb*`.
 
-**Aplicat pe telefon (2026-10-01):** `/etc/nftables.d/40_ssh_usb_only.nft` aruncă traficul SSH
-venit pe `wlan*` înaintea regulii care îl acceptă. Verificat: de pe PC, portul 22 pe IP-ul WiFi al
-telefonului nu mai răspunde, iar prin cablu USB SSH-ul merge. Fișierul nu aparține niciunui pachet,
-deci rămâne și după actualizări. Login-ul pentru teste se face cu cheia `op8_pmos`.
+**Applied on the phone (2026-10-01):** `/etc/nftables.d/40_ssh_usb_only.nft` drops SSH traffic
+arriving on `wlan*` before the rule that accepts it. Checked: from the PC, port 22 on the
+phone's Wi-Fi IP no longer answers, while SSH over the USB cable works. The file belongs to no
+package, so it survives updates. Logins are done with an SSH key. Later
+(`userspace/system/stageA2.sh`) SSH over Wi-Fi was allowed from the PC's IP address only.
 
-## S3. Protecții de kernel dezactivate (mediu)
+## S3. Kernel protections disabled (medium)
 
-- **Dovadă** (`op8_defconfig`): active KASLR, `STRICT_KERNEL_RWX`, `STACKPROTECTOR_STRONG`,
-  PAC și BTI. **Dezactivate:** `HARDENED_USERCOPY`, `FORTIFY_SOURCE`, `INIT_STACK_ALL_ZERO`
-  (de aici a pornit și bug-ul amplificatoarelor), `SLAB_FREELIST_HARDENED`, `SLAB_FREELIST_RANDOM`,
-  `LIST_HARDENED`, `SECURITY_YAMA`, `SECURITY_LANDLOCK`, `MODULE_SIG`. Active și `DEBUG_FS`, `KEXEC`.
-- **Măsură:** primul boot cu configurația autorului, ca să avem o referință. Apoi, într-o etapă
-  separată, activăm pe rând `INIT_STACK_ALL_ZERO`, `SLAB_FREELIST_HARDENED`,
-  `SLAB_FREELIST_RANDOM`, `SECURITY_YAMA`, `LIST_HARDENED`, `HARDENED_USERCOPY`,
-  `FORTIFY_SOURCE`, cu test după fiecare (ultimele două pot scoate la iveală bug-uri în drivere).
+- **Evidence** (`op8_defconfig`): enabled: KASLR, `STRICT_KERNEL_RWX`, `STACKPROTECTOR_STRONG`,
+  PAC and BTI. **Disabled:** `HARDENED_USERCOPY`, `FORTIFY_SOURCE`, `INIT_STACK_ALL_ZERO` (the
+  amplifier bug started there), `SLAB_FREELIST_HARDENED`, `SLAB_FREELIST_RANDOM`, `LIST_HARDENED`,
+  `SECURITY_YAMA`, `SECURITY_LANDLOCK`, `MODULE_SIG`. `DEBUG_FS` and `KEXEC` are enabled.
+- **Measure:** first boot with the author's configuration, as a reference. Then, in a separate
+  step, enable one at a time `INIT_STACK_ALL_ZERO`, `SLAB_FREELIST_HARDENED`,
+  `SLAB_FREELIST_RANDOM`, `SECURITY_YAMA`, `LIST_HARDENED`, `HARDENED_USERCOPY`, `FORTIFY_SOURCE`,
+  with a test after each (the last two can expose bugs in drivers).
 
-## S4. Bootloader deblocat permanent, date necriptate (mediu)
+## S4. A permanently unlocked bootloader, unencrypted data (medium)
 
-- Inerent proiectului: cine are telefonul în mână poate porni sau scrie orice. Fără criptare,
-  datele din pmOS (inclusiv sesiunea Steam, după ce o adaugi) se pot citi direct.
-- **Măsură:** `pmbootstrap install --fde` criptează rootfs-ul. Parola se introduce la fiecare
-  pornire pe ecran (tastatura `unl0kr`). Decizia e a ta: siguranță contra comoditate.
-- Datele vechi din Android (`userdata`) rămân pe telefon, criptate de Android, neatinse de pmOS.
+- Inherent to the project: whoever holds the phone can boot or write anything. Without
+  encryption, the data in pmOS (including the Steam session, once you add it) can be read
+  directly.
+- **Measure:** `pmbootstrap install --fde` encrypts the root filesystem. The password is entered
+  at every boot on the screen (the `unl0kr` keyboard). The choice is yours: security versus
+  convenience.
+- The old Android data (`userdata`) stays on the phone, encrypted by Android, untouched by pmOS
+  (unless you reformat it for games, `userspace/system/format-games.sh`).
 
-## S5. Backup-ul conține identitatea telefonului (mediu)
+## S5. The backup contains the phone's identity (medium)
 
-- `D:\backup-op8-20261001` conține EFS-ul modemului (`mdm1m9kefs1/2`, IMEI), `persist`,
-  `param` și, în `getvar-all.txt`, seria telefonului. Cu ele se poate clona identitatea
-  dispozitivului.
-- **Măsuri:** nu-l urca necriptat în cloud. A doua copie într-o arhivă criptată (7-Zip, AES-256,
-  cu parolă). În repo, `.gitignore` acoperă acum `backup*/` și `getvar*.txt`.
+- The partition backup contains the modem EFS (`mdm1m9kefs1/2`, IMEI), `persist`, `param` and,
+  in `getvar-all.txt`, the phone's serial number. They can be used to clone the device's
+  identity.
+- **Measures:** do not upload it unencrypted to the cloud. Keep the second copy in an encrypted
+  archive (7-Zip, AES-256, with a password). In the repository, `.gitignore` covers `backup*/` and
+  `getvar*.txt`.
 
-## S6. Pachetul MSM vine de pe un site terț (mediu)
+## S6. The MSM package comes from a third-party site (medium)
 
-- MSM Download Tool e un executabil Windows închis, distribuit prin AndroidFileHost, nu de
-  OnePlus. Firmware-ul pe care îl scrie e verificat de lanțul de boot semnat al telefonului, dar
-  executabilul rulează pe PC-ul tău.
-- **Măsuri:** verifici MD5-ul cu cel din thread-ul XDA, îl scanezi pe VirusTotal, îl rulezi doar
-  dacă chiar ai nevoie de el.
+- The MSM Download Tool is a closed Windows executable, distributed through AndroidFileHost, not
+  by OnePlus. The firmware it writes is checked by the phone's signed boot chain, but the
+  executable runs on your PC.
+- **Measures:** check the MD5 against the one in the XDA thread, scan it on VirusTotal, and run it
+  only if you really need it.
 
-## S7. sudo fără parolă în WSL (scăzut)
+## S7. Passwordless sudo in WSL (low)
 
-- `/etc/sudoers.d/gabriel-nopasswd` (`gabriel ALL=(ALL) NOPASSWD:ALL`), pus pentru pmbootstrap.
-  Orice proces din WSL rulat ca tine devine root fără confirmare.
-- **Măsură:** după ce termini build-urile, `sudo rm /etc/sudoers.d/gabriel-nopasswd`.
+- A file in `/etc/sudoers.d/` with `NOPASSWD:ALL` for your user, set up for pmbootstrap. Any
+  process in WSL running as you becomes root without confirmation.
+- **Measure:** once the builds are done, remove that file.
 
-## S8. Proveniența firmware-ului (scăzut)
+## S8. Firmware origin (low)
 
-- Verificat după amprenta git: firmware-ul GPU nesemnat (`a650_sqe.fw`, `a650_gmu.bin`) și
-  `m3.bin` sunt identice cu linux-firmware oficial; `board-2.bin` e versiunea oficială din
-  2022-04-23. `amss.bin` (WiFi) nu corespunde niciunei versiuni linux-firmware. Firmware-ul
-  DSP și shader-ul zap sunt semnate și verificate de TrustZone. Cipul WiFi accesează memoria
-  doar prin SMMU.
+- Checked by git hash: the unsigned GPU firmware (`a650_sqe.fw`, `a650_gmu.bin`) and `m3.bin`
+  are identical to the official linux-firmware; `board-2.bin` is the official 2022-04-23
+  version. `amss.bin` (Wi-Fi) matches no linux-firmware version. The DSP firmware and the zap
+  shader are signed and checked by TrustZone. The Wi-Fi chip reaches memory only through the
+  SMMU.
 
-## S8b. Depozitele de pachete folosesc HTTP (scăzut)
+## S8b. The package repositories use HTTP (low)
 
-- `/etc/apk/repositories` pe telefon folosește `http://` (implicit în postmarketOS/Alpine), iar
-  `mirror.postmarketos.org` redirecționează spre `http://mirror.nura.eco`. Pachetele și indexul sunt
-  semnate criptografic, deci nu pot fi modificate pe drum. Rămân expuse doar ce pachete descarci și
-  posibilitatea de a ți se servi un index mai vechi.
-- **Măsură:** `https://` pentru `dl-cdn.alpinelinux.org` (suportă HTTPS). Pentru oglinda pmOS se
-  verifică întâi dacă servește HTTPS.
+- `/etc/apk/repositories` on the phone uses `http://` (the postmarketOS/Alpine default), and
+  `mirror.postmarketos.org` redirects to `http://mirror.nura.eco`. Packages and the index are
+  cryptographically signed, so they cannot be modified on the way. Only which packages you
+  download is exposed, plus the possibility of being served an older index.
+- **Measure:** `https://` for `dl-cdn.alpinelinux.org` (it supports HTTPS). For the pmOS mirror,
+  check first whether it serves HTTPS.
 
-## S9. Ce e în regulă
+## S9. What is fine
 
-- Istoricul git (16 commit-uri) nu conține seria telefonului, IMEI-uri, chei sau token-uri.
-  Singura informație personală e adresa de email a autorului în metadatele commit-urilor (poate
-  fi înlocuită cu adresa "noreply" GitHub pentru commit-urile viitoare).
-- Toate sursele din APKBUILD-uri vin prin HTTPS și sunt fixate prin sha512 (verificat cu
+- The git history contains no phone serial number, IMEI, keys or tokens. The only personal
+  information is the author's email address in the commit metadata (it can be replaced with the
+  GitHub "noreply" address for future commits).
+- All sources in the APKBUILDs come over HTTPS and are pinned by sha512 (checked with
   `pmbootstrap checksum --verify`).
-- Driverele de pe PC (fastboot, Qualcomm 9008) sunt semnate și instalate prin Windows Update.
-- Alte porturi deschise implicit de pmOS (`localsend` 53317, `ausweisapp2` 24727, mosh) nu au
-  niciun serviciu care să asculte decât dacă instalezi acele aplicații.
+- The drivers on the PC (fastboot, Qualcomm 9008) are signed and installed through Windows
+  Update.
+- Other ports pmOS opens by default (`localsend` 53317, `ausweisapp2` 24727, mosh) have no
+  service listening unless you install those apps.

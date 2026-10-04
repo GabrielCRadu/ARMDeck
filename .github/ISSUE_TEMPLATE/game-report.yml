@@ -1,0 +1,64 @@
+name: Game report
+description: Tell us how a game runs on ARMDeck, whether it works or not.
+title: "[Game] "
+labels: ["game report"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Failures are as useful as successes. Please remove private data from anything you paste
+        (see [Privacy](https://github.com/GabrielCRadu/ARMDeck/blob/main/CONTRIBUTING.md#6-privacy)).
+  - type: input
+    id: game
+    attributes:
+      label: Game and Steam app ID
+      description: The app ID is the number in the game's Steam store URL.
+      placeholder: "Subnautica, 264710"
+    validations:
+      required: true
+  - type: input
+    id: device
+    attributes:
+      label: Device and variant
+      placeholder: "OnePlus 8, IN2013"
+    validations:
+      required: true
+  - type: dropdown
+    id: result
+    attributes:
+      label: Result
+      options:
+        - Plays well
+        - Playable with issues
+        - Starts but not playable
+        - Does not start
+    validations:
+      required: true
+  - type: input
+    id: proton
+    attributes:
+      label: Proton version
+      description: Properties > Compatibility in Steam.
+      placeholder: "Proton 11.0-2 (ARM64)"
+    validations:
+      required: true
+  - type: input
+    id: fps
+    attributes:
+      label: Frame rate and settings
+      placeholder: "about 30 FPS, low preset, 1600x720"
+  - type: input
+    id: launch
+    attributes:
+      label: Launch options
+      placeholder: "PROTON_NO_NTSYNC=1 %command%"
+  - type: textarea
+    id: notes
+    attributes:
+      label: What works, what does not
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: For games that fail, a Proton log helps. Add `PROTON_LOG=1 %command%` to the launch options, start the game once, then attach `~/proton-logs/steam-<appid>.log`.
+      render: text

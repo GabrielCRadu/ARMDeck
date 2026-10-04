@@ -1,0 +1,36 @@
+name: Bug report
+description: Something on ARMDeck does not work as it should.
+title: "[Bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        If the bug is in another project (Steam, Proton, Mesa, FEX, postmarketOS), it may need to
+        be reported there too. Remove private data from logs before posting
+        (see [Privacy](https://github.com/GabrielCRadu/ARMDeck/blob/main/CONTRIBUTING.md#6-privacy)).
+  - type: input
+    id: device
+    attributes:
+      label: Device and variant
+      placeholder: "OnePlus 8, IN2013"
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: ARMDeck commit or kernel version
+      description: "`uname -v` on the phone, and the ARMDeck commit you installed from."
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: "`journalctl -b`, `dmesg`, Steam logs from `~/.local/share/Steam/logs/`, or the files in `/var/log/op8/`."
+      render: text

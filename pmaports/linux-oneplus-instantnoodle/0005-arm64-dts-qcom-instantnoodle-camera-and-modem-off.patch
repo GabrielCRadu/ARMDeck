@@ -1,0 +1,120 @@
+From: ARMDeck <noreply@localhost>
+Subject: [PATCH] arm64: dts: qcom: sm8250-oneplus-instantnoodle: keep the cameras and the modem link off
+
+ARMDeck uses the phone as a game console: no camera and no modem. In this
+tree the camera supplies were forced on and the modem's PCIe link stayed up,
+and both kept parts of the SoC awake (power domains, interconnect votes),
+which blocks deep sleep.
+
+- Drop regulator-always-on from every camera supply, so the cameras end up
+  in the same state as on Android with the camera app closed:
+  - the three GPIO-switched supplies (GPIO 24 front AVDD, GPIO 26 and 156
+    rear main AVDD/AVDD2 in the OnePlus camera DT). regulator-fixed drives
+    the enable GPIO low at probe when the regulator is not boot-on;
+  - L7C (OnePlus/Qualcomm DTs use it only as a camera supply, the OnePlus 8
+    camera DT not at all), L3F and L7F (front sensor DVDD and IOVDD; across
+    the OnePlus 8 vendor DT the PM8009 LDOs feed only cameras). With no
+    consumer, Linux sends no enable vote for these RPMh regulators, as the
+    vendor kernel does while the camera is closed. No voltage changes.
+- Disable camss, cci0 and cci1 (only the front sensor and its EEPROM sit
+  on cci1, nothing on cci0). camcc stays enabled so the kernel can still
+  switch the unused camera clocks and TITAN_TOP_GDSC off.
+- Disable pcie2 and its PHY: in the vendor DT this link carries only the
+  SDX55 modem (mhi_0 under pcie2_rp); here it enumerated as 17cb:0306 with
+  no driver bound. WiFi is on pcie0 and is not touched.
+
+Measured on a OnePlus 8 (IN2013) before the change, 2026-10-03: with the
+panel off the phone drew 168-228 mA, the CX/AOSS/DDR sleep counters stayed
+at 0, and camss, titan_top, ife_0, pcie_2 and the camera regulators were
+still on.
+---
+--- a/arch/arm64/boot/dts/qcom/sm8250-oneplus-instantnoodle.dts
++++ b/arch/arm64/boot/dts/qcom/sm8250-oneplus-instantnoodle.dts
+@@ -285,7 +285,6 @@
+ 		gpio = <&tlmm 24 GPIO_ACTIVE_HIGH>;
+ 		regulator-enable-ramp-delay = <135>;
+ 		enable-active-high;
+-		regulator-always-on;
+ 		pinctrl-names = "default";
+ 		pinctrl-0 = <&cam_front_avdd_default>;
+ 	};
+@@ -298,7 +297,6 @@
+ 		gpio = <&tlmm 156 GPIO_ACTIVE_HIGH>;
+ 		regulator-enable-ramp-delay = <135>;
+ 		enable-active-high;
+-		regulator-always-on;
+ 		pinctrl-names = "default";
+ 		pinctrl-0 = <&cam_main_avdd2_default>;
+ 	};
+@@ -311,7 +309,6 @@
+ 		gpio = <&tlmm 26 GPIO_ACTIVE_HIGH>;
+ 		regulator-enable-ramp-delay = <135>;
+ 		enable-active-high;
+-		regulator-always-on;
+ 		pinctrl-names = "default";
+ 		pinctrl-0 = <&cam_main_avdd_default>;
+ 	};
+@@ -755,7 +752,6 @@
+ 			regulator-min-microvolt = <2856000>;
+ 			regulator-max-microvolt = <3104000>;
+ 			regulator-initial-mode = <RPMH_REGULATOR_MODE_HPM>;
+-			regulator-always-on;
+ 		};
+ 
+ 		vreg_l8c_1p8: ldo8 {
+@@ -827,7 +823,6 @@
+ 			regulator-min-microvolt = <1056000>;
+ 			regulator-max-microvolt = <1056000>;
+ 			regulator-initial-mode = <RPMH_REGULATOR_MODE_HPM>;
+-			regulator-always-on;
+ 		};
+ 
+ 		vreg_l4f_1p05: ldo4 {
+@@ -856,7 +851,6 @@
+ 			regulator-min-microvolt = <1800000>;
+ 			regulator-max-microvolt = <1800000>;
+ 			regulator-initial-mode = <RPMH_REGULATOR_MODE_HPM>;
+-			regulator-always-on;
+ 		};
+ 	};
+ };
+@@ -879,7 +873,7 @@
+ 	vdda-phy-supply = <&vreg_l5a_0p88>;
+ 	vdda-pll-supply = <&vreg_l9a_1p2>;
+ 
+-	status = "okay";
++	status = "disabled";
+ 	
+ 	ports {
+ 		port@2 {
+@@ -894,12 +888,12 @@
+ };
+ 
+ &cci0 {
+-	status = "okay";
++	status = "disabled";
+ 	assigned-clock-rates = <37500000>;
+ };
+ 
+ &cci1 {
+-	status = "okay";
++	status = "disabled";
+ 	assigned-clock-rates = <37500000>;
+ };
+ 
+@@ -1163,13 +1157,13 @@
+ &pcie2 {
+ 	vdda-supply = <&vreg_l9a_1p2>;
+ 	vddpe-3v3-supply = <&vreg_l11c_3p3>;
+-	status = "okay";
++	status = "disabled";
+ };
+ 
+ &pcie2_phy {
+ 	vdda-phy-supply = <&vreg_l5a_0p88>;
+ 	vdda-pll-supply = <&vreg_l9a_1p2>;
+-	status = "okay";
++	status = "disabled";
+ };
+ 
+ &pm8009_gpios {
