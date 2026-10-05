@@ -390,6 +390,22 @@ was running (udev rules + `udevadm trigger` + restarting nftables).
     maps them to the `native` tool. Workaround: Proton 11.0 (ARM64) forced in Properties >
     Compatibility (the Windows version). The full solution: FEX + the rootfs at
     `/usr/share/guestos/fex-mesa` (item 8).
+    **2026-10-05: they start now.** `userspace/steam/install-fex-rootfs.sh` installs FEX's Arch
+    Linux root filesystem (Mesa 26.2 for x86_64 and i386 with freedreno and Turnip, checked
+    against FEX's XXH3 hash) on the games partition and links it at that path in the container.
+    Half-Life native then runs, but at about 34 fps with low CPU and GPU use and a laggy feel;
+    ProtonDB reports the same for the native Half-Life on ordinary x86 PCs (30-40 fps, low
+    utilisation), so Half-Life stays on Proton 11.0 (ARM64). Not working yet for native x86
+    games: FEX's GL thunks (`STEAM_COMPAT_FEX_CONFIG=ThunksDB_GL:1` reached FEX, but the game still
+    loaded the emulated i386 Mesa from pressure-vessel's `/run/gfx`), and the Frame Limit slider
+    (our MangoHud layer is ARM64 Vulkan; these games would need x86 MangoHud in the rootfs). To
+    test: Terraria, LIMBO, Hue natively. Half-Life on Proton 11.0 (ARM64) is just as slow, and
+    kernel r13 (GPU queue priorities) did not change it, so the likely common cause is 32-bit
+    OpenGL through emulation: GoldSrc draws in immediate mode, thousands of GL calls per frame,
+    each one crossing FEX (and Wine's WoW64 on Proton). Old 32-bit OpenGL games may all suffer from
+    it. Half-Life itself could run natively through Xash3D FWGS (open source GoldSrc engine with
+    ARM64 builds, plus hlsdk-portable built for ARM64, using the Steam game files); not pursued,
+    the goal is the platform, not one game.
 13. **Muffin Knight:** small display glitches in text (Proton ARM64).
 14. ~~Full screen~~ **solved 2026-10-02**, with a modified gamescope (see "Also solved on
     2026-10-02" below). The history of the investigation: the DSI panel has no EDID, and Alpine's
@@ -614,6 +630,12 @@ was running (udev rules + `udevadm trigger` + restarting nftables).
     through RPMh, so Linux may not be able to set a voltage at all; what Android kernels for this
     chip (and ROCKNIX/Armada) do, if anything; and how to test stability without risking data.
     Hardware rule: nothing outside the vendor's tables, and only after checking the sources.
+30. **Full scan of the related projects' patches (asked by the maintainer 2026-10-05).** Go through
+    every kernel and userspace patch in the projects of [sources.md](sources.md) that touch the
+    SM8250 or our stack (ROCKNIX SM8250, pmaports' SM8250 kernel, Armada, pocknix,
+    SteamOS-ARM-Handhelds, the OnePlus 8 kernel forks), note what each fixes, whether 6.16 has the
+    bug and whether it fits the OnePlus 8, with a hardware-safety check; rank the useful ones.
+    The msm GPU priority fix (kernel patch 0011) came out of exactly this kind of reading.
 
 Also solved on 2026-10-02, later:
 

@@ -46,3 +46,6 @@ __pycache__/
 
 # Local state of tools/check-sources.py
 tools/.sources-state.json
+
+# Local phone address for tools/deploy.sh
+tools/.phone

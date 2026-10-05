@@ -7,7 +7,7 @@ maintainer=""
 _flavor="oneplus-instantnoodle"
 pkgname=linux-$_flavor
 pkgver=6.16.7
-pkgrel=12
+pkgrel=13
 pkgdesc="OnePlus 8 (instantnoodle) mainline kernel, Xo666 fork"
 arch="aarch64"
 _carch="arm64"
@@ -76,6 +76,11 @@ makedepends="
 #         header); 0009 and 0010 fix a NULL dereference and a race that the
 #         same series exposed. Tested on hardware on 2026-10-05 (test image
 #         r12): PC cable then into the X3, and a boot inside the X3, no Oops.
+#   0011: drm/msm inverted GPU queue priorities (from before drm_sched
+#         reversed its enum): gamescope's high-priority queue ran below
+#         every game's default queue. Map them in order (same fix as
+#         SteamOS-ARM-Handhelds and ArmadaOS). UNTESTED on hardware as of
+#         2026-10-05 (test image r13).
 #
 # armdeck.config is merged over op8_defconfig: NTSYNC, preemption
 # switchable at runtime (default full), MGLRU and the lockup detectors. See
@@ -101,6 +106,7 @@ source="
 	0008-usb-gadget-f_ncm-fix-net_device-lifecycle-with-device_move.patch
 	0009-usb-gadget-u_ether-fix-null-pointer-deref-in-eth_get_drvinfo.patch
 	0010-usb-gadget-u_ether-fix-race-between-gether_disconnect-and-eth_stop.patch
+	0011-drm-msm-map-submitqueue-priorities-in-order.patch
 	armdeck.config
 "
 builddir="$srcdir/mainline-instantnoodle-$pkgver"
@@ -158,5 +164,6 @@ ee78f07999b4a9763b31068f375ab0d985e4dd66c85b0a2c0fd2df8c00eb45b8c3d7899268c1d804
 2e6f8ac4c58df7ae7ecfc222d733bae7b577d1bf91bae7ccd5d3ea08558b65941e73599917c1cd027c4280a0fbb7d9d01774fb7c3f96a958e978e29687071522  0008-usb-gadget-f_ncm-fix-net_device-lifecycle-with-device_move.patch
 6d9614935289ebca330bce642e6a6ea4c7957a28dea910504c10738a9265d598a344f4acae5cd336a014b82a596565bb341e8f212b518a0ee556d69cf6977f92  0009-usb-gadget-u_ether-fix-null-pointer-deref-in-eth_get_drvinfo.patch
 61324d541a218481cac5ac51f5005b48131949041d09bb82e2adabe0ef7783381884c314f1a2e3c90d1e4e6af44dd7848b76393c26e225681548be7724f18934  0010-usb-gadget-u_ether-fix-race-between-gether_disconnect-and-eth_stop.patch
+b69d54b9ad431baecf9559558af149d78005fe276e8a7d1327c1ceb7ac7a32f045c18c5a3e0396e814028d7f1f9124bc84e77b280b2cc35e18120825923758f8  0011-drm-msm-map-submitqueue-priorities-in-order.patch
 1efc9b20d75aebc72b002d808e219abc45e8b31ea9818f2bd4e6eb062e03e8243225514903ed93b1c6e4df66f1f26d086073f7ea9b4f91eaf80b5124d27ab4bd  armdeck.config
 "

@@ -81,6 +81,13 @@ this page is the short version, so the same mistake is not made twice.
   internal screen and asks Xwayland for 16:9 modes; the patch keeps the requested height and gives
   every mode the panel's 20:9 aspect (1280x720 -> 1600x720).
 
+- **Native x86 Linux games closed at once (solved, 2026-10-05).** Steam's FEX tool needs an x86
+  system with x86 Mesa at `/usr/share/guestos/fex-mesa`; FEX's own Arch Linux rootfs provides
+  it (`install-fex-rootfs.sh`). Half-Life native then ran but slowly with idle CPU and GPU; that
+  turned out to be the native Half-Life port itself (same reports on x86 PCs), so it stays on
+  Proton. Lesson: before tuning the emulator, check whether the game behaves the same on a
+  normal PC (ProtonDB).
+
 ## Steam session
 
 - **Steam interface never appeared after a reboot (solved).** The phone has no usable real-time
@@ -165,5 +172,12 @@ this page is the short version, so the same mistake is not made twice.
   tools and recompute the APKBUILD checksums.
 - **BusyBox tools differ.** No `pgrep -c`, `grep --line-buffered`, `ps -p` or `ls --time-style`;
   check the BusyBox usage text before relying on GNU options.
+- **Deployed copies drift from the repository (checked 2026-10-05).** The phone still ran the
+  pre-translation copies of 14 scripts and services (Romanian log messages and unit
+  descriptions); stripped of strings and comments, the code was identical everywhere, so nothing
+  behaved differently. Method: hash every `userspace/` file, find copies on the phone by name,
+  then diff without comments and quoted strings. Fixed the same day with
+  `userspace/deploy-manifest.txt` and `tools/deploy.sh` (check, then stage + `install.sh` with
+  backups): 22 files redeployed, two old-named rules (udev, polkit) moved away, everything "same".
 - **Restarting a user service during a kernel lock hang makes it worse.** `systemctl` waits on the
   stuck manager; use `sudo sync && sudo reboot -f`, or the button reset.

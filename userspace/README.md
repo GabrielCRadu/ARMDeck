@@ -43,10 +43,17 @@ postmarketOS (musl, systemd)          distrobox container "steam" (Fedora 44, gl
 | 12 | `audio/50-op8-speakers.conf` → `~/.config/pipewire/pipewire.conf.d/`, `audio/50-op8-wireplumber.conf` and `audio/51-op8-bluetooth.conf` → `~/.config/wireplumber/wireplumber.conf.d/` | the protected speaker output and the S16LE, no-mmap format; Bluetooth headphones without Hands-Free | user |
 | 13 | `steam/*.sh`, `steam/op8-touchmode`, `steam/op8-buttons.py`, `steam/op8-mangoapp`, `power/op8-powerbtn`, `op8-log/op8-top` → `~/`; the `.service` files → `~/.config/systemd/user/` | the Steam session and the user services; `op8-top` is for debugging only (two `top` runs and a `sync` every 2 s), leave its service disabled | user, `systemctl --user enable --now ...` |
 | 14 | `system/install-tune.sh` | GPU polling 16 ms, THP `madvise`, `CAP_SYS_NICE` for gamescope, `/boot` read-only | sudo |
-| 15 | in the container, as root: `dnf install python3-evdev pulseaudio-utils gamescope` | `op8-buttons.py`: both volume buttons read together, volume on release and repeating while held, Volume Up + Volume Down = Steam button (Shift+Tab, which Steam registers with gamescope), also in games. `gamescope` (same version as the host, 3.16.29) only for its Vulkan WSI layer: without it in the container, games ignore Steam's Frame Limit | root in the container |
+| 15 | in the container, as root: `dnf install python3-evdev pulseaudio-utils gamescope mangohud` | `op8-buttons.py`: both volume buttons read together, volume on release and repeating while held, Volume Up + Volume Down = Steam button (Shift+Tab, which Steam registers with gamescope), also in games. `gamescope` (same version as the host, 3.16.29) for its Vulkan WSI layer, and `mangohud` for its in-game limiter, which applies Steam's Frame Limit (`op8-fpslimit`, gamescope patch 9003) | root in the container |
 | 16 | `steam/build-mangoapp-gs.sh` (dependencies in its header) | performance overlay: `mangoapp` from MangoHud 0.8.4 with gamescope 3.16.29's field order (otherwise it does not show in games, gamescope #2430); started by `op8-mangoapp` | user, in the container |
 | 17 | `system/install-thermal.sh` | `op8-thermal`: limits the big cores and the GPU by battery temperature (41-44.5 °C), plus a readout of the PM8150B JEITA thresholds to `/var/log/op8/` | sudo |
-| 18 | `steam/gamescope/build-gamescope-op8.sh` (in WSL on the PC) → `gamescope-op8` in `~/bin/` on the phone | full screen: gamescope with patch 9001, Xwayland always at 2400x1080 (otherwise Steam picks 1920x1080 and black bars appear) | user |
+| 18 | `steam/gamescope/build-gamescope-op8.sh` (in WSL on the PC) → `gamescope-op8` in `~/bin/` on the phone | full screen: gamescope with patch 9001, Xwayland always at 2400x1080 (otherwise Steam picks 1920x1080 and black bars appear); patch 9003 hands Steam's Frame Limit to the in-game MangoHud limiter | user |
+| 19 | `steam/install-fex-rootfs.sh` → `~/`, run with `distrobox enter steam -- bash ~/install-fex-rootfs.sh` | native x86 Linux games: FEX's Arch Linux root filesystem with x86 Mesa (freedreno, Turnip) at `/usr/share/guestos/fex-mesa`, where Steam's FEX tool looks for it; 1.3 GB download, 4.4 GB on the games partition | user (sudo in the container) |
+
+**Keeping the phone in step with the repository:** `deploy-manifest.txt` lists where each of
+these files lives on the phone. From the PC, `tools/deploy.sh` compares the phone with the
+repository (same, DIFFERENT, missing), and `tools/deploy.sh stage` copies what differs to
+`~/armdeck-staging/deploy/` with an `install.sh` that backs up, installs, moves older file names
+out of the way and reloads the services (run it on the phone: `sh ~/armdeck-staging/deploy/install.sh`).
 
 Optional: `system/format-games.sh` (**erases** the Android `userdata` partition and makes it ext4
 for games, asks for the confirmation `FORMAT`), `system/bind-steamapps.sh` (the Steam library on
