@@ -1,0 +1,24 @@
+#!/bin/sh
+# systemctl for Decky (armdeck), first in Decky's PATH (op8-decky). Decky restarts or stops itself
+# with "systemctl restart|stop plugin_loader", the service SteamOS has. There is no such service
+# here: op8-decky runs the loader and starts it again whenever it exits. Without this, Decky's
+# restart (after a settings change, or its Restart button) left it waiting for a restart that never
+# came, with its menu half loaded (2026-10-05).
+# "restart" and "stop" end the loader (op8-decky then stops its plugins and brings it back);
+# "is-active", "start" and "daemon-reload" are answered without doing anything; nothing is passed
+# to the real systemctl.
+case "$1" in
+daemon-reload)
+	exit 0 ;;
+is-active|start)
+	[ "$2" = plugin_loader ] && exit 0 ;;
+restart|stop)
+	if [ "$2" = plugin_loader ]; then
+		# a moment later, so Decky gets its answer first; the oldest match is the loader itself
+		( sleep 1; kill -TERM "$(pgrep -o -f /home/gabriel/homebrew/services/PluginLoader)" ) \
+			>/dev/null 2>&1 &
+		exit 0
+	fi ;;
+esac
+echo "armdeck: 'systemctl $*' is not available to Decky" >&2
+exit 1

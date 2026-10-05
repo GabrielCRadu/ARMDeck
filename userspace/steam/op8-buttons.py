@@ -11,6 +11,11 @@
 #   Shift+Tab with gamescope as the Steam button (GuideKeyboardHotkey), so the Steam menu opens,
 #   also in games, without a controller. It is sent only after release: gamescope triggers the
 #   combination only when no other key is down, and the volume buttons are keyboards to it too.
+# - the GameSir X3 Pro's Home button (bottom right; BTN_MODE, the PS button in its PS mode), which
+#   Steam does nothing with here: a short press opens Quick Access (the menu on the right) by
+#   sending Shift+Ctrl+Tab, which Steam registers with gamescope as QAMKeyboardHotkey. Not sent if
+#   another controller button was pressed while Home was held, so Home chords stay untouched. The
+#   controller is looked for again every few seconds, since the phone goes in and out of the X3.
 #
 # The buttons are swapped: held in landscape (screen rotated to the right), the physical Volume Up
 # is on the left, and Steam's volume bar grows to the right. So KEY_VOLUMEDOWN (right) = louder.
@@ -33,6 +38,9 @@ from evdev import InputDevice, UInput, ecodes as e, list_devices
 HOLD_S = 0.5
 STEP_S = 0.15
 STEAM_DEBOUNCE_S = 1.5
+HOME_MAX_S = 1.0        # a longer Home press is not a "press" (left for Steam's own use)
+PAD_RESCAN_S = 3.0
+PAD_NAME = "GameSir-X3"
 LOUDER, QUIETER = e.KEY_VOLUMEDOWN, e.KEY_VOLUMEUP
 STANDBY = "/run/host/run/op8-standby.active"
 RUN = f"/run/user/{os.getuid()}"
@@ -73,6 +81,24 @@ def volume_step(code):
     subprocess.run(["pactl", "set-sink-volume", "@DEFAULT_SINK@", arg], env=ENV)
 
 
+def find_pads(known):
+    """The X3's gamepad device (the one with a Home button), if connected and not open yet."""
+    found = []
+    for path in list_devices():
+        if path in known:
+            continue
+        try:
+            d = InputDevice(path)
+        except OSError:
+            continue
+        keys = d.capabilities().get(e.EV_KEY, [])
+        if PAD_NAME in d.name and e.BTN_MODE in keys and e.BTN_SOUTH in keys:
+            found.append(d)
+        else:
+            d.close()
+    return found
+
+
 def main():
     single_instance()
     steam_pid = os.getppid()
@@ -85,8 +111,12 @@ def main():
         log("gpio-keys / pm8941_resin not found")
         return
     log("started: " + ", ".join(f"{d.name} ({d.path})" for d in devs.values()))
-    kbd = UInput({e.EV_KEY: [e.KEY_LEFTSHIFT, e.KEY_TAB]}, name="ARMDeck Steam key",
-                 bustype=e.BUS_VIRTUAL)
+    kbd = UInput({e.EV_KEY: [e.KEY_LEFTSHIFT, e.KEY_LEFTCTRL, e.KEY_TAB]},
+                 name="ARMDeck Steam key", bustype=e.BUS_VIRTUAL)
+    pads = {}            # fd -> the X3's gamepad device
+    next_scan = 0.0
+    home_t0 = None       # when Home went down, None when it is up
+    home_chord = False   # another button was pressed while Home was held
 
     down = {}            # code -> the moment it was pressed
     held = set()         # codes that already changed the volume while held
@@ -107,15 +137,56 @@ def main():
             time.sleep(0.04)
         log("Volume Up + Volume Down -> Steam button")
 
+    def qam_key():
+        nonlocal last_steam
+        now = time.monotonic()
+        if now - last_steam < STEAM_DEBOUNCE_S:
+            return
+        last_steam = now
+        for key, val in ((e.KEY_LEFTSHIFT, 1), (e.KEY_LEFTCTRL, 1), (e.KEY_TAB, 1),
+                         (e.KEY_TAB, 0), (e.KEY_LEFTCTRL, 0), (e.KEY_LEFTSHIFT, 0)):
+            kbd.write(e.EV_KEY, key, val)
+            kbd.syn()
+            time.sleep(0.04)
+        log("X3 Home -> Quick Access")
+
+    def pad_events(fd, standby, now):
+        nonlocal home_t0, home_chord
+        try:
+            events = list(pads[fd].read())
+        except OSError:
+            log(f"controller gone: {pads[fd].name}")
+            pads.pop(fd).close()
+            home_t0 = None
+            return
+        for ev in events:
+            if ev.type != e.EV_KEY:
+                continue
+            if ev.code == e.BTN_MODE:
+                if ev.value == 1:
+                    home_t0, home_chord = now, False
+                elif ev.value == 0 and home_t0 is not None:
+                    short = now - home_t0 <= HOME_MAX_S
+                    home_t0 = None
+                    if short and not home_chord and not standby:
+                        qam_key()
+            elif ev.value == 1 and home_t0 is not None:
+                home_chord = True
+
     try:
         while True:
             now = time.monotonic()
+            if now >= next_scan:
+                next_scan = now + PAD_RESCAN_S
+                for d in find_pads({p.path for p in pads.values()}):
+                    pads[d.fd] = d
+                    log(f"controller: {d.name} ({d.path})")
             timeout = 2.0
             for code, t0 in down.items():
                 if not combo:
                     due = next_step.get(code, t0 + HOLD_S)
                     timeout = min(timeout, max(0.0, due - now))
-            r, _, _ = select.select(list(devs), [], [], timeout)
+            r, _, _ = select.select(list(devs) + list(pads), [], [], timeout)
             try:
                 os.kill(steam_pid, 0)
             except OSError:
@@ -123,6 +194,9 @@ def main():
             standby = os.path.exists(STANDBY)
             now = time.monotonic()
             for fd in r:
+                if fd in pads:
+                    pad_events(fd, standby, now)
+                    continue
                 for ev in devs[fd].read():
                     if ev.type != e.EV_KEY or ev.code not in (LOUDER, QUIETER):
                         continue
@@ -155,6 +229,8 @@ def main():
                         held.add(code)
                         next_step[code] = now + STEP_S
     finally:
+        for d in pads.values():
+            d.close()
         kbd.close()
         try:
             os.remove(PIDF)

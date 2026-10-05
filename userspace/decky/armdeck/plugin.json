@@ -1,0 +1,11 @@
+{
+  "name": "ARMDeck",
+  "author": "ARMDeck",
+  "flags": [],
+  "api_version": 1,
+  "publish": {
+    "tags": ["armdeck", "framegen", "thermal"],
+    "description": "Frame generation per game (lsfg-vk) and the thermal guard level, for ARMDeck handhelds.",
+    "image": ""
+  }
+}

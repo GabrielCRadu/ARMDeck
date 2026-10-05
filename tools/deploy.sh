@@ -122,7 +122,7 @@ for s in op8-thermal op8-sampler op8-tune; do
 	case "$changed" in *"/$s "*|*"/$s.service"*|*"/$s") sudo systemctl try-restart "$s.service" && echo "$s restarted" ;; esac
 done
 case "$changed" in *op8-powerbtn*) systemctl --user try-restart op8-powerbtn.service && echo "op8-powerbtn restarted" ;; esac
-case "$changed" in *steam-*|*op8-fpslimit*|*op8-mangoapp*|*op8-touchmode*|*op8-buttons*|*MangoHud*|*dbus-send*|*steamos-*)
+case "$changed" in *steam-*|*op8-fpslimit*|*op8-mangoapp*|*op8-touchmode*|*op8-buttons*|*op8-decky*|*MangoHud*|*dbus-send*|*steamos-*)
 	echo "The Steam session uses its new files from its next start: systemctl --user restart steam-gs" ;; esac
 case "$changed" in *pipewire*|*wireplumber*)
 	echo "Audio files changed: they apply after a reboot (restarting PipeWire leaves Steam without sound)" ;; esac

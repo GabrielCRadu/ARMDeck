@@ -168,6 +168,25 @@ this page is the short version, so the same mistake is not made twice.
   lsfg-vk's manifest is always on; forced on the host, the musl loader crashed on its glibc
   library. Our build makes the layer opt-in (`enable_environment`), checked with
   `VK_LOADER_DEBUG=all` before any game used it.
+- **The postmarketOS host has no curl (2026-10-05).** `install-decky.sh` stopped at its download
+  when run on the host; BusyBox has `wget` only. Download scripts run in the container, or fall
+  back to `wget`.
+- **A live config file is not a free control (2026-10-06).** lsfg-vk rebuilds everything on
+  each change of its file; a Decky slider that wrote on every step froze the game. Controls that
+  write files a running program watches must wait until the user stops moving them.
+- **A helper process that outlives Steam blacks out the screen (2026-10-05).** gamescope's reaper
+  waits for every process of the session; two Decky plugins that ignored SIGTERM kept
+  `steam-gs` in "deactivating" with a black screen. Helpers that start children run them in a
+  process group of their own and stop the whole group, by force if needed.
+- **Steam's own keyboard shortcuts are in its logs (2026-10-05).** `logs/*.txt` list "Registered
+  global hotkey": Shift+Tab for the Steam menu, Shift+Ctrl+Tab for Quick Access. A virtual
+  keyboard sending them is all a spare button needs.
+- **Software made for SteamOS expects SteamOS's services (2026-10-05).** Decky restarts itself
+  through `systemctl restart plugin_loader`; without that service its first restart hung it.
+  Check how a SteamOS tool restarts, updates and stops itself before running it elsewhere.
+- **Read a Decky plugin before installing it (2026-10-05).** decky-lsfg-vk would have installed
+  an x86_64 library as an always-on Vulkan layer in the shared home directory, undoing the
+  explicit-layer fix and loading a wrong-architecture library into every Vulkan program.
 - **Vulkan layer order decides what a frame limiter counts (2026-10-05).** With lsfg-vk as an
   implicit layer above MangoHud, a 30 fps limit gave 15 real frames: MangoHud limited lsfg-vk's
   output, generated frames included. `VK_LOADER_DEBUG=layer` prints `Insert instance layer`

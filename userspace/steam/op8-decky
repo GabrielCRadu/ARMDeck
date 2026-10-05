@@ -1,0 +1,66 @@
+#!/bin/sh
+# op8-decky (armdeck): runs Decky Loader (install-decky.sh) in the "steam" container for as long as
+# the Steam session lives, as this user (not root, unlike on SteamOS). steam-in-container.sh starts
+# it in the background right before "exec steam", so its parent becomes the Steam process; when
+# Steam exits, the loop stops and Decky is stopped with it.
+# Decky and every plugin process it starts run in their own process group (setsid), and the whole
+# group is stopped, by force after 3 s: some plugins ignore SIGTERM, and a plugin left running
+# kept gamescope's reaper waiting, so the Steam session could not stop and the screen stayed black
+# (2026-10-05).
+# Off switch: ~/homebrew/armdeck-decky-off. Log: ~/op8-decky.log (Decky's own logs:
+# ~/homebrew/logs/).
+H=/home/gabriel/homebrew
+BIN=$H/services/PluginLoader
+LOG=/home/gabriel/op8-decky.log
+PIDF=${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/op8-decky.pid
+
+[ -x "$BIN" ] || exit 0
+[ -e "$H/armdeck-decky-off" ] && exit 0
+
+# Decky and its plugins (their process group, led by the loader), politely, then by force
+stop_group() {
+	kill -TERM -- "-$1" 2>/dev/null
+	i=0
+	while [ $i -lt 6 ] && kill -0 -- "-$1" 2>/dev/null; do
+		sleep 0.5
+		i=$((i + 1))
+	done
+	kill -KILL -- "-$1" 2>/dev/null
+}
+
+# one instance only: stop the loop, and the loader and plugins left over from an earlier session
+if [ -f "$PIDF" ] && kill -0 "$(cat "$PIDF")" 2>/dev/null; then
+	kill "$(cat "$PIDF")" 2>/dev/null
+fi
+pkill -f "$BIN" 2>/dev/null
+pkill -KILL -f "$H/plugins/" 2>/dev/null
+echo $$ > "$PIDF"
+
+STEAM_PID=$PPID
+cd "$H/services"
+echo "$(date '+%F %T') started, Steam session = $STEAM_PID" >> "$LOG"
+while kill -0 "$STEAM_PID" 2>/dev/null; do
+	# the variables of Decky's own service file, with this user instead of "deck"; nothing from
+	# the Steam session (its LD_LIBRARY_PATH would load Steam's libraries into Decky). Its
+	# restarts go through our systemctl (decky-systemctl, first in PATH).
+	setsid env -i HOME=/home/gabriel USER=gabriel PATH="$H/armdeck:/usr/local/bin:/usr/bin:/bin" \
+		LANG=C.UTF-8 XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-}" LINUX_SERVICE_MANAGER=systemd \
+		UNPRIVILEGED_PATH="$H" PRIVILEGED_PATH="$H" UNPRIVILEGED_USER=gabriel LOG_LEVEL=INFO \
+		"$BIN" >> "$LOG" 2>&1 &
+	LOADER=$!
+	while kill -0 "$STEAM_PID" 2>/dev/null && kill -0 "$LOADER" 2>/dev/null; do
+		sleep 2
+	done
+	if kill -0 "$LOADER" 2>/dev/null; then
+		stop_group "$LOADER"
+		echo "$(date '+%F %T') Steam session ended, Decky and its plugins stopped" >> "$LOG"
+		break
+	fi
+	wait "$LOADER"
+	rc=$?
+	# plugins of the loader that just ended (a restart through decky-systemctl, or a crash)
+	stop_group "$LOADER"
+	echo "$(date '+%F %T') Decky exited with $rc (restarting)" >> "$LOG"
+	sleep 2
+done
+rm -f "$PIDF"

@@ -82,6 +82,10 @@ export LD_LIBRARY_PATH="$CLIENT_DIR:$STEAM/lib/aarch64-linux-gnu"
 # Steam button (replaces the old op8-volbtn on the host; its service must stay disabled)
 /home/gabriel/op8-buttons.py &
 
+# Decky Loader (the plugin menu in Quick Access), if installed with install-decky.sh; it runs as
+# this user and stops with Steam (op8-decky)
+/home/gabriel/op8-decky &
+
 # No -noshaders: the same Steam mechanism also brings the games' re-encoded videos
 # (STEAM_COMPAT_TRANSCODED_MEDIA_PATH). Proton cannot decode H.264, and without them it shows TV
 # test bars instead of the videos (Poppy Playtime, Tiny Rails, 2026-10-02).

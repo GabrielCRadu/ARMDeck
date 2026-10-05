@@ -1,0 +1,28 @@
+{
+  "name": "armdeck-decky",
+  "version": "0.1.0",
+  "description": "ARMDeck's Quick Access panel: frame generation per game and the thermal guard level",
+  "type": "module",
+  "scripts": {
+    "build": "rollup -c"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/GabrielCRadu/ARMDeck.git"
+  },
+  "author": "ARMDeck",
+  "license": "MIT",
+  "devDependencies": {
+    "@decky/rollup": "^1.0.2",
+    "@decky/ui": "^4.11.0",
+    "@types/react": "19.1.1",
+    "@types/react-dom": "19.1.1",
+    "rollup": "^4.53.3",
+    "typescript": "^5.6.2"
+  },
+  "dependencies": {
+    "@decky/api": "^1.1.3",
+    "react-icons": "^5.3.0",
+    "tslib": "^2.7.0"
+  }
+}

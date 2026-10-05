@@ -700,6 +700,58 @@ was running (udev rules + `udevadm trigger` + restarting nftables).
     here (themes, per-game profiles, frame generation settings) and which ones ship x86-only
     programs or expect AMD hardware (TDP and clock plugins are built for the Deck's APU and must not
     be used on the SM8250 without a hardware review).
+    **Working since 2026-10-05.** `userspace/steam/install-decky.sh` installs DroidDeck's ARM64
+    build (release `droiddeck-arm64-preview.2`, sha256 checked; it reports itself as v3.2.9-dev8)
+    in `~/homebrew/services/PluginLoader` and creates Steam's `.cef-enable-remote-debugging`;
+    `op8-decky`, started by `steam-in-container.sh`, runs it in the container for as long as the
+    Steam session lives, **as the normal user, not root** ("decky is running as an unprivileged
+    user, this is not officially supported"). So plugins that want root (TDP, CPU and GPU clocks)
+    cannot touch the hardware. Steam's debugging port (8080) and Decky's server (1337) listen on
+    127.0.0.1 only. The plugin icon appears in Quick Access.
+    Decky restarts itself with `systemctl restart plugin_loader` (after some settings changes, or
+    its Restart button); here that service does not exist, so the first restart left Decky
+    waiting with its menu half loaded. `op8-decky` now puts `decky-systemctl` first in Decky's
+    PATH: "restart" and "stop" end the loader and `op8-decky` starts it again. Its own updater does
+    nothing on ARM64 (DroidDeck's fork leaves updates to an outside installer); updates go through
+    `install-decky.sh`.
+    Second problem, the same evening: after a Steam session restart the screen stayed black.
+    Two plugin processes (Decky LSFG-VK, CSS Loader) ignored SIGTERM and outlived the loader;
+    gamescope's reaper waits for every process of the session, so `steam-gs` hung in
+    "deactivating". `op8-decky` now starts Decky with `setsid`, so the loader and all its plugins
+    share one process group, and stops the whole group (SIGTERM, then SIGKILL after 3 s) when
+    Steam ends or the loader restarts. Checked: a restart through `decky-systemctl` leaves no
+    process behind and Decky is back in 8 s.
+    Plugins in use (read before use, 2026-10-05): CSS Loader 2.1.2 (themes), Game Theme Music
+    1.7.1-1 (uses yt-dlp, a Python script, not an x86 program), SteamGridDB 1.7.1, ProtonDB Badges
+    1.2.0 (ratings from x86 PCs, a hint only here). Decky LSFG-VK is to be removed (see above).
+    Later the same night: Decky LSFG-VK and ProtonDB Badges were removed by hand (Decky's own
+    uninstall of LSFG-VK looped in its hot reload, "already loaded and has requested to not be
+    re-loaded"; ProtonDB Badges 1.2.0, the store's version, threw an error on every game page).
+    To remove a plugin by hand: delete `~/homebrew/plugins/<name>` and its `settings`, `data` and
+    `logs` folders, then restart Decky; killing only a plugin's process left the loader unable to
+    stop, and it needed SIGKILL.
+    **ARMDeck's own plugin (2026-10-06).** `userspace/decky/armdeck` (TypeScript panel, Python
+    backend, built and copied by `tools/deploy-decky-plugin.sh`), in Quick Access:
+    - Frame generation for the running game: the switch adds or removes the plugin's part of the
+      game's Launch Options (`TU_DEBUG=noubwc VK_LOADER_LAYERS_ENABLE=VK_LAYER_LSFGVK_frame_generation
+      LSFGVK_PROFILE=armdeck-<appid>`, other options kept; applies at the next start); multiplier,
+      flow scale and performance mode go to the game's profile in `~/.config/lsfg-vk/conf.toml`,
+      which lsfg-vk applies while the game runs.
+    - System: the `op8-thermal` level (`/run/op8-thermal.level`) and the battery temperature.
+    Tested in Tomb Raider: the switch, the live multiplier and flow changes all work. Moving a
+    slider first wrote the file 12 times in 3 s, and the rebuilds in a row froze the game (idle
+    process, no GPU hang in the kernel log); the panel now writes once, 0.8 s after the slider
+    stops, and skips unchanged values. Quality mode (performance mode off) at 4x gave 15 fps with
+    heavy warping, as the benchmark predicted. The maintainer's verdict on Tomb Raider: not a game
+    for frame generation (it already fills the GPU).
+    Every plugin is read before it is installed: plugins run with this user's rights and can drop
+    files where every Vulkan program looks. **decky-lsfg-vk (v0.14.4) must not be installed:** it
+    downloads lsfg-vk's x86_64 build into `~/.local/lib` and registers it as an implicit layer in
+    `~/.local/share/vulkan/implicit_layer.d`, which every Vulkan program reads, the host's
+    gamescope included; on ARM64 that library cannot load, and its layer has the same name as our
+    explicit one. The frame generation control (TODO 32) is better done as a small ARMDeck plugin
+    that edits `~/.config/lsfg-vk/conf.toml` (which lsfg-vk reloads live) and could also show the
+    thermal guard level (TODO 22) and the real frame rate.
 32. **Frame generation (asked by the maintainer 2026-10-05).** Generated frames in between the
     real ones, for a smoother picture at the same GPU load. Candidates: lsfg-vk (Lossless
     Scaling's frame generation as a Vulkan layer on Linux; needs the Windows app bought on Steam,

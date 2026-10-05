@@ -43,6 +43,9 @@ host-user  steam/op8-launch-options.py            /home/gabriel/op8-launch-optio
 host-user  steam/mangohud-presets.conf            /home/gabriel/.config/MangoHud/presets.conf                                   0644
 host-user  steam/install-fex-rootfs.sh            /home/gabriel/install-fex-rootfs.sh                                           0755
 host-user  steam/build-lsfg-vk.sh                /home/gabriel/build-lsfg-vk.sh                                                0755
+host-user  steam/install-decky.sh               /home/gabriel/install-decky.sh                                                0755
+host-user  steam/op8-decky                      /home/gabriel/op8-decky                                                       0755
+host-user  steam/decky-systemctl                /home/gabriel/homebrew/armdeck/systemctl                                      0755
 host-user  power/op8-powerbtn                     /home/gabriel/op8-powerbtn                                                    0755
 host-user  power/op8-powerbtn.service             /home/gabriel/.config/systemd/user/op8-powerbtn.service                       0644
 host-user  power/op8-usbpd-capture                /home/gabriel/op8-usbpd-capture                                               0755
