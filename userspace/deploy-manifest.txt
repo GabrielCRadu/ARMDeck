@@ -19,6 +19,9 @@ host-root  system/op8-thermal                     /usr/local/bin/op8-thermal    
 host-root  system/op8-thermal.service             /etc/systemd/system/op8-thermal.service                                       0644
 host-root  system/armdeck-usb-gadget-off          /usr/local/bin/armdeck-usb-gadget-off                                         0755
 host-root  system/armdeck-usb-gadget-off.service  /etc/systemd/system/armdeck-usb-gadget-off.service                            0644
+host-root  system/armdeck-boot-rw                 /etc/apk/commit_hooks.d/armdeck-boot-rw                                       0755
+host-root  audio/armdeck-audio-recover           /usr/local/bin/armdeck-audio-recover                                          0755
+host-root  audio/armdeck-audio-recover.service   /etc/systemd/system/armdeck-audio-recover.service                             0644
 host-root  power/op8-standby                      /usr/local/bin/op8-standby                                                    0755
 host-root  power/50-armdeck-power.rules           /etc/polkit-1/rules.d/50-armdeck-power.rules                                  0644  /etc/polkit-1/rules.d/50-steamed-noodle-power.rules
 host-root  op8-log/op8-bootreport                 /usr/local/bin/op8-bootreport                                                 0755
@@ -39,6 +42,7 @@ host-user  steam/op8-buttons.py                   /home/gabriel/op8-buttons.py  
 host-user  steam/op8-launch-options.py            /home/gabriel/op8-launch-options.py                                           0755
 host-user  steam/mangohud-presets.conf            /home/gabriel/.config/MangoHud/presets.conf                                   0644
 host-user  steam/install-fex-rootfs.sh            /home/gabriel/install-fex-rootfs.sh                                           0755
+host-user  steam/build-lsfg-vk.sh                /home/gabriel/build-lsfg-vk.sh                                                0755
 host-user  power/op8-powerbtn                     /home/gabriel/op8-powerbtn                                                    0755
 host-user  power/op8-powerbtn.service             /home/gabriel/.config/systemd/user/op8-powerbtn.service                       0644
 host-user  power/op8-usbpd-capture                /home/gabriel/op8-usbpd-capture                                               0755

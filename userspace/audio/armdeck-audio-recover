@@ -1,0 +1,46 @@
+#!/bin/sh
+# armdeck-audio-recover: brings the sound card back on the boots where it is missing (about 1 in
+# 5, docs/gaming-stack.md TODO 16). Cause: at about 8 s the kernel asks the audio DSP to switch on
+# the codec clocks ("vote", q6afe command 0x100f4) before the DSP is ready; the DSP answers with
+# an error, the kernel's q6afe driver ignores that answer ("Unknown cmd 0x100f4") and times out
+# ("AFE failed to vote (3)"), and the LPASS pin controller 33c0000.pinctrl gives up for good
+# (-110). Everything that waits for it stays unprobed: the codec macros, SoundWire, the card.
+#
+# Binding the pin controller again sends the vote again, now that the DSP is up; the waiting
+# audio devices then probe on their own and the card starts exactly as on a good boot (same
+# driver path, same levels; PipeWire picks it up as a hotplugged card). Nothing is done when the
+# card is there, or when the pin controller is bound and something else is wrong.
+CARD=/proc/asound/cards
+DEV=33c0000.pinctrl
+DRV=/sys/bus/platform/drivers/qcom-sm8250-lpass-lpi-pinctrl
+log() { echo "$*"; logger -t armdeck-audio-recover "$*" 2>/dev/null; }
+have_card() { grep -q '^ *[0-9]' "$CARD" 2>/dev/null; }
+
+# give a normal boot time to bring the card up (it is there by about 10 s after power-on)
+i=0
+while [ $i -lt 30 ]; do
+	have_card && { log "sound card present, nothing to do"; exit 0; }
+	sleep 1
+	i=$((i + 1))
+done
+
+if [ -e "/sys/bus/platform/devices/$DEV/driver" ]; then
+	log "no sound card, but $DEV is bound: not the known DSP vote failure, leaving it alone"
+	exit 0
+fi
+[ -w "$DRV/bind" ] || { log "no sound card and $DRV/bind is missing; giving up"; exit 1; }
+
+for try in 1 2 3; do
+	log "no sound card and $DEV unbound (DSP clock vote failed at boot): binding it again, try $try"
+	echo "$DEV" > "$DRV/bind" 2>/dev/null
+	i=0
+	while [ $i -lt 15 ]; do
+		have_card && { log "sound card back after try $try: $(head -1 "$CARD")"; exit 0; }
+		sleep 1
+		i=$((i + 1))
+	done
+	[ -e "/sys/bus/platform/devices/$DEV/driver" ] && break
+	sleep 5
+done
+log "sound card still missing; a reboot is the fallback"
+exit 1

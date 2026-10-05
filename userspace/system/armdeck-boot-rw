@@ -1,0 +1,32 @@
+#!/bin/sh
+# armdeck-boot-rw (apk commit hook, /etc/apk/commit_hooks.d/): /boot stays read-only (ext2 without
+# a journal, see docs/performance-crash-audit.md C6), except while apk changes packages. apk runs
+# this as "armdeck-boot-rw pre-commit" before a transaction and "armdeck-boot-rw post-commit" after
+# it, once its triggers are done. Without it, the postmarketos-mkinitfs trigger (run when kernel,
+# firmware or udev files change) fails on the read-only /boot, apk marks postmarketos-mkinitfs as
+# broken and every later "apk add" ends with "1 error" and a non-zero exit.
+# It only changes how /boot is mounted. mkinitfs and boot-deploy write files in /boot; they do
+# not flash the boot partition on this phone (deviceinfo has no flash_kernel_on_update).
+MARK=/run/armdeck-boot-rw
+case "$1" in
+pre-commit)
+	# only when /boot is mounted read-only; if someone made it writable by hand, leave it so
+	[ "$(awk '$2 == "/boot" { split($4, o, ","); print o[1] }' /proc/mounts)" = ro ] || exit 0
+	if mount -o remount,rw /boot; then
+		: > "$MARK"
+	else
+		echo "armdeck-boot-rw: could not make /boot writable, mkinitfs will fail"
+	fi
+	;;
+post-commit)
+	[ -e "$MARK" ] || exit 0
+	sync
+	if mount -o remount,ro /boot; then
+		rm -f "$MARK"
+	else
+		echo "armdeck-boot-rw: WARNING: /boot is still writable (busy?): sudo mount -o remount,ro /boot"
+	fi
+	;;
+esac
+# never block an apk transaction because of /boot
+exit 0

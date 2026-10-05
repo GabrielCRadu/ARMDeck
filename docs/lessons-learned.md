@@ -159,9 +159,45 @@ this page is the short version, so the same mistake is not made twice.
   the chosen output, so it switches back to them when they reconnect.
   Lesson: a Bluetooth device that pairs but does not connect usually means a missing profile
   provider; read bluetoothd's log first.
-- **`apk add` fails although the package installs.** `postmarketos-mkinitfs` is stuck in an error
-  state from an earlier install, so every `apk add` ends with "1 error" and a non-zero exit, and
-  a command chained with `&&` after it never runs. Use `;` after `apk add` until that is fixed.
+- **Know which boot a log line belongs to (2026-10-05).** The op8 boot reports list the kernel
+  warnings of the *previous* boot. Counting them as the current boot's put every audio failure
+  one boot off; read the section header before correlating.
+- **A Vulkan layer in the home directory is also seen by the host (2026-10-05).** The Steam
+  container shares `/home` with postmarketOS, so an implicit layer manifest in
+  `~/.local/share/vulkan/implicit_layer.d/` is read by the host's Vulkan loader too (gamescope).
+  lsfg-vk's manifest is always on; forced on the host, the musl loader crashed on its glibc
+  library. Our build makes the layer opt-in (`enable_environment`), checked with
+  `VK_LOADER_DEBUG=all` before any game used it.
+- **Vulkan layer order decides what a frame limiter counts (2026-10-05).** With lsfg-vk as an
+  implicit layer above MangoHud, a 30 fps limit gave 15 real frames: MangoHud limited lsfg-vk's
+  output, generated frames included. `VK_LOADER_DEBUG=layer` prints `Insert instance layer`
+  from the driver upwards, which shows the chain. Explicit layers enabled from the environment
+  are placed closer to the driver than the implicit ones, so lsfg-vk became explicit.
+- **A benchmark is not a game (2026-10-05).** lsfg-vk's benchmark ran fine; in a game it failed
+  at once, because only a real swapchain shares images between two Vulkan devices, and Turnip
+  refused the mismatched import (`VK_ERROR_INVALID_EXTERNAL_HANDLE`). Test the real path early.
+- **Mesa can say why a shader is slow (2026-10-05).** `IR3_SHADER_DEBUG=disasm` (with a fresh
+  application cache, e.g. `XDG_CACHE_HOME=/tmp/...`, and `MESA_SHADER_CACHE_DISABLE=1`) dumps
+  every Turnip shader with its statistics; `stp`/`ldp` instructions are register spills. That
+  is how lsfg-vk's quality mode, 20-30 times slower than performance mode, was traced to
+  spilling on the Adreno 650.
+- **A game stuck on its loading screen can be a bad save, not the platform (2026-10-05).** Hue
+  hung because its Steam Cloud save was an empty file; the Unity `Player.log`
+  (`~/.config/unity3d/<company>/<game>/Player.log`) said so in plain words. Read the game's own
+  log before suspecting FEX, Mesa or the kernel.
+- **Old native ports can ignore a controller in-game although their menus see it (2026-10-05).**
+  Outlast's Linux port did, with and without Steam Input. When the game's menus react to the pad,
+  the platform side (device access, SDL mapping) is fine; try the Windows version through Proton
+  before spending more time on the native port.
+- **`apk add` failed although the package installed (solved 2026-10-05).** Making `/boot`
+  read-only (audit C6) broke the postmarketOS initramfs trigger, which rewrites `/boot` whenever
+  kernel, firmware or udev files change. apk then marked `postmarketos-mkinitfs` broken and
+  counted it as "1 error" in every later transaction, so commands chained with `&&` never ran.
+  Fixed with an apk commit hook (`armdeck-boot-rw`) that makes `/boot` writable only while apk
+  works, plus one reinstall of the package. Lessons: a read-only mount needs a plan for every
+  program that writes there; read apk's log (`/var/log/apk.log`) for the first failure, not the
+  last "1 error"; and before letting a boot tool run, check whether it can flash a partition
+  (boot-deploy can, with `flash_kernel_on_update`).
 - **Sound card sometimes missing after boot (open, TODO 16).** "AFE failed to vote" in about 5 of
   17 boots; a reboot fixes it.
 
@@ -170,6 +206,10 @@ this page is the short version, so the same mistake is not made twice.
 - **WSL wipes `/tmp` between calls.** Work under `/mnt/d`.
 - **`sed` rewrote CRLF in a patch file.** Patch files are binary-exact: edit them with byte-level
   tools and recompute the APKBUILD checksums.
+- **A time threshold skipped the session-start source check (2026-10-05).** The check ran with
+  `--if-older-than 20`; the new session began 19.8 h after the last one, so it was skipped, and
+  13 new DroidDeck commits (Decky, frame generation, .NET games under FEX) went unseen until the
+  maintainer asked. The check now runs at the start of every session, with no threshold.
 - **BusyBox tools differ.** No `pgrep -c`, `grep --line-buffered`, `ps -p` or `ls --time-style`;
   check the BusyBox usage text before relying on GNU options.
 - **Deployed copies drift from the repository (checked 2026-10-05).** The phone still ran the

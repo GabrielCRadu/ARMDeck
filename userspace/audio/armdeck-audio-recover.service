@@ -1,0 +1,12 @@
+[Unit]
+Description=armdeck: bring the sound card back when the audio DSP clock vote failed at boot
+After=systemd-modules-load.service
+
+[Service]
+# exec, not oneshot: on a bad boot the script waits about a minute, and a oneshot unit would hold
+# multi-user.target (and the Steam session) for that long
+Type=exec
+ExecStart=/usr/local/bin/armdeck-audio-recover
+
+[Install]
+WantedBy=multi-user.target

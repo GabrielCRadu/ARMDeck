@@ -406,6 +406,29 @@ was running (udev rules + `udevadm trigger` + restarting nftables).
     it. Half-Life itself could run natively through Xash3D FWGS (open source GoldSrc engine with
     ARM64 builds, plus hlsdk-portable built for ARM64, using the Steam game files); not pursued,
     the goal is the platform, not one game.
+    Lead from DroidDeck (commit 9cc40246, 2026-10-04): Windows .NET (CoreCLR) games crash under FEX
+    unless memory ordering is fully emulated and multiblock is off (`FEX_TSOENABLED=1`,
+    `FEX_VECTORTSOENABLED=1`, `FEX_MEMCPYSETTSOENABLED=1`, `FEX_HALFBARRIERTSOENABLED=1`,
+    `FEX_MULTIBLOCK=0`); they set it automatically when `coreclr.dll` sits next to the game, and
+    start Godot games with `--rendering-driver vulkan`. Worth trying if a .NET game (or native
+    Terraria, which runs on Mono) crashes.
+    **Tests on 2026-10-05 (kernel r13, FEX rootfs, games through `fex-compat-tool` and the scout
+    runtime, OpenGL from the emulated x86_64 Mesa in `/run/gfx`):**
+    - LIMBO: works fully, 90 fps (the panel's rate), 23% CPU, 32% GPU, 4.3 W, sound and
+      controller fine.
+    - Hue (Unity 5.3): stuck on its first loading screen. Not an ARMDeck problem: its Steam Cloud
+      save `cloudsave.bin` is 0 bytes (also in the cloud, since 2026-04-18), the game fails to read
+      it ("Failed to read past end of stream"), loads scene -1 and throws a NullReferenceException.
+      Moving the empty file away should let it start a new save; not done, the maintainer moved on.
+    - Outlast (Unreal Engine 3, its own SDL2 from 2013): 25-30 fps with the maintainer's settings;
+      the controller works in the menus but not in the game, with Steam Input (virtual pad
+      `28de:11ff`) and without it (X3 in Xbox mode). An `SDL_GAMECONTROLLERCONFIG` mapping for the
+      virtual pad changed nothing, since its SDL already sees the pad (the menus react). Parked;
+      next idea: the Windows version through Proton 11.0 (ARM64), where the game uses XInput.
+    - Firewatch (Unity 2017.4, OpenGL 4.6 on the emulated x86_64 Mesa): runs well, by the
+      maintainer's report ("merge foarte ok"); numbers not taken yet.
+    - Half-Life 2 (Source, native): runs, "not very well" (maintainer's own test on 2026-10-04);
+      to measure.
 13. **Muffin Knight:** small display glitches in text (Proton ARM64).
 14. ~~Full screen~~ **solved 2026-10-02**, with a modified gamescope (see "Also solved on
     2026-10-02" below). The history of the investigation: the DSI panel has no EDID, and Alpine's
@@ -460,6 +483,29 @@ was running (udev rules + `udevadm trigger` + restarting nftables).
     it is not tied to any one change. A reboot fixes it. To try: a service that, if
     `/proc/asound/cards` is missing, reloads the audio drivers (`unbind`/`bind`) or restarts the
     DSP (`remoteproc`).
+    **Cause found on 2026-10-05**, from the 49 boot reports in `/var/log/op8/` (each report holds the
+    kernel warnings of the boot *before* it, so the failed boots are 8, 14, 20-22, 24, 31, 34, 39
+    and 48: 10 of 49, about 1 in 5). It does not follow the start mode (power key, charger,
+    reset), charging, battery level or temperature (21-47 °C). Every failed boot has the same
+    sequence:
+    1. at about 8.3 s the kernel asks the audio DSP to switch on the codec clocks (q6afe command
+       `0x100f4`, `AFE_CMD_REMOTE_LPASS_CORE_HW_VOTE_REQUEST`); the DSP, not ready yet, answers
+       with error `0x16`;
+    2. `q6afe_callback()` has no case for an error answer to that command ("Unknown cmd 0x100f4"),
+       so it never wakes the waiting caller, which times out 3 s later: "AFE failed to vote (3)"
+       (3 = `LPASS_HW_DCODEC_VOTE`);
+    3. the LPASS pin controller (`33c0000.pinctrl`) then cannot enable its clocks and gives up
+       with -110 (not a "try again later" error, so the kernel never retries), and every audio
+       device that waits for it (rx/tx macros, SoundWire, the sound card) stays deferred.
+    The same symptom was reported upstream on a Fairphone 5 (SC7280) on 2026-01-20, in reply to
+    "arm64: dts: qcom: kodiak: Add missing clock votes for lpass_tlmm", with no answer; mainline's
+    `q6afe_callback()` is unchanged. Two possible fixes: (a) a boot service that, when the card
+    is missing, unbinds and binds `33c0000.pinctrl` so the vote is sent again once the DSP is up
+    (the card then starts exactly as on a good boot, same levels); (b) a kernel patch so q6afe
+    passes the error back and the vote is retried after a short wait. (a) first, tested on a boot
+    where the card is missing: written as `userspace/audio/armdeck-audio-recover` and its service
+    (not installed yet; it waits 30 s for the card, and only if `33c0000.pinctrl` is left
+    unbound does it bind it again, up to three times).
 17. **Charging through the controller (pass-through, GameSir X3 Pro):** the phone must be the USB
     host for the controller and receive power through it at the same time. To test with the
     kernel's Type-C/PD stack (`tcpm`, it reports `PD PD_PPS`). Without a charger driver the PMIC
@@ -620,9 +666,17 @@ was running (udev rules + `udevadm trigger` + restarting nftables).
     [GalaxyBudsClient](https://github.com/timschneeb/GalaxyBudsClient) implements for the Buds3
     Pro (`Features.GamingMode`, message `GAME_MODE = 135`); a small script could send that one
     message. Not yet known whether it lowers the delay with a non-Samsung phone.
-28. **`postmarketos-mkinitfs` stuck in an apk error state.** Every `apk add` reports "1 error"
-    and exits non-zero (`apk fix --simulate` would reinstall it). Find out why its script failed
-    before letting apk reinstall it: it writes the boot files in `/boot`.
+28. **`postmarketos-mkinitfs` stuck in an apk error state (solved 2026-10-05).** Every `apk add`
+    reported "1 error" and exited non-zero. Cause: `install-tune.sh` mounts `/boot` read-only
+    (audit C6); on 2026-10-03 `apk add bootmac` changed udev files, the mkinitfs trigger tried to
+    rewrite `/boot/initramfs` and got "Read-only file system", and apk marked the package broken
+    (`f:s` in `/lib/apk/db/installed`). apk 3 counts every installed package marked broken as one
+    error in each transaction, and only a reinstall clears the mark. Fix: the apk commit hook
+    `userspace/system/armdeck-boot-rw` makes `/boot` writable before an apk transaction and
+    read-only again after its triggers; then `apk add` of the r13 kernel package (so `/boot` and
+    `/lib/modules` now match the running kernel) and `apk fix postmarketos-mkinitfs`. Checked
+    first: mkinitfs and boot-deploy only write files in `/boot` here; they would flash the boot
+    partition only with `deviceinfo_flash_kernel_on_update="true"`, which this device does not set.
 29. **Undervolting (research only, suggested by the maintainer 2026-10-05).** Lower voltages at the
     same clocks would mean less heat, so op8-thermal would limit later and less. Open questions
     before anything is tried: on SM8250 the CPU voltages come from the clock firmware's tables
@@ -636,6 +690,129 @@ was running (udev rules + `udevadm trigger` + restarting nftables).
     SteamOS-ARM-Handhelds, the OnePlus 8 kernel forks), note what each fixes, whether 6.16 has the
     bug and whether it fits the OnePlus 8, with a hardware-safety check; rank the useful ones.
     The msm GPU priority fix (kernel patch 0011) came out of exactly this kind of reading.
+31. **Decky Loader (asked by the maintainer 2026-10-05).** Decky is the plugin system of the Steam
+    Deck's Game Mode: it adds a plugin menu to Steam's quick access panel by hooking into Steam's
+    built-in browser (CEF, through its remote debugging port, enabled by the file
+    `~/.local/share/Steam/.cef-enable-remote-debugging`). Upstream publishes only an x86_64
+    `PluginLoader`. Two working ARM64 routes seen on 2026-10-05: Nova-Deck runs that x86_64 binary
+    through FEX (binfmt), and DroidDeck builds a native `PluginLoader-arm64` in its fork
+    (Droid-Deck/decky-loader, preview releases of 2026-09-25). To check: which plugins are useful
+    here (themes, per-game profiles, frame generation settings) and which ones ship x86-only
+    programs or expect AMD hardware (TDP and clock plugins are built for the Deck's APU and must not
+    be used on the SM8250 without a hardware review).
+32. **Frame generation (asked by the maintainer 2026-10-05).** Generated frames in between the
+    real ones, for a smoother picture at the same GPU load. Candidates: lsfg-vk (Lossless
+    Scaling's frame generation as a Vulkan layer on Linux; needs the Windows app bought on Steam,
+    since it uses its shaders) and the frame generation built into some games (FSR 3). To check:
+    whether lsfg-vk works on ARM64 with Turnip, its GPU cost on the Adreno 650, the extra input
+    lag, and how it fits with the 90 Hz panel and the frame limiter (it needs a steady base rate,
+    e.g. 45 fps shown as 90). Seen on 2026-10-05: DroidDeck runs Lossless Scaling's frame
+    generation on Adreno phones inside its own compositor (code in `app/src/main/cpp/framegen/lsfg`,
+    from lsfg-vk via the Eden emulator), plus a simpler built-in "Win-FG". Its notes say the 25
+    shaders come out as SPIR-V 1.6, so the GPU driver must offer Vulkan 1.3 (or the SPIR-V 1.4 and
+    memory model extensions) and storage-image writes without a format; Turnip on the Adreno 650
+    should, to be checked with `vulkaninfo`. lsfg-vk publishes x86_64 builds only, so on ARM64 it
+    would be built from source.
+    **2026-10-05: built and benchmarked on the phone.** `userspace/steam/build-lsfg-vk.sh` builds
+    lsfg-vk 2.0.0 unmodified in the container (its licence, CC BY-NC-ND 4.0, rules out shipping
+    its code or binaries) and installs the layer for the user only, as an explicit layer (see
+    the layer order below), so the host's gamescope and other Vulkan programs never load it.
+    Turnip 26.2.3 offers Vulkan 1.3, `vulkanMemoryModel` and storage image writes without a format.
+    The shaders come from Lossless Scaling's `lsfg-vk` beta branch (`lsfg-vk.dll`).
+    `lsfg-vk-cli benchmark`, time per real frame (the GPU clock moved between 305 and 587 MHz in
+    these runs, so the numbers vary by about 30% between runs):
+
+    | Input | Mode | Multiplier | Time per real frame |
+    |---|---|---|---|
+    | 2400x1080 | quality | 2 | 1606 ms (2048 ms without FP16) |
+    | 1200x540 | quality | 2 | 468 ms |
+    | 2400x1080 | performance | 2 | 53 ms |
+    | 2400x1080 | performance, flow 0.5 | 2 | 20-28 ms (39 ms without FP16) |
+    | 2400x1080 | performance, flow 0.25 | 2 | 10.6 ms |
+    | 1920x864 | performance, flow 0.5 | 2 | 22.6 ms |
+    | 1600x720 | performance, flow 0.5 | 2 | 9.1 ms |
+    | 1600x720 | performance, flow 0.5 | 3 | 22.3 ms |
+    | 1200x540 | performance | 2 | 16 ms |
+
+    Quality mode is unusable here: Mesa's shader dump (`IR3_SHADER_DEBUG=disasm`) shows its five
+    largest compute shaders (about 12,000 instructions each) spilling registers to memory, about
+    1,100 `stp` stores and 380 `ldp` loads each, 5,864 and 2,101 in total, against 9 and 14 in
+    performance mode. The Adreno 650 runs out of registers for them. Performance mode with a
+    reduced flow scale is the only practical setting, and it still takes 10-25 ms of GPU time per
+    real frame, time the game itself then lacks. So it can only pay off in games that leave the GPU
+    idle part of the time (limited by the CPU or by a frame cap).
+    Loading checks (2026-10-05, `VK_LOADER_DEBUG`, first install as an implicit layer made opt-in
+    with `enable_environment`): without `ENABLE_LSFGVK=1` neither the host nor
+    the container loads the library. With it and a profile (`LSFGVK_ENV=1 LSFGVK_MULTIPLIER=2`) it
+    loads in the container and inside Steam Linux Runtime 4 (arm64), where pressure-vessel
+    imports it as `00-aarch64-linux-gnu.json`. Forced on the host, the musl loader crashed
+    (segmentation fault) loading this glibc library: an always-on layer in the shared home
+    directory would have taken down gamescope at its next start. Without a profile the layer
+    turns itself off (the loader then prints "Failed to find 'vkGetInstanceProcAddr'" and skips
+    it). With the layer on, `vulkaninfo` prints 401 loader errors "Exhausted the unknown device
+    function array", with both Fedora's loader (1.4.341) and the runtime's (1.4.309), and still
+    finishes; to watch for in a game.
+    **First game test (Tomb Raider, Proton 11 ARM64, 2026-10-05): black screen.** lsfg-vk's log:
+    "An error occured while initializing the lsfg-vk swapchain: vk::Device::allocateMemoryUnique:
+    -1000072003" (`VK_ERROR_INVALID_EXTERNAL_HANDLE`). lsfg-vk shares two images between its own
+    Vulkan device and the game's through opaque file descriptors, but creates them with different
+    usage flags on the two sides: storage, sampled and transfer where it exports
+    (`lsfg-vk-pipeline/src/pipeline.cpp`), transfer only where it imports
+    (`lsfg-vk-layer/src/wrapper.cpp`, `importImage`). Turnip picks the memory layout from the
+    usage (UBWC compression for a transfer-only image, none with storage), so the two layouts
+    differ and the import is refused. Desktop drivers tolerate the mismatch. Workaround to test:
+    `TU_DEBUG=noubwc` (no UBWC in the game, so both sides match, at some GPU cost). Real fix:
+    identical usage on both sides, a one-line change in lsfg-vk; its licence forbids publishing
+    modified code, so it goes to the author as a report.
+    **Result with `TU_DEBUG=noubwc`:** the picture comes back and lsfg-vk runs without errors, but
+    the game shows about 25 fps whatever the Frame Limit, and feels no smoother than that, with
+    more input lag. The GPU sat at its top clock (587 MHz) and the SoC at 87 °C: Tomb Raider
+    already fills the GPU, so frame generation's 20-28 ms per real frame (plus the lost UBWC
+    compression) halves the real frames and the generated ones only bring the total back.
+    Part of that was the layer order: with the Frame Limit at 30 the game felt like 15 fps. The
+    loader log (`Insert instance layer`, listed from the driver up) showed the implicit lsfg-vk
+    layer above MangoHud, so MangoHud's limiter counted the generated frames too: 15 real plus
+    15 generated. Moving its manifest to a later search path changed nothing; installed as an
+    **explicit** layer and enabled with `VK_LOADER_LAYERS_ENABLE=VK_LAYER_LSFGVK_frame_generation`,
+    it sits below MangoHud (driver, lsfg-vk, device_select, MangoHud, game), and the limit then
+    applies to the real frames only. That also means it is never loaded unless asked for, on the
+    host or in the container. Result on Low settings: the overlay (gamescope's count, which
+    includes the generated frames) reached about 45 fps at most, against 35 with the old order;
+    the GPU is still the limit. The maintainer's verdict: good progress.
+    Launch options used: `TU_DEBUG=noubwc VK_LOADER_LAYERS_ENABLE=VK_LAYER_LSFGVK_frame_generation
+    LSFGVK_ENV=1 LSFGVK_MULTIPLIER=2 LSFGVK_PERFORMANCE_MODE=1 LSFGVK_FLOW_SCALE=0.5 %command%`.
+    Next: a second overlay line with the real frame rate next to the total (asked by the
+    maintainer; the in-game MangoHud now sees only real frames), the report to lsfg-vk's author
+    about the usage mismatch, and the control described below.
+    **Wanted by the maintainer (2026-10-05):** a frame generation control next to Steam's Frame
+    Limit, for every kind of game. Routes: Decky (TODO 31) with the decky-lsfg-vk plugin, or an
+    unused Steam control mapped to `~/.config/lsfg-vk/conf.toml` (multiplier, flow scale and
+    performance mode reload live), as `op8-fpslimit` does for the Frame Limit. lsfg-vk only sees
+    Vulkan games: OpenGL games would go through Zink (OpenGL on Vulkan), and native x86 games
+    under FEX would need the official x86_64 layer in the FEX root filesystem. Frame generation
+    inside gamescope (as DroidDeck does in its own compositor) would cover everything, but is a
+    large project.
+33. **GPU runtime suspend cost (lead from Nova-Deck, 2026-10-05).** On the Adreno 750, a GPU suspend
+    that starts shortly after a resume busy-waits a full second in `a6xx_gmu_wait_for_idle()`;
+    Nova-Deck raised the autosuspend delay from 66 to 200 ms (kernel patch 0240) and idle
+    kworker CPU fell from 18% to 6%. Our Adreno 650 uses the same a6xx driver and is at the 66 ms
+    default (`/sys/devices/platform/soc@0/3d00000.gpu/power/autosuspend_delay_ms`). To check:
+    kworker CPU at idle in the Steam UI and how long GPU suspends take here; the delay can be
+    tried at runtime through sysfs before any kernel change.
+    **Measured 2026-10-05 (Steam UI, no game, screen on, performance overlay at level 2,
+    charging):** the GPU never suspended in 60 s (status `active` in all 1,075 samples, no
+    transition), so Nova-Deck's suspend/resume cycle cannot happen here and kworker CPU stayed
+    around 1%. The real idle cost is elsewhere: something redraws all the time. Over 30 s,
+    mangoapp used 31% of a core, Xwayland 25%, gamescope 18%, Steam's web helper about 40%, and
+    all CPUs together were 20-24% busy (about 1.7 cores). Next: the same measurement with the
+    overlay off, then on another Steam UI page, to find who keeps redrawing (Steam UI animation
+    or the overlay); a still screen should let the GPU sleep.
+34. **sched_ext with scx_lavd (lead from Nova-Deck, 2026-10-05).** A CPU scheduler loaded from user
+    space, built for games and for big and little cores; Valve's Steam Frame (ARM) ships it with
+    `--pinned-slice-us 500 --dd-max-wait-us 0`, and Nova-Deck builds it from Valve's tree. Our
+    kernel does not have `CONFIG_SCHED_CLASS_EXT` (it also needs BPF and BTF), so it means a
+    kernel rebuild plus the scx tools in the root filesystem. To check: what it gains on the
+    SM8250's 1+3+4 cores against the default scheduler, measured in a real game.
 
 Also solved on 2026-10-02, later:
 

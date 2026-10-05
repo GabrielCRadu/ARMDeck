@@ -119,7 +119,9 @@ next kernel built in WSL and written to `boot_b`.
 - **Risk:** a reset during a write to `/boot` (`mkinitfs`) can corrupt it. It does not matter for
   booting, the bootloader reads `boot_b`, not `/boot`.
 - **Measure:** `/boot` read-only in fstab (the kernel is built in WSL, not on the phone) and an
-  `e2fsck -p` check while it is unmounted.
+  `e2fsck -p` check while it is unmounted. Since 2026-10-05 the apk hook
+  `userspace/system/armdeck-boot-rw` makes it writable only during apk transactions, so the
+  mkinitfs trigger no longer fails (gaming-stack.md, TODO 28).
 
 ### What is already fine
 

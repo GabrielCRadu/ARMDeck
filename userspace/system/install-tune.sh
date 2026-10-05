@@ -16,6 +16,8 @@ systemctl restart op8-tune.service
 journalctl -u op8-tune -n 1 --no-pager -o cat
 
 echo "== 3. /boot: one e2fsck check, then read-only (C6)"
+# apk hook: /boot writable only while apk installs packages, so the mkinitfs trigger still works
+install -D -m 755 "$S/armdeck-boot-rw" /etc/apk/commit_hooks.d/armdeck-boot-rw
 cp /etc/fstab /etc/fstab.op8.bak
 awk 'BEGIN { OFS = " " }
 	$2 == "/boot" && $4 !~ /(^|,)ro(,|$)/ { $4 = "ro," $4 }
