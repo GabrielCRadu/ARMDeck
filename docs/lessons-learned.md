@@ -125,6 +125,14 @@ this page is the short version, so the same mistake is not made twice.
   charger powers it, so re-seating the phone did not help; phone and charger out for ~15 s, then
   charger, fan, phone, cleared it. Lesson: when an accessory has its own power, it can carry a bad
   state across re-seats; power-cycle it before suspecting the phone.
+- **The battery ran flat during a long PC session (2026-10-06).** The phone stayed in the Steam
+  interface while the work happened on the PC, and it shut down at 0% (the gauge's 0%, 3.56 V
+  after shutdown, is still above the cell's own cut-off). On the PC's USB port it then charged
+  at only ~0.66 A, about 3.3 W, little more than the idle Steam session uses (TODO 33); on a
+  45 W charger (PD 5 V / 3 A, patch 0004) the battery got 0.76 A at 0%, the PMIC's default limit
+  without a charger driver. Lessons: keep the phone on a wall charger during long sessions,
+  stop `steam-gs` when it only needs to charge, and keep checks on a low battery read-only and
+  light.
 - **PD chargers could ask for 9 V (solved, patch 0004).** The device tree allowed sink PDOs up to
   12 V, while this phone never used PD above 5 V on Android. Now 5 V only.
 - **Cameras and modem drew power while unused (solved, patch 0005).** Every camera supply had to be
@@ -218,7 +226,11 @@ this page is the short version, so the same mistake is not made twice.
   last "1 error"; and before letting a boot tool run, check whether it can flash a partition
   (boot-deploy can, with `flash_kernel_on_update`).
 - **Sound card sometimes missing after boot (open, TODO 16).** "AFE failed to vote" in about 5 of
-  17 boots; a reboot fixes it.
+  17 boots; a reboot fixes it. The kernel fix already existed elsewhere: Nova-Deck's `0893` +
+  `0895` (Philippe Simons, 2026) show the same log line for line and make `q6afe` wait for the
+  DSP. We found it only through the systematic patch scan (docs/patch-scan.md), after working
+  out the cause ourselves from 49 boot reports. Lesson: before working an open problem from scratch, search the
+  related projects' patch notes for its exact log lines.
 
 ## Tools and workflow
 

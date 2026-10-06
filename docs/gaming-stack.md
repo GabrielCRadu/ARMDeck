@@ -506,6 +506,10 @@ was running (udev rules + `udevadm trigger` + restarting nftables).
     where the card is missing: written as `userspace/audio/armdeck-audio-recover` and its service
     (not installed yet; it waits 30 s for the card, and only if `33c0000.pinctrl` is left
     unbound does it bind it again, up to three times).
+    **Kernel fix found on 2026-10-06** (TODO 30, [patch-scan.md](patch-scan.md) item 1):
+    Nova-Deck's patches `0893` + `0895` make `q6afe` wait until the DSP reports its audio
+    services up, and answer the vote's error reply; their log is the same as ours. Planned for
+    test image `r14`; the recover service stays as a safety net.
 17. **Charging through the controller (pass-through, GameSir X3 Pro):** the phone must be the USB
     host for the controller and receive power through it at the same time. To test with the
     kernel's Type-C/PD stack (`tcpm`, it reports `PD PD_PPS`). Without a charger driver the PMIC
@@ -582,6 +586,11 @@ was running (udev rules + `udevadm trigger` + restarting nftables).
     the first ones 35 s after boot. Leads: how the panel driver sends the brightness command
     (low-power or high-speed mode, versus the vendor driver) while frames stream; coalescing
     Steam's many small brightness steps. Workaround meanwhile: turn off Steam's screen dimming.
+    **Likely cause found on 2026-10-06** (TODO 30, [patch-scan.md](patch-scan.md) item 2): for
+    every panel command (each brightness step) our DSI driver re-sets the link clock rate and
+    switches the clocks off and on while frames stream, which underflows the DSI FIFO. Nova-Deck's
+    `0420` (seen on an SM8250 handheld) leaves the clocks alone while the display is on. Planned
+    for test image `r14`.
 21. **Refresh rate the user can change (60 / 90 Hz).** Kernel patch 0006 of r9 ran the panel at
     60 Hz by default, with 90 Hz only through the boot option
     `panel_samsung_amb655uv01.refresh=90`. Wanted: switching from Steam (the refresh-rate slider
@@ -690,6 +699,14 @@ was running (udev rules + `udevadm trigger` + restarting nftables).
     SteamOS-ARM-Handhelds, the OnePlus 8 kernel forks), note what each fixes, whether 6.16 has the
     bug and whether it fits the OnePlus 8, with a hardware-safety check; rank the useful ones.
     The msm GPU priority fix (kernel patch 0011) came out of exactly this kind of reading.
+    **Done on 2026-10-06:** [patch-scan.md](patch-scan.md) has the ranked list. Tier 1, all
+    checked against our 6.16 source:
+    - the audio DSP readiness fix for TODO 16;
+    - the DSI link clock fix that matches TODO 20;
+    - real vblank timestamps for our command-mode panel;
+    - a memory bandwidth vote for the GPU, which today has none (vendor values only, no
+      overclock).
+    Proposed as kernel test images `r14` (first three) and `r15` (bandwidth).
 31. **Decky Loader (asked by the maintainer 2026-10-05).** Decky is the plugin system of the Steam
     Deck's Game Mode: it adds a plugin menu to Steam's quick access panel by hooking into Steam's
     built-in browser (CEF, through its remote debugging port, enabled by the file
