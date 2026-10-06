@@ -98,6 +98,14 @@ this page is the short version, so the same mistake is not made twice.
 - **Steam loses audio after a PipeWire restart.** Restart the Steam session too.
 - **Launch Options are painful to type on a controller.** `op8-launch-options.py` edits them in
   `localconfig.vdf` while Steam is stopped (Steam rewrites that file on exit).
+- **Every reboot took 93 s (solved, 2026-10-06).** The helper that stops Decky's plugins
+  (`op8-decky`) ran in Steam's process group, so at shutdown it was killed together with Steam
+  before it could do its job; the plugins kept gamescope's reaper waiting until systemd's 90 s
+  stop timeout. Its own session (`setsid`) and a signal trap fixed it (4 s now). The earlier
+  check had only covered a Decky restart, never the "Steam ended" path, whose log line had in
+  fact never appeared. Lessons: a cleanup helper must not share the process group of what it
+  cleans up after; test every exit path (session restart, shutdown), and look for the log
+  line each path should write.
 
 ## Power, charging and controllers
 
@@ -133,6 +141,11 @@ this page is the short version, so the same mistake is not made twice.
   without a charger driver. Lessons: keep the phone on a wall charger during long sessions,
   stop `steam-gs` when it only needs to charge, and keep checks on a low battery read-only and
   light.
+  Afterwards (2026-10-06, 21:32) the gauge reported 1% while charging, at 3.85 V and with
+  `charge_now` 526 mAh of `charge_full` 3093 mAh (about 17%): after the full discharge its own
+  percentage lost track. The battery itself was fine; the number is only to be trusted again
+  after a full charge, and until then the phone stays on the charger (a low percentage on
+  battery can trigger the system's low-battery power-off).
 - **PD chargers could ask for 9 V (solved, patch 0004).** The device tree allowed sink PDOs up to
   12 V, while this phone never used PD above 5 V on Android. Now 5 V only.
 - **Cameras and modem drew power while unused (solved, patch 0005).** Every camera supply had to be

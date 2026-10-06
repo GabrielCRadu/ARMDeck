@@ -1,0 +1,72 @@
+From: Philippe Simons <simons.philippe@gmail.com>
+Subject: [PATCH] ASoC: qdsp6: q6core: only an unsupported GET_STATE means "assume up"
+
+__q6core_is_adsp_ready() cleared get_state_supported before each
+AVCS_CMD_ADSP_EVENT_GET_STATE query, and only a real
+AVCS_CMDRSP_ADSP_EVENT_GET_STATE response set it again. So a timeout,
+or a basic response with any error status, fell through to "assume
+the DSP is up": the check answered "ready" exactly when the DSP was
+too early to answer. Only an explicit ADSP_EUNSUPPORTED means the
+query does not exist; anything else is now "not ready", and the
+caller polls again.
+
+q6core_is_adsp_ready() also polled with no delay, so a DSP that
+answers at once would be flooded with queries for up to 3 s while it
+comes up. Sleep 50 ms between queries, as the downstream audio stack
+does.
+
+Nothing calls q6core_is_adsp_ready() yet; the next patch makes q6afe
+wait on it.
+
+[ARMDeck: from Nova-Deck os-build, kernel/patches/0893 (commit 325dfde9a380),
+unchanged; it applies to 6.16.7 as is. Needed by 0013, which is the first
+caller of q6core_is_adsp_ready().]
+
+---
+diff --git a/sound/soc/qcom/qdsp6/q6core.c b/sound/soc/qcom/qdsp6/q6core.c
+index 49cfb32..48fa8fd 100644
+--- a/sound/soc/qcom/qdsp6/q6core.c
++++ b/sound/soc/qcom/qdsp6/q6core.c
+@@ -2,6 +2,7 @@
+ // Copyright (c) 2011-2017, The Linux Foundation. All rights reserved.
+ // Copyright (c) 2018, Linaro Limited
+ 
++#include <linux/delay.h>
+ #include <linux/slab.h>
+ #include <linux/wait.h>
+ #include <linux/kernel.h>
+@@ -15,6 +16,7 @@
+ #include "q6dsp-errno.h"
+ 
+ #define ADSP_STATE_READY_TIMEOUT_MS    3000
++#define ADSP_STATE_POLL_MS             50
+ #define Q6_READY_TIMEOUT_MS 100
+ #define AVCS_CMD_ADSP_EVENT_GET_STATE		0x0001290C
+ #define AVCS_CMDRSP_ADSP_EVENT_GET_STATE	0x0001290D
+@@ -209,7 +211,15 @@ static bool __q6core_is_adsp_ready(struct q6core *core)
+ 	struct apr_pkt pkt;
+ 	int rc;
+ 
+-	core->get_state_supported = false;
++	/*
++	 * Only an explicit ADSP_EUNSUPPORTED means the query does not exist
++	 * and the DSP should be assumed up. No answer, or any other error,
++	 * is a DSP that is not ready yet: report it so, and let the caller
++	 * poll again.
++	 */
++	core->get_state_supported = true;
++	core->avcs_state = 0;
++	core->resp_received = false;
+ 
+ 	pkt.hdr.hdr_field = APR_HDR_FIELD(APR_MSG_TYPE_SEQ_CMD,
+ 				      APR_HDR_LEN(APR_HDR_SIZE), APR_PKT_VER);
+@@ -318,6 +328,9 @@ bool q6core_is_adsp_ready(void)
+ 			ret = false;
+ 			break;
+ 		}
++
++		/* A DSP still coming up answers at once; don't flood it. */
++		msleep(ADSP_STATE_POLL_MS);
+ 	}
+ 
+ 	mutex_unlock(&g_core->lock);

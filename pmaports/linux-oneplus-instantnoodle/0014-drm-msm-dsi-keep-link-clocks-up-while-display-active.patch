@@ -1,0 +1,186 @@
+From: Philippe Simons <simons.philippe@gmail.com>
+Date: Sun, 6 Sep 2026 13:05:00 +0200
+Subject: [PATCH] msm/dsi: keep link clocks up while display active
+
+Re-cycling the link clocks on every DCS transfer cuts the byte/pixel clock
+supply to the DSI serializer mid-frame while the MDP frame pipeline is
+running, causing all-lane HS FIFO underflows. Skip the cycle when the display
+is already active: host_power_on()/host_power_off() own the clocks for the
+duration of the display session.
+
+The "is the display active" decision is LATCHED in xfer_prepare() and consumed
+by xfer_restore() rather than being recomputed. Recomputing it is a refcount
+bug: (power_on && enabled) is written by the modeset path
+(msm_dsi_host_enable/disable, msm_dsi_host_power_on/off), which does NOT hold
+cmd_mutex, while an asynchronous DCS transfer -- a DSI-backlight brightness
+write, DCS 0x51 -- holds cmd_mutex across the prepare/restore pair. The flag
+can therefore flip between the two evaluations, in either direction:
+
+  - transfer starts enabled (prepare SKIPS the get), modeset clears `enabled`,
+    restore takes the other branch and PUTS clocks it never took. The refcount
+    underflows: "dsi0_phy_pll_out_dsiclk already disabled / already unprepared".
+
+  - transfer starts disabled (prepare TAKES the get), modeset sets `enabled`,
+    restore SKIPS the put. The get leaks, so the PHY PLL stays on across
+    msm_dsi_host_power_off(): "Turning OFF PHY while PLL is on". The next
+    enable then finds a stale enable count on dsi0_phy_pll_out_dsiclk, skips
+    the real hardware enable, and clk_pixel_set_rate() cannot reprogram the
+    pixel RCG against a parent that is not ticking:
+    "disp_cc_mdss_pclk0_clk_src: rcg didn't update its configuration".
+    Every subsequent DCS transfer then times out with -ETIMEDOUT and the panel
+    never gets its init sequence -- a permanently black screen that only a
+    reboot clears.
+
+Observed on MANGMI Pocket Max (SM8250, chipone ICNA35XX): Steam writes the
+panel brightness over DCS as its UI comes up, which is exactly when gamescope
+takes over and does its first modeset. Intermittent, because it needs the
+brightness write to straddle the flag flip.
+
+cmd_mutex brackets the prepare/restore pair, so a single latched flag on the
+host is sufficient -- transfers cannot nest.
+
+The latch alone is NOT enough, and dsi_host_transfer() takes dev_mutex for the
+whole transfer as well. Its existing `!msm_host->power_on` test is an UNLOCKED
+read of a flag that msm_dsi_host_power_off() clears under dev_mutex, so the
+test can pass and the entire teardown -- host_disable(), host_power_off(),
+msm_dsi_phy_disable() -- then run underneath a transfer already in flight. The
+transfer's link-clock reference outlives the PHY, which is the "Turning OFF PHY
+while PLL is on" above, and the panel is wedged from there. Holding dev_mutex
+excludes power_on()/power_off() for the duration and re-tests power_on under
+it: a modeset now waits for an in-flight DCS write instead of racing it, and a
+brightness write to an unpowered host is refused instead of powering the link
+up behind the modeset's back. Both locks are needed -- dev_mutex does not cover
+`enabled`, which msm_dsi_host_enable/disable() write with no lock at all, so
+the latch is still what keeps the refcount balanced.
+
+MEASURED, both directions, on a MANGMI Pocket Max dev card (2026-09-07). The
+race reproduces on demand in ~15 s -- hammer DCS 0x51 through the backlight
+sysfs while killing the gamescope session tree so it re-modesets -- and that rig
+answers the "is this import even needed" question in both directions:
+
+  - WITHOUT this patch (upstream behaviour), it wedges on iteration 1 from the
+    transfer's own link_clk_set_rate(): dsi_link_clk_set_rate_6g <-
+    msm_dsi_host_xfer_prepare <- dsi_host_transfer <-
+    mipi_dsi_dcs_set_display_brightness_large, straight into "rcg didn't update
+    its configuration". The set_rate skip is load-bearing.
+
+  - WITH the skip and the latch but WITHOUT dev_mutex, it also wedges on
+    iteration 1, from the modeset side. That is the version that shipped in
+    ota/v0.3.4 and did not fix the black screen.
+
+Signed-off-by: Philippe Simons <simons.philippe@gmail.com>
+
+[ARMDeck: from Nova-Deck os-build, kernel/patches/0420 (commit 325dfde9a380),
+unchanged except for context offsets. On the OnePlus 8 (command-mode panel)
+every brightness step went through this path while frames streamed: Steam's
+auto-dim gave bursts of "dsi_err_worker: status=4" (DSI FIFO error),
+coloured flicker, and brightness writes that timed out with -110
+(docs/gaming-stack.md, TODO 20).]
+
+---
+diff --git a/drivers/gpu/drm/msm/dsi/dsi_host.c b/drivers/gpu/drm/msm/dsi/dsi_host.c
+index 4d75529..06ab28b 100644
+--- a/drivers/gpu/drm/msm/dsi/dsi_host.c
++++ b/drivers/gpu/drm/msm/dsi/dsi_host.c
+@@ -176,6 +176,16 @@ struct msm_dsi_host {
+ 	bool registered;
+ 	bool power_on;
+ 	bool enabled;
++	/*
++	 * Whether THIS command transfer took the link clocks up in
++	 * msm_dsi_host_xfer_prepare() and therefore owes the matching put in
++	 * msm_dsi_host_xfer_restore(). Latched rather than recomputed: the
++	 * (power_on && enabled) state it derives from is written by the
++	 * modeset path, which does not hold cmd_mutex, so re-evaluating it in
++	 * restore() can disagree with prepare() and unbalance the refcount.
++	 * cmd_mutex brackets the prepare/restore pair, so one flag is enough.
++	 */
++	bool xfer_owns_link_clks;
+ 	int irq;
+ };
+ 
+@@ -1652,12 +1662,41 @@ static ssize_t dsi_host_transfer(struct mipi_dsi_host *host,
+ 	struct msm_dsi_host *msm_host = to_msm_dsi_host(host);
+ 	int ret;
+ 
+-	if (!msg || !msm_host->power_on)
++	if (!msg)
+ 		return -EINVAL;
+ 
++	/*
++	 * dev_mutex, and not just the power_on test: that test is unlocked, and
++	 * power_on is cleared by msm_dsi_host_power_off() from the modeset path,
++	 * which takes dev_mutex and never cmd_mutex. So the test can pass and the
++	 * whole teardown -- host_disable(), host_power_off(), msm_dsi_phy_disable()
++	 * -- then run underneath a transfer that is already in flight.
++	 *
++	 * That window is what wedges the panel. The transfer holds the link clocks
++	 * across msm_dsi_phy_disable(), which turns the PHY off with its PLL still
++	 * running ("Turning OFF PHY while PLL is on"); the next power_on() then
++	 * cannot reprogram the pixel RCG against a parent that is not ticking
++	 * ("disp_cc_mdss_pclk0_clk_src: rcg didn't update its configuration"), and
++	 * from there every DCS transfer times out at -ETIMEDOUT, the panel never
++	 * gets its init sequence, and only a reboot clears it.
++	 *
++	 * Holding dev_mutex for the transfer excludes power_on()/power_off() for
++	 * its duration and re-tests power_on under that lock. A modeset now waits
++	 * for an in-flight DCS write instead of racing it. No deadlock: the
++	 * transfer path never takes dev_mutex below this point, and the modeset
++	 * path calls into the panel (and thus back into ->transfer) only after
++	 * msm_dsi_host_power_on() has already dropped dev_mutex.
++	 */
++	mutex_lock(&msm_host->dev_mutex);
++	if (!msm_host->power_on) {
++		mutex_unlock(&msm_host->dev_mutex);
++		return -EINVAL;
++	}
++
+ 	mutex_lock(&msm_host->cmd_mutex);
+ 	ret = msm_dsi_manager_cmd_xfer(msm_host->id, msg);
+ 	mutex_unlock(&msm_host->cmd_mutex);
++	mutex_unlock(&msm_host->dev_mutex);
+ 
+ 	return ret;
+ }
+@@ -2053,8 +2092,22 @@ int msm_dsi_host_xfer_prepare(struct mipi_dsi_host *host,
+ 	 * mdp clock need to be enabled to receive dsi interrupt
+ 	 */
+ 	pm_runtime_get_sync(&msm_host->pdev->dev);
+-	cfg_hnd->ops->link_clk_set_rate(msm_host);
+-	cfg_hnd->ops->link_clk_enable(msm_host);
++
++	/*
++	 * Skip the link-clock cycle when the display is already active: the
++	 * clocks are owned by host_power_on()/host_power_off() for the
++	 * duration of the display session, and re-cycling them here while the
++	 * MDP frame pipeline is running cuts the byte/pixel clock supply to
++	 * the DSI serializer mid-frame, causing all-lane HS FIFO underflows.
++	 *
++	 * LATCHED for xfer_restore(); see the comment on xfer_owns_link_clks.
++	 */
++	msm_host->xfer_owns_link_clks =
++		!(msm_host->power_on && msm_host->enabled);
++	if (msm_host->xfer_owns_link_clks) {
++		cfg_hnd->ops->link_clk_set_rate(msm_host);
++		cfg_hnd->ops->link_clk_enable(msm_host);
++	}
+ 
+ 	/* TODO: vote for bus bandwidth */
+ 
+@@ -2085,7 +2138,15 @@ void msm_dsi_host_xfer_restore(struct mipi_dsi_host *host,
+ 
+ 	/* TODO: unvote for bus bandwidth */
+ 
+-	cfg_hnd->ops->link_clk_disable(msm_host);
++	/*
++	 * Only put the link clocks if THIS transfer took them, mirroring the
++	 * latched decision in xfer_prepare().
++	 */
++	if (msm_host->xfer_owns_link_clks) {
++		cfg_hnd->ops->link_clk_disable(msm_host);
++		msm_host->xfer_owns_link_clks = false;
++	}
++
+ 	pm_runtime_put(&msm_host->pdev->dev);
+ }
+ 

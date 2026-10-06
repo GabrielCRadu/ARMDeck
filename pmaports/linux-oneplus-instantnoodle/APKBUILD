@@ -7,7 +7,7 @@ maintainer=""
 _flavor="oneplus-instantnoodle"
 pkgname=linux-$_flavor
 pkgver=6.16.7
-pkgrel=13
+pkgrel=14
 pkgdesc="OnePlus 8 (instantnoodle) mainline kernel, Xo666 fork"
 arch="aarch64"
 _carch="arm64"
@@ -81,6 +81,23 @@ makedepends="
 #         every game's default queue. Map them in order (same fix as
 #         SteamOS-ARM-Handhelds and ArmadaOS). UNTESTED on hardware as of
 #         2026-10-05 (test image r13).
+#   0012-0015: found by the patch scan of 2026-10-06 (docs/patch-scan.md,
+#         tier 1, items 1-3); software only, no hardware values change.
+#   0012-0013: from Nova-Deck. The audio DSP rejected q6afe's first LPASS
+#         vote when it came too early at boot, and the sound card was
+#         missing on about 1 boot in 5 (TODO 16). q6afe now waits until the
+#         DSP reports its audio services up. Test image r14 on hardware
+#         since 2026-10-06: sound on every boot so far, still counting.
+#   0014: from Nova-Deck. Every panel command (each brightness step)
+#         re-set and switched the DSI link clocks while frames streamed:
+#         FIFO errors and coloured flicker (TODO 20). The clocks are left
+#         alone while the display is on. Tested on hardware (test image
+#         r14, 2026-10-06): no flicker and no FIFO errors on brightness changes.
+#   0015: from Armada, adapted to 6.16. On this command-mode panel the
+#         vblank timestamps came from a counter that does not run, so
+#         gamescope paced frames from wrong times. They now come from the
+#         tear-check counter. Test image r14 on hardware since 2026-10-06:
+#         LIMBO runs smoothly; frame pacing not measured yet.
 #
 # armdeck.config is merged over op8_defconfig: NTSYNC, preemption
 # switchable at runtime (default full), MGLRU and the lockup detectors. See
@@ -107,6 +124,10 @@ source="
 	0009-usb-gadget-u_ether-fix-null-pointer-deref-in-eth_get_drvinfo.patch
 	0010-usb-gadget-u_ether-fix-race-between-gether_disconnect-and-eth_stop.patch
 	0011-drm-msm-map-submitqueue-priorities-in-order.patch
+	0012-ASoC-qdsp6-q6core-only-an-unsupported-GET_STATE-means-assume-up.patch
+	0013-ASoC-qdsp6-q6afe-wait-for-the-DSP-audio-services-before-probing.patch
+	0014-drm-msm-dsi-keep-link-clocks-up-while-display-active.patch
+	0015-drm-msm-dpu-fix-vblank-timestamps-on-command-mode-panels.patch
 	armdeck.config
 "
 builddir="$srcdir/mainline-instantnoodle-$pkgver"
@@ -165,5 +186,9 @@ ee78f07999b4a9763b31068f375ab0d985e4dd66c85b0a2c0fd2df8c00eb45b8c3d7899268c1d804
 6d9614935289ebca330bce642e6a6ea4c7957a28dea910504c10738a9265d598a344f4acae5cd336a014b82a596565bb341e8f212b518a0ee556d69cf6977f92  0009-usb-gadget-u_ether-fix-null-pointer-deref-in-eth_get_drvinfo.patch
 61324d541a218481cac5ac51f5005b48131949041d09bb82e2adabe0ef7783381884c314f1a2e3c90d1e4e6af44dd7848b76393c26e225681548be7724f18934  0010-usb-gadget-u_ether-fix-race-between-gether_disconnect-and-eth_stop.patch
 b69d54b9ad431baecf9559558af149d78005fe276e8a7d1327c1ceb7ac7a32f045c18c5a3e0396e814028d7f1f9124bc84e77b280b2cc35e18120825923758f8  0011-drm-msm-map-submitqueue-priorities-in-order.patch
+1ade77cfbd9d307d115b2132cb23da3380957e1c62839c00e8b87862c88453c4f187c5bf42e2161d6cd8e19c8bb4f9b1ea543e6eb8c281bae655e65a611c8cd4  0012-ASoC-qdsp6-q6core-only-an-unsupported-GET_STATE-means-assume-up.patch
+f921a23da3232f0d7e8d63e3342e813b29e26b3ce7251ac691ab12ee63889eade6d8a9076011a714577e5da2010839b30b20d93cedaa5c387370639c89e3f11e  0013-ASoC-qdsp6-q6afe-wait-for-the-DSP-audio-services-before-probing.patch
+fe3c8f8c0d7ed8eeb6cfcb39388ce4b5c5d8ac658e38a58d64083d55c21c4f91c2f9d60b56c02100b9fbd4a132f12a66e8ecdc25c7cff1b0f4a4592c7365431d  0014-drm-msm-dsi-keep-link-clocks-up-while-display-active.patch
+35c7b1171f2d95ebf95b5d56dfd94313713eb5bee6b8ca33233af4c274d4f69ff14f2db53b094ae9a86da44951efcb1fc3ae88c5339077c26914d47574e811a6  0015-drm-msm-dpu-fix-vblank-timestamps-on-command-mode-panels.patch
 1efc9b20d75aebc72b002d808e219abc45e8b31ea9818f2bd4e6eb062e03e8243225514903ed93b1c6e4df66f1f26d086073f7ea9b4f91eaf80b5124d27ab4bd  armdeck.config
 "

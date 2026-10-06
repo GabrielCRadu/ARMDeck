@@ -1,8 +1,11 @@
 #!/bin/sh
 # op8-decky (armdeck): runs Decky Loader (install-decky.sh) in the "steam" container for as long as
 # the Steam session lives, as this user (not root, unlike on SteamOS). steam-in-container.sh starts
-# it in the background right before "exec steam", so its parent becomes the Steam process; when
-# Steam exits, the loop stops and Decky is stopped with it.
+# it in the background right before "exec steam", in its own session (setsid) and with Steam's
+# PID as its argument; when Steam exits, the loop stops and Decky is stopped with it.
+# Its own session keeps it out of Steam's process group: there it was killed together with Steam,
+# Decky's plugins lived on, and every shutdown waited 90 s for them (2026-10-06). A TERM, HUP or
+# INT that still reaches it stops Decky and its plugins first.
 # Decky and every plugin process it starts run in their own process group (setsid), and the whole
 # group is stopped, by force after 3 s: some plugins ignore SIGTERM, and a plugin left running
 # kept gamescope's reaper waiting, so the Steam session could not stop and the screen stayed black
@@ -36,7 +39,19 @@ pkill -f "$BIN" 2>/dev/null
 pkill -KILL -f "$H/plugins/" 2>/dev/null
 echo $$ > "$PIDF"
 
-STEAM_PID=$PPID
+STEAM_PID=${1:-$PPID}
+LOADER=
+# the PID file only if it is still ours (a newer instance writes its own before stopping this one)
+drop_pidf() {
+	[ "$(cat "$PIDF" 2>/dev/null)" = "$$" ] && rm -f "$PIDF"
+}
+on_signal() {
+	[ -n "$LOADER" ] && stop_group "$LOADER"
+	echo "$(date '+%F %T') stopped by a signal, Decky and its plugins stopped" >> "$LOG"
+	drop_pidf
+	exit 0
+}
+trap on_signal TERM HUP INT
 cd "$H/services"
 echo "$(date '+%F %T') started, Steam session = $STEAM_PID" >> "$LOG"
 while kill -0 "$STEAM_PID" 2>/dev/null; do
@@ -63,4 +78,4 @@ while kill -0 "$STEAM_PID" 2>/dev/null; do
 	echo "$(date '+%F %T') Decky exited with $rc (restarting)" >> "$LOG"
 	sleep 2
 done
-rm -f "$PIDF"
+drop_pidf

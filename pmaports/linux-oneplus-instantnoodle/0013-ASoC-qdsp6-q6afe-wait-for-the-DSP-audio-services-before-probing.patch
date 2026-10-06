@@ -1,0 +1,92 @@
+From: Philippe Simons <simons.philippe@gmail.com>
+Subject: [PATCH] ASoC: qdsp6: q6afe: wait for the DSP audio services before probing
+
+On SM8250 the LPASS VA macro intermittently fails to probe at boot:
+
+  qcom-q6afe aprsvc:service:4:4: cmd = 0x100f4 returned error = 0x16
+  qcom-q6afe aprsvc:service:4:4: Unknown cmd 0x100f4
+  qcom-q6afe aprsvc:service:4:4: AFE failed to vote (3)
+  va_macro 3370000.codec: probe with driver va_macro failed with error -110
+
+Its first LPASS core vote (AFE_CMD_REMOTE_LPASS_CORE_HW_VOTE_REQUEST,
+sent by clk_prepare_enable() of the "macro" vote clock) goes out ~11 ms
+after the APR services appear and the DSP rejects it. The probe error is
+not -EPROBE_DEFER, so the VA macro stays unbound and the rx/tx/wsa
+macros, both SoundWire buses and the sound card wait behind it for the
+rest of the boot. The same firmware wins the race on other boots.
+
+The downstream audio stack never sends that vote early: before bringing
+audio up it polls AVCS_CMD_ADSP_EVENT_GET_STATE until the DSP reports
+its audio services (AVS) up, with the comment "ADSP will be coming up
+after boot up and AVS might not be fully up when the control reaches
+here". Mainline has that query as q6core_is_adsp_ready(), with no
+caller.
+
+1. q6afe_probe() waits for q6core_is_adsp_ready() before it creates
+   the ports and the clock controller whose prepare sends the vote,
+   and defers if the DSP is not up (or q6core has not probed yet).
+   Needs the previous patch, without which the check reports "ready"
+   precisely when the DSP does not answer.
+
+2. q6afe_callback() did not handle a basic response for the vote
+   opcodes, so a rejected vote was logged as "Unknown cmd" and its
+   waiter ran out the full 3 s timeout with the DSP's status already
+   in hand. Complete the waiter with that status instead; an unvote
+   has no waiter and is only logged.
+
+The ready wait is logged once ("DSP audio services ready after N ms")
+so a boot shows whether the gate engaged.
+
+[ARMDeck: from Nova-Deck os-build, kernel/patches/0895 (commit 325dfde9a380),
+unchanged except for context offsets. On the OnePlus 8 the same rejected
+vote (0x100f4, error 0x16, "AFE failed to vote (3)") leaves the LPASS pin
+controller (33c0000.pinctrl) at -110, so the sound card is missing on about
+1 boot in 5 (docs/gaming-stack.md, TODO 16).]
+
+---
+diff --git a/sound/soc/qcom/qdsp6/q6afe.c b/sound/soc/qcom/qdsp6/q6afe.c
+index 980851a..ec9e9ff 100644
+--- a/sound/soc/qcom/qdsp6/q6afe.c
++++ b/sound/soc/qcom/qdsp6/q6afe.c
+@@ -990,6 +990,20 @@ static int q6afe_callback(struct apr_device *adev, struct apr_resp_pkt *data)
+ 				wake_up(&afe->wait);
+ 			}
+ 			break;
++		case AFE_CMD_REMOTE_LPASS_CORE_HW_VOTE_REQUEST:
++			/*
++			 * A rejected vote comes back as a basic response, not
++			 * as AFE_CMD_RSP_REMOTE_LPASS_CORE_HW_VOTE_REQUEST.
++			 * Complete the waiter with the DSP's status instead
++			 * of leaving it to time out.
++			 */
++			afe->result.opcode = AFE_CMD_RSP_REMOTE_LPASS_CORE_HW_VOTE_REQUEST;
++			afe->result.status = res->status;
++			wake_up(&afe->wait);
++			break;
++		case AFE_CMD_REMOTE_LPASS_CORE_HW_DEVOTE_REQUEST:
++			/* Nobody waits for an unvote; the status is logged above. */
++			break;
+ 		default:
+ 			dev_err(afe->dev, "Unknown cmd 0x%x\n",	res->opcode);
+ 			break;
+@@ -1900,6 +1914,20 @@ static int q6afe_probe(struct apr_device *adev)
+ {
+ 	struct q6afe *afe;
+ 	struct device *dev = &adev->dev;
++	unsigned long start = jiffies;
++
++	/*
++	 * The APR services appear before the DSP's audio services are up.
++	 * A request that arrives in that window is rejected: the LPASS core
++	 * vote a codec macro sends from its probe is refused, and that
++	 * probe fails for the rest of the boot. Wait for the DSP to report
++	 * itself ready before creating the ports and clocks that talk to it.
++	 */
++	if (!q6core_is_adsp_ready())
++		return dev_err_probe(dev, -EPROBE_DEFER,
++				     "DSP audio services not ready\n");
++	dev_info(dev, "DSP audio services ready after %u ms\n",
++		 jiffies_to_msecs(jiffies - start));
+ 
+ 	afe = devm_kzalloc(dev, sizeof(*afe), GFP_KERNEL);
+ 	if (!afe)

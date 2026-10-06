@@ -508,8 +508,12 @@ was running (udev rules + `udevadm trigger` + restarting nftables).
     unbound does it bind it again, up to three times).
     **Kernel fix found on 2026-10-06** (TODO 30, [patch-scan.md](patch-scan.md) item 1):
     Nova-Deck's patches `0893` + `0895` make `q6afe` wait until the DSP reports its audio
-    services up, and answer the vote's error reply; their log is the same as ours. Planned for
-    test image `r14`; the recover service stays as a safety net.
+    services up, and answer the vote's error reply; their log is the same as ours. In test image
+    `r14` (kernel patches 0012-0013) since 2026-10-06; the recover service stays as a safety net.
+    First two boots: sound card present both times, with "DSP audio services ready after 60 ms"
+    (the DSP was not ready at the first query, the case that used to fail) and "after 0 ms".
+    About 1 boot in 5 failed before, so the result is counted over the next boots (boot reports
+    in `/var/log/op8/`) rather than with forced reboots.
 17. **Charging through the controller (pass-through, GameSir X3 Pro):** the phone must be the USB
     host for the controller and receive power through it at the same time. To test with the
     kernel's Type-C/PD stack (`tcpm`, it reports `PD PD_PPS`). Without a charger driver the PMIC
@@ -589,8 +593,12 @@ was running (udev rules + `udevadm trigger` + restarting nftables).
     **Likely cause found on 2026-10-06** (TODO 30, [patch-scan.md](patch-scan.md) item 2): for
     every panel command (each brightness step) our DSI driver re-sets the link clock rate and
     switches the clocks off and on while frames stream, which underflows the DSI FIFO. Nova-Deck's
-    `0420` (seen on an SM8250 handheld) leaves the clocks alone while the display is on. Planned
-    for test image `r14`.
+    `0420` (seen on an SM8250 handheld) leaves the clocks alone while the display is on.
+    **Solved in test image `r14` (kernel patch 0014, 2026-10-06):** the brightness slider moved
+    fast and Steam's auto-dim gave no flicker (maintainer) and no `dsi_err` line, and no
+    brightness write timed out. The last three r13 sessions had 26, 6 and 12 `dsi_err` lines. One
+    `dsi_err_worker: status=4` is still logged once per boot, when gamescope takes over the
+    screen (36-43 s after boot); it is not linked to brightness and shows nothing on screen.
 21. **Refresh rate the user can change (60 / 90 Hz).** Kernel patch 0006 of r9 ran the panel at
     60 Hz by default, with 90 Hz only through the boot option
     `panel_samsung_amb655uv01.refresh=90`. Wanted: switching from Steam (the refresh-rate slider
@@ -738,6 +746,13 @@ was running (udev rules + `udevadm trigger` + restarting nftables).
     share one process group, and stops the whole group (SIGTERM, then SIGKILL after 3 s) when
     Steam ends or the loader restarts. Checked: a restart through `decky-systemctl` leaves no
     process behind and Decky is back in 8 s.
+    Third problem, found on 2026-10-06: every reboot of the phone took 93 s. `op8-decky` sat in
+    Steam's process group; when the phone shut down, the signal that ends that group killed it
+    before it could stop Decky, so the plugins lived on and `steam-gs` waited out its 90 s stop
+    timeout. Its log never had the "Steam session ended" line. `steam-in-container.sh` now
+    starts it with `setsid` and Steam's PID as an argument, and a TERM, HUP or INT that still
+    reaches it stops Decky and its plugins first. Checked: a session restart takes 5 s, and a
+    reboot shuts down in 4 s ("stopped by a signal, Decky and its plugins stopped").
     Plugins in use (read before use, 2026-10-05): CSS Loader 2.1.2 (themes), Game Theme Music
     1.7.1-1 (uses yt-dlp, a Python script, not an x86 program), SteamGridDB 1.7.1, ProtonDB Badges
     1.2.0 (ratings from x86 PCs, a hint only here). Decky LSFG-VK is to be removed (see above).
