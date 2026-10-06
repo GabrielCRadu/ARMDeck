@@ -892,12 +892,26 @@ was running (udev rules + `udevadm trigger` + restarting nftables).
     all CPUs together were 20-24% busy (about 1.7 cores). Next: the same measurement with the
     overlay off, then on another Steam UI page, to find who keeps redrawing (Steam UI animation
     or the overlay); a still screen should let the GPU sleep.
+    **2026-10-06 (r14, 57 min after boot, mostly in the interface):** the GPU spent 92% of the
+    time at its top clock (587 MHz, 2240 of about 2440 s in `trans_stat`), so in menus it heats
+    the phone as in a game; see [performance-scan.md](performance-scan.md) 3.3.
 34. **sched_ext with scx_lavd (lead from Nova-Deck, 2026-10-05).** A CPU scheduler loaded from user
     space, built for games and for big and little cores; Valve's Steam Frame (ARM) ships it with
     `--pinned-slice-us 500 --dd-max-wait-us 0`, and Nova-Deck builds it from Valve's tree. Our
     kernel does not have `CONFIG_SCHED_CLASS_EXT` (it also needs BPF and BTF), so it means a
     kernel rebuild plus the scx tools in the root filesystem. To check: what it gains on the
     SM8250's 1+3+4 cores against the default scheduler, measured in a real game.
+35. **Double the frame rate (asked by the maintainer 2026-10-06).** Module-by-module scan in
+    [performance-scan.md](performance-scan.md). The big losses:
+    - games render at the native 2400x1080 (2.6 million pixels);
+    - the GPU makes no memory bandwidth vote, so the memory follows the idle CPU (kernel r15);
+    - heat: the GPU sits at its top clock even in menus, and the guard cuts it in long sessions;
+    - TSO emulation in FEX for CPU-bound games;
+    - FIFO rounding to 45/30 fps on the 90 Hz panel;
+    - Valve's Proton only (Armada uses Proton CachyOS ARM64 on SM8250).
+
+    Part of the other SM8250 handhelds' lead is a GPU overclock (925 MHz), which stays out. The
+    plan is one test game (Tomb Raider), one change at a time, measured.
 
 Also solved on 2026-10-02, later:
 
