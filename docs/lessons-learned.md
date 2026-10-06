@@ -162,8 +162,14 @@ this page is the short version, so the same mistake is not made twice.
 ## Audio
 
 - **Speakers quiet and earpiece quieter.** The TFA9874 amps are protected by a filter chain with a
-  ceiling (now -18 dB) and the earpiece side lowered 3 dB; going louder needs a proper limiter
-  first. Never test with a raw `aplay` on the host.
+  ceiling and the earpiece side lowered 3 dB. Never test with a raw `aplay` on the host.
+  2026-10-06: an average-power limiter (LSP Compressor Mono, RMS) went into the filter and the
+  ceiling from -18 to -12 dB, with the worst-case average power unchanged. The maintainer still
+  found it much quieter than Android; a capture of what reached the speakers showed why: the
+  video playing came in at -28 to -35 dBFS RMS with peaks at -14 dBFS, far below the limiter,
+  so the source itself was quiet. Lessons: measure the signal before judging a volume step by
+  ear; test a new filter on a null sink (no speakers) with known tones first, and check that it
+  links only there before playing anything.
 - **Bluetooth headphones paired but never connected (solved, 2026-10-05).** bluetoothd
   logged "a2dp-sink profile connect failed: Protocol not available": the PipeWire Bluetooth
   plugin (`pipewire-spa-bluez`) was not installed, so nothing offered the audio profiles. After

@@ -344,7 +344,8 @@ was running (udev rules + `udevadm trigger` + restarting nftables).
    `conf.d/sm8250/OnePlus8.conf` was missing (fixed in the package too), and the TFA9874 amps stay
    silent if the PCM is opened as S24_LE or with mmap (PipeWire forced to S16LE, no mmap). The
    default output (the protected speaker filter: 250 Hz high-pass + clamp) feeds the direct output,
-   whose volume is the ceiling (now -18 dB). The volume buttons: `op8-buttons.py`. See
+   whose volume is the ceiling (-12 dB since 2026-10-06, with an average-power limiter in the
+   filter; `hardware-safety.md` 4.4). The volume buttons: `op8-buttons.py`. See
    `userspace/README.md`.
 6. **DXVK 2.7** in place of DXVK 3 for Proton ARM64, after the pocknix method. (The games tested
    so far, Unity and 2D, ran without it.)

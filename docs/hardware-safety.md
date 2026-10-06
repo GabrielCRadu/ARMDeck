@@ -31,7 +31,7 @@ Terms used often:
 |---|---|---|---|---|
 | 1 | Re-locking the bootloader with modified software on the phone | A phone that no longer boots; only EDL/MSM can fix it | Procedure rule | Never run `fastboot flashing lock` (section 3.4) |
 | 2 | The community PM8150B charger driver (`qcom_pm8150b_charger.c`) | Battery pushed toward ~4.87 V instead of 4.435 V: wear, swelling, fire risk | **Not in our kernel.** The patch that prepared the ground for it was removed | 4.1, the charging test |
-| 3 | Speakers without protection | A speaker (especially the earpiece) burnt at sustained high volume | Configuration bug fixed (patch 0001); protection is still missing, a volume ceiling replaces it | 4.4 |
+| 3 | Speakers without protection | A speaker (especially the earpiece) burnt at sustained high volume | Configuration bug fixed (patch 0001); protection is still missing, a volume ceiling and an average-power limiter replace it | 4.4 |
 | 4 | Camera regulators above the OnePlus voltage, permanently on | Continuous electrical stress on the camera modules | Fixed (patches 0002 and 0005) | 4.6, `regulator_summary` |
 | 5 | Writing to the wrong partitions | From "Android no longer boots" to a lost IMEI | Flash procedures corrected, initramfs checked | 2 and 3 |
 | 6 | Overheating | Throttling, protective shutdown; small risk of damage | Thermal zones present, plus the ARMDeck battery-temperature guard | 4.8 |
@@ -372,6 +372,19 @@ physically, what has been checked, and the precise test to run on the phone.
   5.6 W into 8 Ω (data sheet); at -18 dB a full-scale tone gives at most about 89 mW on the
   bottom speaker and 45 mW on the earpiece, far below what a phone speaker takes. Going higher
   needs an average-power limiter first (a slow RMS compressor in the filter).
+- **Average-power limiter and -12 dB (2026-10-06):** the filter now has an LSP Compressor Mono
+  per channel after the clamp (`pipewire-filter-graph-ladspa`, `lsp-plugins-ladspa`): RMS
+  detection over 250 ms, 500 ms attack, 2 s release, 20:1 above -9.6 dBFS RMS. Measured first
+  on a null sink (no speakers; the test filter played only after its links were checked): a
+  sustained full-scale 1 kHz tone settles at -9.29 dBFS RMS on the bottom channel (-12.29 on
+  the earpiece) within about 2 s, and a -12 dBFS tone passes unchanged. The ceiling then went
+  from -18 to -15 and to -12 dB, each step listened to. Worst-case average power stays what -18
+  dB allowed (-21.3 dB against -21.0 dB: about 89 mW and 45 mW); ordinary sound below the
+  threshold is 6 dB louder, and the first ~0.5-1.5 s of a sustained full-scale signal passes at
+  up to the new ceiling (about 0.35 W on the bottom speaker) before the limiter acts. Going
+  further needs the speakers' real limits: OnePlus does not publish them, and NXP's speaker
+  model for this phone is only in Android's `vendor` partition (`tfa98xx.cnt`, in the
+  2026-10-01 backup's `super.img`), in an undocumented format.
 - **Test:** `dmesg | grep -i tfa` must show two chips with revision `0x0c74`.
 
 ### 4.5 Regulators (PM8150, PM8150L, PM8009 through RPMh)

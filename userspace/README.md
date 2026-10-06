@@ -77,8 +77,9 @@ On the PC: `pc/op8-live.sh [ip]` saves the phone's live log, the samples and a p
 ## Safety rules
 
 - **Sound:** the ceiling is the volume of the direct ALSA output ("DIRECT - do not use"),
-  **-30 dB**, the level at which the speakers (TFA9874, without speaker protection in the
-  mainline driver) were tested clean. It is not raised without a test. Never use `aplay` on the
+  **-12 dB** since 2026-10-06, with the average-power limiter of `50-op8-speakers.conf` (the
+  speakers, TFA9874, have no speaker protection in the mainline driver; steps and measurements
+  in `docs/hardware-safety.md` 4.4). It is not raised without a test. Never use `aplay` on the
   host: there ALSA goes straight to the hardware and bypasses the limiter.
 - **Never `apk upgrade --prune` / `--available`** on the phone (they remove the local packages).
 - **Sleep:** `op8-standby` does not suspend the kernel (s2idle is still being tested). Wake-up:
