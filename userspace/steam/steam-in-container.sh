@@ -72,6 +72,10 @@ export LANG=C.UTF-8
 # the client directory first, as in pocknix
 export LD_LIBRARY_PATH="$CLIENT_DIR:$STEAM/lib/aarch64-linux-gnu"
 
+# Remote Play on the Venus video decoder: builds armdeck-v4l2-fix.so when needed and keeps its
+# wrapper in front of Steam's streaming client, also after a Steam update (op8-remoteplay)
+/home/gabriel/op8-remoteplay
+
 # touch as on a Steam Deck, also without a controller (interface = real touch, games = click)
 /home/gabriel/op8-touchmode &
 

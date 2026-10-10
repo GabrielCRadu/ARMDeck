@@ -1,0 +1,12 @@
+# armdeck: Steam Remote Play on the local network (the phone is the client). The firewall's input
+# policy is drop, so without these rules the PC's replies to discovery and its direct connection
+# never arrive, and every stream goes through Valve's relay (SDR, about 40 ms ping; the logs say
+# "connected via indirect connection", 2026-10-02 and 2026-10-10). Ports from Steam Support's
+# Remote Play page (UDP 27031 and 27036, TCP 27036 and 27037; older Valve lists give UDP
+# 27031-27036), accepted only on WiFi and only from private (LAN) addresses.
+table inet filter {
+	chain input {
+		iifname "wlan*" ip saddr { 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16 } udp dport 27031-27036 accept comment "Steam Remote Play, LAN only"
+		iifname "wlan*" ip saddr { 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16 } tcp dport { 27036, 27037 } accept comment "Steam Remote Play, LAN only"
+	}
+}

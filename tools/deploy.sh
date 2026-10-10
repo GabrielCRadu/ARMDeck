@@ -119,11 +119,14 @@ case "$changed" in *"/.config/systemd/user/"*) systemctl --user daemon-reload ;;
 case "$changed" in *" /etc/udev/rules.d/"*) sudo udevadm control --reload && echo "udev rules reloaded" ;; esac
 case "$changed" in *journald.conf.d*) sudo systemctl restart systemd-journald && echo "journald restarted" ;; esac
 case "$changed" in *" /etc/sysctl.d/"*) sudo systemctl restart systemd-sysctl && echo "sysctl settings applied" ;; esac
+case "$changed" in *" /etc/nftables.d/"*)
+	if sudo nft -c -f /etc/nftables.nft; then sudo systemctl reload nftables && echo "firewall rules reloaded"
+	else echo "FIREWALL RULES REJECTED by nft -c: the old rules stay active"; fi ;; esac
 for s in op8-thermal op8-sampler op8-tune; do
 	case "$changed" in *"/$s "*|*"/$s.service"*|*"/$s") sudo systemctl try-restart "$s.service" && echo "$s restarted" ;; esac
 done
 case "$changed" in *op8-powerbtn*) systemctl --user try-restart op8-powerbtn.service && echo "op8-powerbtn restarted" ;; esac
-case "$changed" in *steam-*|*op8-fpslimit*|*op8-mangoapp*|*op8-touchmode*|*op8-buttons*|*op8-decky*|*MangoHud*|*dbus-send*|*steamos-*)
+case "$changed" in *steam-*|*op8-fpslimit*|*op8-mangoapp*|*op8-touchmode*|*op8-buttons*|*op8-decky*|*op8-remoteplay*|*armdeck-v4l2-fix*|*MangoHud*|*dbus-send*|*steamos-*)
 	echo "The Steam session uses its new files from its next start: systemctl --user restart steam-gs" ;; esac
 case "$changed" in *pipewire*|*wireplumber*)
 	echo "Audio files changed: they apply after a reboot (restarting PipeWire leaves Steam without sound)" ;; esac

@@ -90,6 +90,19 @@ this page is the short version, so the same mistake is not made twice.
 
 ## Steam session
 
+- **Remote Play: two causes behind one crash (2026-10-10, solved 2026-10-11, TODO 11).** First, the firewall:
+  with an input policy of drop, the PC's discovery replies never arrived and every stream went
+  through Valve's relay; the logs said so ("connected via indirect connection") for a week
+  before anyone read that line. Second, the crash itself: the coredump showed a run of 16-byte
+  entries with a growing counter written across the decoder's own fields, which pointed straight
+  at a fixed 16-entry table filled with 18 entries (Venus' minimum). Lessons: read the
+  connection log lines, not only the error; and in a crash inside closed code, dump the memory
+  around the bad pointer, since a pattern there names the writer faster than disassembly.
+  Behind the crash was a third cause, a stall: Venus waits for a source-change handshake the
+  client never does; strace showed it in one look (15 752 `QBUF`s, no `DQBUF`), and the
+  driver source told exactly which calls it waits for. A preload that does those calls for
+  the client fixed it without touching Steam's binary. Lesson: when closed code misuses a
+  kernel API, read the driver's state machine; the fix can sit between the two.
 - **Steam interface never appeared after a reboot (solved).** The phone has no usable real-time
   clock, so Steam started with the date at 1970, its TLS connections failed and its web helper
   stalled. `steam-gs.service` now waits for the first time sync (at most 90 s).

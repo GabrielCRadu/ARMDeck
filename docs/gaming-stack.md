@@ -356,7 +356,9 @@ was running (udev rules + `udevadm trigger` + restarting nftables).
    Armada carry (`0504` + `1062`).
 9. **Performance and crash prevention:** see `performance-crash-audit.md`.
 10. **Steam in English** from the initial registry; it can be changed in the settings.
-11. **Remote Play (streaming from the PC) does not work.** The `streaming_client` crashes at once.
+11. **Remote Play (streaming from the PC): works since 2026-10-11** with Steam's own Stream
+    button and Venus hardware decoding, through `armdeck-v4l2-fix.so` (below). History: the
+    `streaming_client` crashed at once.
     With the Venus decoder visible (`/dev/video14`), it crashes in the V4L2 path
     (`CV4L2Accel::ProcessCompletedOutputBuffers`, written for the Steam Frame's decoder). Without
     Venus it has no decoder at all: `streamclient.cpp (699) : m_pVideoDecoder`, then SIGSEGV at
@@ -387,6 +389,44 @@ was running (udev rules + `udevadm trigger` + restarting nftables).
     - **The proposed alternative:** Moonlight in the container (added as a non-Steam game) +
       Sunshine or Apollo on the PC (NVENC on an RTX 3060). Software decoding (FFmpeg) or Venus
       through `h264_v4l2m2m`. Postponed at the maintainer's request.
+    **Worked on 2026-10-10 (Steam client 1791592380, the maintainer wants Steam's own Stream
+    button):**
+    - The phone's firewall (input policy drop) blocked discovery and the direct connection, so
+      every stream went through Valve's relay. `userspace/system/60_armdeck_remote_play.nft`
+      opens Steam's Remote Play ports on WiFi for LAN addresses only; the client now connects
+      to the PC over direct UDP, authenticates, negotiates and plays the game's sound.
+    - PyroWave (Valve's GPU codec, Steam beta since 2026-09-21) is not a way around V4L2: the
+      ARM64 client has the setting and `--enable-pyrowave`, but no PyroWave decoder (the x86
+      client has `CPyrowaveVulkanAccel` and `libpyrowave-shared.so.1`). With the PC on the beta
+      and the option forced, the PC still offered only H.264.
+    - The OpenGL path (`--opengl`, "V4L2 hardware decoding") crashes at the same address as the
+      Vulkan one: the bug is in the common `CV4L2Accel` code.
+    - **Cause of the crash (from a coredump):** the decoder object keeps the DRM handles of its
+      CAPTURE buffers in a fixed table of 16 entries (offset 456). Venus on SM8250 answers
+      `REQBUFS` 16 with 18 (`output_buffer_count()` in `hfi_plat_bufs_v6.c`, a driver constant
+      for H.264/HEVC), the client creates 18 buffers, and entries 17 and 18 overwrite the
+      OUTPUT buffer list behind the table (pointer at 712, size at 728). A test preload that
+      reports 16 back (`armdeck-v4l2-fix.so`, LD_PRELOAD through a wrapper) removes the crash.
+    - **Next blocker (strace):** the client starts both queues and queues its CAPTURE buffers
+      before the first frame, and never subscribes to V4L2 events. Venus, in its INIT state,
+      ignores that CAPTURE start (`vdec_start_capture()` returns early), sends
+      `V4L2_EVENT_SOURCE_CHANGE` on the first frame and waits for the capture setup
+      (`STREAMOFF`, `REQBUFS`, `STREAMON`). The client hears nothing, times out after about
+      36 ms, restarts both queues, and loops until it sends garbage `QBUF`s (15 752 in one
+      session) and gives up; no `DQBUF` ever happens. Options: a preload that performs that
+      handshake for the client, a Venus kernel change that accepts an already configured
+      CAPTURE queue, or the x86 client (software decoding) through FEX.
+    - **Solved on 2026-10-11 with the preload** (`userspace/steam/armdeck-v4l2-fix.c`, built in
+      the container and put in front of the client by `op8-remoteplay` at every session start,
+      also after a Steam update): it reports 16 CAPTURE buffers, subscribes to the source
+      change for the client, waits for it after the first OUTPUT buffer (it came 53 ms after
+      the start) and does the capture setup with the client's own 16 dmabufs. First session:
+      61 fps, decode 4.7 ms, network 3.5 ms (ping 2.3 ms), display 2.1 ms, about 15 ms per
+      frame; 1.2% slow frames, all from the network (the maintainer saw the same rare stutters
+      with Remote Play on Android). Latency not noticeable, picture very good. One reset in the
+      first second ("decoded frame ID has failed", about 36 dropped frames, a few refused
+      `QBUF`s), then clean.
+    - Next: the same logic in the Venus driver (a kernel test image), so the preload can go.
 12. **Native (x86) Linux games** close in under a second (Half-Life, Hue, LIMBO, Terraria): Steam
     maps them to the `native` tool. Workaround: Proton 11.0 (ARM64) forced in Properties >
     Compatibility (the Windows version). The full solution: FEX + the rootfs at

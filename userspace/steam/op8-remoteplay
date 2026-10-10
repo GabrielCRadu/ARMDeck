@@ -1,0 +1,43 @@
+#!/bin/bash
+# op8-remoteplay (armdeck): keeps Steam Remote Play working on the Venus video decoder.
+# Steam's ARM64 streaming client crashes, then stalls, on Venus without armdeck-v4l2-fix.so (see
+# that file and docs/gaming-stack.md, TODO 11). Run by steam-in-container.sh before Steam
+# starts, inside the steam container (where gcc is):
+#  - builds the preload when its source is newer than the library;
+#  - puts a small wrapper in place of steamrtarm64/streaming_client that starts the real client
+#    (streaming_client.armdeck-real) with the preload, again after a Steam update replaced it.
+# Undo: in steamrtarm64, mv streaming_client.armdeck-real streaming_client.
+# Log: ~/op8-remoteplay.log
+DIR=/home/gabriel/.local/lib/armdeck
+SRC=$DIR/armdeck-v4l2-fix.c
+LIB=$DIR/armdeck-v4l2-fix.so
+SC=/home/gabriel/.local/share/Steam/steamrtarm64/streaming_client
+LOG=/home/gabriel/op8-remoteplay.log
+
+say() { echo "$(date '+%F %T') $*" >> "$LOG"; }
+
+if [ -f "$SRC" ] && { [ ! -f "$LIB" ] || [ "$SRC" -nt "$LIB" ]; }; then
+	if gcc -O2 -Wall -shared -fPIC -pthread -o "$LIB.new" "$SRC" -ldl 2>> "$LOG"; then
+		mv -f "$LIB.new" "$LIB" && say "built $LIB"
+	else
+		rm -f "$LIB.new"
+		say "building $LIB failed"
+	fi
+fi
+[ -f "$LIB" ] && [ -f "$SC" ] || exit 0
+
+WRAPPER="#!/bin/sh
+# armdeck (op8-remoteplay): Steam's ARM64 streaming client with armdeck-v4l2-fix.so
+export LD_PRELOAD=\"$LIB\${LD_PRELOAD:+:\$LD_PRELOAD}\"
+exec \"\$0.armdeck-real\" \"\$@\""
+
+if [ "$(head -c 4 "$SC" | tail -c 3)" = ELF ]; then
+	# first run, or a Steam update wrote a new client over the wrapper
+	mv -f "$SC" "$SC.armdeck-real" || exit 1
+elif [ ! -f "$SC.armdeck-real" ]; then
+	say "$SC is not the client and there is no streaming_client.armdeck-real: left alone"
+	exit 0
+elif [ "$(cat "$SC")" = "$WRAPPER" ]; then
+	exit 0
+fi
+printf '%s\n' "$WRAPPER" > "$SC" && chmod 755 "$SC" && say "wrapper in front of $SC"
