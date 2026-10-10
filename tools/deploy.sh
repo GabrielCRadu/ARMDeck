@@ -118,6 +118,7 @@ case "$changed" in *" /etc/systemd/system/"*) sudo systemctl daemon-reload ;; es
 case "$changed" in *"/.config/systemd/user/"*) systemctl --user daemon-reload ;; esac
 case "$changed" in *" /etc/udev/rules.d/"*) sudo udevadm control --reload && echo "udev rules reloaded" ;; esac
 case "$changed" in *journald.conf.d*) sudo systemctl restart systemd-journald && echo "journald restarted" ;; esac
+case "$changed" in *" /etc/sysctl.d/"*) sudo systemctl restart systemd-sysctl && echo "sysctl settings applied" ;; esac
 for s in op8-thermal op8-sampler op8-tune; do
 	case "$changed" in *"/$s "*|*"/$s.service"*|*"/$s") sudo systemctl try-restart "$s.service" && echo "$s restarted" ;; esac
 done

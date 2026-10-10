@@ -133,6 +133,9 @@ Launch Options. DroidDeck's presets (`FexPreset.kt`):
   FEX_HALFBARRIERTSOENABLED=0 FEX_X87REDUCEDPRECISION=1 FEX_MULTIBLOCK=1`.
 - **Performance + TSO:** the same with `FEX_TSOENABLED=1`, the safer middle step.
 - **.NET (CoreCLR) games:** they need the Stability preset (full TSO, `FEX_MULTIBLOCK=0`).
+  .NET 7 and later also need `DOTNET_EnableWriteXorExecute=0`: their JIT writes code through a
+  second mapping that FEX does not watch, and the game hangs at start (DroidDeck sets it for
+  every game; harmless for the others; patch-scan.md, update of 2026-10-10).
 
 Nova-Deck notes `STEAM_FEX_TSOENABLED=0` as Proton's own switch. Only CPU-bound games gain (high
 CPU use, GPU below its top clock); a GPU-bound game gains nothing. The decky plugin could offer
@@ -185,6 +188,12 @@ The prime core (2.84 GHz) is about 1.2x a big core and 3-4x a little core. Nova-
 or gamescope per game (`cores`, `nice`), SteamOS-ARM-Handhelds raises `uclamp.min` for game
 threads; both are open questions for EAS on this chip. Only for CPU-bound games.
 
+A different scheduler is the larger lead (added 2026-10-10): pocknix runs `scx_lavd`
+(sched_ext, the latency-aware scheduler Valve funded for the Steam Deck) by default on its
+SM8250 handhelds, with Valve's Steam Frame settings. It needs `SCHED_CLASS_EXT` and BTF in the
+kernel (r15 or later) and a `scx_lavd` build; details in patch-scan.md, update of 2026-10-10.
+Measured like the rest: frame times and 1% lows, with and without it.
+
 ### Checked, no major loss
 
 - **Kernel configuration:** no KASAN, lockdep or similar costly debug options. PAC and BTI are not
@@ -206,6 +215,12 @@ battery and temperatures from the sampler:
 
 1. **Baseline on r14:** native resolution, Low preset. During play, one root read of
    `interconnect_summary` to see the memory clock (this tests the 3.2 inference).
+   Prepared on 2026-10-10, not run yet: Tomb Raider still has a frame generation profile
+   (lsfg-vk `armdeck-203160`, 2x), to be switched off in the Decky plugin first; no charger
+   during the run (a warm battery trips the thermal guard). The log needs no session restart:
+   the MangoHud layer in each game already listens on `armdeck-game-<pid>`
+   (`control=` in `steam-in-container.sh`), and `:logging=1;` / `:logging=0;` sent there start
+   and stop a per-frame log plus a summary (average, 1% and 0.1% lows) in the home folder.
 2. **Resolution:** 1600x720, then 1200x540, with FSR (3.1).
 3. **Kernel r15** (memory votes) at the best resolution of step 2 (3.2).
 4. **The X3 cooler** at full power, on a 9 V charger into the X3 (3.3).

@@ -243,3 +243,58 @@ uninitialised pointer in the ROCKNIX copy).
    (TODO 33).
 4. Item 8 after checking whether Steam's colour sliders work here; items 7, 9 and 10 when their
    turn comes.
+
+## Update 2026-10-10: what the sources added since the scan
+
+Read: Nova-Deck `b01512c9f`, pocknix `cdad42add`, Armada `5566136fe`, ROCKNIX `c6ba67096`,
+SteamOS-ARM-Handhelds `4673fa6bf` (and release `v1.3.2-865-beta1`), DroidDeck `c11591696`,
+FEX `FEX-2610`, Proton `proton-11.0-2e`, gamescope `3.16.29...3.16.31`. Our kernel is now `r14`
+(patches 0001-0015).
+
+Worth taking:
+
+1. **sched_ext with `scx_lavd`** (pocknix, enabled by default on their SM8250 handhelds).
+   *sched_ext* lets a CPU scheduler be loaded as a BPF program; `scx_lavd` is the
+   latency-aware, big.LITTLE-aware scheduler Valve funded for the Steam Deck. pocknix runs it
+   with Valve's Steam Frame values: `scx_lavd --autopilot --pinned-slice-us 500
+   --lb-local-dsq-util-pct 0`, with the `schedutil` governor (ours too). Our kernel already has
+   `FTRACE`, `FUNCTION_TRACER`, `DYNAMIC_FTRACE`, `BPF_EVENTS`, `KALLSYMS_ALL` and the BPF JIT;
+   it lacks `SCHED_CLASS_EXT` and `DEBUG_INFO_BTF` (which needs `DEBUG_INFO_REDUCED` off and
+   `pahole` in the build). Alpine has no `scx` package, so `scx_lavd` would be built (Rust +
+   clang) or taken from Fedora. Software only; pocknix publishes no before/after numbers, so it
+   is a lead to measure (performance-scan.md 3.10).
+2. **`DOTNET_EnableWriteXorExecute=0` for games** (DroidDeck `GameEnvironment.kt`). .NET 7 and
+   later write JIT code through a second mapping that FEX does not watch, so FEX keeps running
+   the old translation and the game hangs at start. Harmless for other games. DroidDeck's
+   `DOTNET_GCRegionRange` is not needed here: our kernel has 48-bit virtual addresses.
+3. **GMU interrupt fixes** (Nova-Deck `0250` + `0260`, from Armada `0620`/`0622`, author
+   gennro). The *GMU* is the small controller that powers the GPU up and down. Our 6.16
+   `a6xx_hfi_irq()` clears every bit of `GMU2HOST_INTR_INFO` and the mask is not set before the
+   GMU boots, the same code that loses GMU replies on the Adreno 740 ("Timeout waiting for GMU
+   OOB set GPU_SET"). Not seen here: the `hfi` interrupt count was 0 after 10 minutes at the
+   Steam UI, and no boot report has the messages. Small and preventive; can go with `r15`.
+   Nova-Deck `0255` does not apply (6.16 has no devcoredump wait in that path).
+
+Confirmations and nothing to do:
+
+- pocknix `1066` is Armada `0078`, our `0015` (r14): they measured gamescope pacing about 65 fps
+  at a 60 cap before it.
+- The elapsed-time frame limiter (Nova-Deck gamescope `0025`, pocknix `0010`, Armada `0027`):
+  our patch `9003` hands Steam's frame limit to MangoHud, so gamescope's vblank-divisor gate is
+  not used here.
+- Nova-Deck dropped `irqaffinity=0-3` on SM8250: our command line never had it.
+- gamescope 3.16.31 (Alpine moved to it on 2026-10-07): 15 commits since 3.16.29, for headless
+  sessions, VR and mangoapp on virtual connectors. `build-gamescope-op8.sh` stops on the version
+  change; patches `9001`/`9003` get re-checked at the next rebuild.
+- FEX-2610: disk cache capped at 1 GB with an optional in-memory cache for hot code, AVX-VNNI,
+  faster SSE4.2 string operations. Steam's own FEX here is `FEX-2607-76`; Steam updates it.
+- Proton 11.0-2e: EA App fixes only. Armada now prefers Proton 11 over Experimental, except on
+  SM8250, where its default stays Proton CachyOS 11.0 ARM64 (performance-scan.md step 6).
+- ROCKNIX SM8250: video decoding moved from the `venus` driver to `iris` (firmware
+  `qcom/vpu/vpu20_p4.mbn`, Linux 7.2), and `TYPEC_MUX_GPIO_SBU` built in for the boot splash.
+  Not for 6.16.
+- SteamOS-ARM-Handhelds `v1.3.2-865-beta1`: the first SteamOS ARM image for SM8250 handhelds,
+  not yet run on hardware by its author, and it needs the ROCKNIX ABL (excluded here). Worth
+  watching for results.
+- Nova-Deck SM8550 CPU quirk, Armada SM8650 sleep fixes, DroidDeck's Android-side changes and
+  the new pads in gamesir-linux-tools: nothing for the OnePlus 8.

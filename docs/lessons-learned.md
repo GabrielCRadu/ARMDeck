@@ -250,6 +250,20 @@ this page is the short version, so the same mistake is not made twice.
   DSP. We found it only through the systematic patch scan (docs/patch-scan.md), after working
   out the cause ourselves from 49 boot reports. Lesson: before working an open problem from scratch, search the
   related projects' patch notes for its exact log lines.
+- **"Impedance detect ramp error" on the screen at boot (2026-10-10).** The phone has no 3.5 mm
+  jack, but the device tree (the file that describes the hardware to the kernel) gives the WCD9380
+  codec its headset detection (MBHC) with no USB-C audio switch, so the codec reads the
+  unconnected detect pin as "headset plugged in" once when audio starts, tries to measure the
+  headphone impedance, reads zeros and logs the error. Checked on the phone: one detection
+  interrupt, not a loop; "Headphone Jack" and "Mic Jack" read "on", but the UCM profile (the ALSA
+  description of the sound card) has only the speakers and the built-in mic, so output stays on
+  the speakers; after detection the driver turns the mic bias off again (only the button-detect
+  current source, microamps, stays on). Harmless. Earlier boot reports had up to 59 `wcd938x`
+  lines per boot, and the boot report hid them as "a known problem" without anyone writing down
+  why. It reached the screen because `quiet` still prints errors on the console;
+  `20-armdeck-quiet-console.conf` (sysctl `kernel.printk = 3 4 1 7`) keeps everything below
+  "critical" off the screen and in the logs. Lesson: a message hidden as "known" needs its
+  cause written down, or the next person to see it starts from zero.
 
 ## Tools and workflow
 

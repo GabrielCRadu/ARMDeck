@@ -20,6 +20,7 @@ host-root  system/op8-thermal.service             /etc/systemd/system/op8-therma
 host-root  system/armdeck-usb-gadget-off          /usr/local/bin/armdeck-usb-gadget-off                                         0755
 host-root  system/armdeck-usb-gadget-off.service  /etc/systemd/system/armdeck-usb-gadget-off.service                            0644
 host-root  system/armdeck-boot-rw                 /etc/apk/commit_hooks.d/armdeck-boot-rw                                       0755
+host-root  system/20-armdeck-quiet-console.conf  /etc/sysctl.d/20-armdeck-quiet-console.conf                                    0644
 host-root  audio/armdeck-audio-recover           /usr/local/bin/armdeck-audio-recover                                          0755
 host-root  audio/armdeck-audio-recover.service   /etc/systemd/system/armdeck-audio-recover.service                             0644
 host-root  power/op8-standby                      /usr/local/bin/op8-standby                                                    0755
