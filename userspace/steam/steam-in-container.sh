@@ -33,6 +33,12 @@ export STEAM_GAMESCOPE_HDR_SUPPORTED=0
 #export PROTON_LOG=1
 export PROTON_LOG_DIR=/home/gabriel/proton-logs
 
+# .NET 7 and later (games and launchers) write their JIT code through a second mapping of the same
+# memory (W^X). FEX, which runs the x86 code, does not watch that mapping, keeps running the old
+# translation, and the game hangs at start. Off for every game, as DroidDeck does
+# (GameEnvironment.kt); harmless for games without .NET. Wine passes it on to the game.
+export DOTNET_EnableWriteXorExecute=0
+
 # Remote Play diagnosis: full SDL3 log (the streaming client uses SDL3 for video, audio and
 # rendering). Off by default: it makes the log large and costs CPU time in the client. Uncomment
 # only while debugging streaming.
