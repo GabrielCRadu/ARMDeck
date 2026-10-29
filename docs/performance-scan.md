@@ -109,6 +109,41 @@ What to do:
 `patch-scan.md` item 4. The vendor values for our speed bin: 587 MHz votes 8368000 kBps (DDR
 2092 MHz), 525-441.6 MHz 6220000, 400 MHz 4068000, 305 MHz 1804000. First measure the memory
 clock during a GPU-bound game on r14, then compare r15 in the same scene.
+Built on 2026-10-27 as kernel patch `0022` (test image `r17`; `r17a` is the same kernel without
+it). Compare `r17a` and `r17` in the same scene; also watch the Steam interface, where the GPU
+sits at 587 MHz most of the time (TODO 33) and would now hold the memory at 2092 MHz.
+
+Measured 2026-10-29 with Tomb Raider (2013), built-in benchmark, three runs in a row per kernel,
+each round started cool (battery 29 °C), no cooler, no cable, no frame limit:
+
+| | benchmark average, runs 1 / 2 / 3 | power at the hot plateau (CPU 89-90 °C) |
+|---|---|---|
+| `r17a` (no GPU votes) | (run 1 spoiled by a 30 fps limit) / 59.6 / 58.6 | about 8.3 W |
+| `r17` (`0022`) | 60.9 / 60.4 / 59.4 | about 8.4 W |
+
+About 1-1.5% more frames for the same power, which is the size of the run-to-run spread: no
+loss, a small gain at most. This game is not limited by memory bandwidth: GPU at 587 MHz and the
+prime core at 2.84 GHz in both rounds, and both rounds reach CPU 90 °C and GPU 84 °C within 3-4
+minutes, after which the kernel's own thermal limits lower the prime core to about 2.4 GHz and
+the GPU to 540-575 MHz. The vote reaches the memory controller: during a fourth, hot run
+`sudo grep -B3 3d00000.gpu /sys/kernel/debug/interconnect/interconnect_summary` showed the GPU's
+request (tag 7, always) at 6220000 kBps peak on `ebi`, the level of its 441.6-525 MHz steps; at
+rest it is 0, because the GPU drops its vote when it powers down. The Steam interface at rest,
+same test as for `r17a` (screen on, no cable, not touched; compared in watts, because the
+battery was at 93% for `r17a` and 50% for `r17`):
+
+| | full brightness | dimmed by Steam | standby |
+|---|---|---|---|
+| `r17a` | 1.63 W (395 mA at 4.13 V) | 1.24 W (299 mA) | 1.05 W (256 mA) |
+| `r17` | 1.66 W (437 mA at 3.79 V) | 1.23 W (325 mA) | 1.01 W (266 mA) |
+
+The same within the noise: the GPU votes cost nothing at rest. (Steam put the phone in standby
+by itself after 10 minutes without input, its own battery setting.) `0019`-`0022` stay; `r17` is
+the kernel from 2026-10-29.
+
+The benchmark's numbers are frames the game renders. MangoHud showed about 30-40 FPS in the
+same runs, and the picture did not look like 60: most likely a third or more of the rendered
+frames never reach the screen (see 3.7, the compositor's share of the GPU).
 
 ### 3.3 Heat (sustained clocks)
 
@@ -169,6 +204,28 @@ refuses UBWC for storage images, so gamescope's compute composite writes an unco
 full-screen image each frame. Nova-Deck's `0019` (fragment-shader composite, ported to 3.16.29)
 keeps it compressed and makes the rotation free on a tiled GPU. Later: the SDE rotator
 (`patch-scan.md` item 7) for no composition at all in full-screen games.
+
+**The blank overlay layer (found 2026-10-27, from Nova-Deck's `0037`).** While the Steam overlay
+is hidden, gamescope 3.16.29 composites a transparent full-screen texture in its place on every
+frame (`steamcompmgr.cpp` `paint_all`, `vulkan_get_hacky_blank_texture()`, up to 1920x1080), so
+that showing the overlay does not stutter. Here every frame is composited anyway, so in a game
+the composite runs over two layers instead of one: one more texture read and blend for each of
+the 2.6 million output pixels. Patch `9004` (`userspace/steam/gamescope/`) adds the ConVar
+`paint_blank_overlay_plane`; `ARMDECK_NO_BLANK_OVERLAY=1` turns the layer off by default.
+Measure before using it: in a game with MangoHud showing GPU load and frame time,
+`gamescopectl paint_blank_overlay_plane 0`, then `1`, a minute each (on today's binary,
+`paint_steam_overlay_plane 0` gives the same comparison but also hides the Steam overlay). The
+cost Nova-Deck reports (half the frame rate) came from planes on their SDE rotator path; ours
+should be much smaller, so it may or may not be worth it.
+
+**The fragment composite (built 2026-10-27).** Patch `9005` is Nova-Deck's `0019` on our stack:
+with `GAMESCOPE_COMPOSITE_GRAPHICS=1` the output is drawn by a fragment shader, stays compressed
+(UBWC) and is rotated for free on the tiled GPU. It is read at start only, so the A/B is two
+session starts: `systemctl --user set-environment GAMESCOPE_COMPOSITE_GRAPHICS=1`, restart
+`steam-gs`, measure; `systemctl --user unset-environment GAMESCOPE_COMPOSITE_GRAPHICS`, restart,
+measure. Measure at the idle Steam interface (GPU load and clock, TODO 33) and in a game (frame
+time, GPU load), and check the log for "falling back to compute compositing". Only if it wins
+does it go into `steam-gamescope.sh`.
 
 ### 3.8 GPU ACD
 

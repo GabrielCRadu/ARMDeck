@@ -426,7 +426,29 @@ was running (udev rules + `udevadm trigger` + restarting nftables).
       with Remote Play on Android). Latency not noticeable, picture very good. One reset in the
       first second ("decoded frame ID has failed", about 36 dropped frames, a few refused
       `QBUF`s), then clean.
-    - Next: the same logic in the Venus driver (a kernel test image), so the preload can go.
+    - **Kernel side (2026-10-11), test image r15:** patches 0016-0017 move the preload's logic
+      into the Venus driver. 0016: for a client that started CAPTURE early and does not listen
+      for the source change, the decoder does the capture setup itself when the stream kept
+      the client's CAPTURE format and the client's buffers fit (V4L2 Capture Setup, step 6;
+      Qualcomm's msm_vidc does the same on a "sufficient" sequence change); CAPTURE buffers
+      queued before the setup no longer reach the firmware early. 0017: CAPTURE asks for 16
+      buffers instead of 18 in split mode (the DPB lives in separate driver buffers; the
+      vendor asks for 8 + at most 6). Clients that listen for the source change, the preload
+      among them, see no change. Compile-tested; not yet on hardware.
+    - On the phone since 2026-10-27 with test image r16 (r15 + the battery patch 0018): the r16
+      package's modules, Venus included, are installed, so no module swap is needed any more.
+      r15 changes only the three Venus modules (`venus-core.ko`, `venus-dec.ko`,
+      `venus-enc.ko`; all three, since `struct venus_inst` changed).
+    - Test plan (r16): first with the preload as it is (Remote Play must work as before),
+      then without it: after Steam starts, in the container,
+      `mv ~/.local/share/Steam/steamrtarm64/streaming_client.armdeck-real ~/.local/share/Steam/steamrtarm64/streaming_client`
+      (`op8-remoteplay` puts the wrapper back at the next Steam start), stream a game, and
+      `sudo dmesg | grep "dec:"` on the host must show "capture setup by the decoder". To
+      watch: the preload held the client inside its first `QBUF` until the source change came
+      (53 ms); the kernel does not, so the client's own 36 ms timer may fire first and restart
+      both queues once at the start. 0016 keeps its decision across that restart (the next
+      CAPTURE `STREAMON` does the setup), but the first picture may come a little later.
+    - Once r16 works without the preload: `op8-remoteplay` and `armdeck-v4l2-fix.c` go.
 12. **Native (x86) Linux games** close in under a second (Half-Life, Hue, LIMBO, Terraria): Steam
     maps them to the `native` tool. Workaround: Proton 11.0 (ARM64) forced in Properties >
     Compatibility (the Windows version). The full solution: FEX + the rootfs at
@@ -952,6 +974,29 @@ was running (udev rules + `udevadm trigger` + restarting nftables).
 
     Part of the other SM8250 handhelds' lead is a GPU overclock (925 MHz), which stays out. The
     plan is one test game (Tomb Raider), one change at a time, measured.
+36. **The game counts 60 fps, MangoHud about 35 (asked by the maintainer 2026-10-29).** In
+    Tomb Raider's built-in benchmark the game reports 59-61 fps on average, while MangoHud
+    shows about 30-40 and the picture does not look like 60. The game counts the frames it
+    renders; MangoHud, fed by gamescope, most likely the frames that reach the screen. If so, a
+    third or more of the rendered frames are thrown away: GPU work and battery for nothing. To
+    find out, one at a time:
+    - which frame time our `mangoapp` shows (gamescope sends both the app's and the visible
+      frame time, and our build swaps their order, see "The performance overlay" below); show
+      both;
+    - whether the game presents without vsync: patch 9003 no longer switches clients to FIFO,
+      so a faster game replaces frames before gamescope shows them;
+    - the compositor's own GPU time (every frame is rotated on the GPU): gamescope 9004 and 9005,
+      built and waiting for their A/B test;
+    - the 90 Hz panel: FIFO there rounds to 45 or 30 fps (item 35);
+    - a frame limit at 40 or 45 fps: if MangoHud then matches the game, the extra frames were
+      only wasted work.
+37. **The USB controller holds the memory awake (found 2026-10-29).** With no cable in, the
+    panel off and the apps frozen, `a6f8800.usb` (dwc3) is runtime "active" and votes 1000000
+    kBps average, 2500000 peak, on the DDR path, with tag 0 (kept in the sleep set too): the
+    largest memory vote left at rest, more than the CPUs'. A real suspend switches it off
+    (dwc3-qcom drops its votes), but `op8-standby` and every idle minute with the screen on pay
+    for it. To find out: why dwc3 never runtime-suspends without a cable (gadget mode,
+    `armdeck-usb-gadget-off`, role switch), and what the vendor kernel does there.
 
 Also solved on 2026-10-02, later:
 
@@ -997,7 +1042,8 @@ Also solved on 2026-10-02, later:
   installing; `steam-gamescope.sh` uses it when present. Checked: Steam asks for 1920x1080 five
   times at start, then stops (no loop), and for Tiny Rails the log shows "Using maximum game
   resolution: screen resolution: 2400x1080". Limits: a resolution chosen per game in Steam is
-  ignored. To do: an apk package, rebuilt at every gamescope update.
+  ignored. To do: an apk package, rebuilt at every gamescope update. Games that still show bars
+  (16:9-only games, zoomed Unreal games): [widescreen.md](widescreen.md).
 - **Charging in sleep:** in standby the phone no longer answers over WiFi (ping and SSH), so
   remote checks need the phone awake or on the cable.
 - **The first 3D game:** Slime Rancher (Unity, Proton 11 ARM64) works, started in "safe" mode

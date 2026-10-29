@@ -298,3 +298,48 @@ Confirmations and nothing to do:
   watching for results.
 - Nova-Deck SM8550 CPU quirk, Armada SM8650 sleep fixes, DroidDeck's Android-side changes and
   the new pads in gamesir-linux-tools: nothing for the OnePlus 8.
+
+## Update 2026-10-27: what the sources added, and what was taken
+
+Read at the source check of 2026-10-27 and after it: SteamOS-ARM-Handhelds `f60f42f28`, Armada
+`cb3a439e6`, Nova-Deck `os-build` (patches `0019`, `0037`, `0250`, `0260`), ROCKNIX, pmaports.
+On the phone: kernel `r16` (patches 0001-0018).
+
+Taken (prepared on 2026-10-27, not yet on hardware):
+
+1. **CPU memory votes active-only** (gennro; SteamOS-ARM-Handhelds `0016`, Armada `0568`, which
+   reports about 25% less sleep power on SM8250). Kernel patch `0019`, test image `r17`. It also
+   works without real suspend here (lessons-learned.md, "A sleep fix ruled out by its title").
+2. **GMU interrupt fixes** (Nova-Deck `0250` + `0260`, item 3 of the 2026-10-10 update). Patches
+   `0020`-`0021`, `r17`.
+3. **GPU memory bandwidth votes** (tier 1 item 4 above, the vendor values; the bandwidth part of
+   ROCKNIX `9998`). Patch `0022`, `r17`; image `r17a` is the same kernel without it, for the
+   comparison.
+4. **gamescope `9004`**, no blank layer behind the hidden Steam overlay (Nova-Deck `0037`).
+5. **gamescope `9005`**, the fragment-shader composite (Nova-Deck `0019`, tier 2 item 6),
+   opt-in with `GAMESCOPE_COMPOSITE_GRAPHICS=1`; four hunks adapted by hand to our stack.
+6. **`DOTNET_EnableWriteXorExecute=0`** for every game (item 2 of the 2026-10-10 update), in
+   `steam-in-container.sh`.
+
+Not taken now, and why:
+
+- **GPU ACD** (tier 2 item 5): alone, after `0022` is measured.
+- **Armada's power profiles** (`power-profiles.conf`): Eco caps the cores at 1.71 / 1.48 / 1.86
+  GHz (little / big / prime) and the GPU at 80%, Balanced at 1.80 / 1.86 / 2.07 GHz, both with the
+  `conservative` governor. Below the factory maximum, so the safe direction, and a real battery
+  lever in light games. Needs a switch (the Decky plugin) and per-game memory: a task of its own.
+- **sched_ext with `scx_lavd`** (2026-10-10 item 1): needs BTF in the kernel and a build of
+  `scx_lavd`; a task of its own, to measure.
+- **gamescope 3.17.0** (Alpine and Armada moved to it on 2026-10-25): rebasing `9001`-`9005`,
+  after `9004`/`9005` are measured on 3.16.29.
+- **ROCKNIX's dwc3 fix** (a crash in suspend when the USB controller had not started): only on
+  real suspend, which ARMDeck does not use (`op8-standby`).
+- **Armada `9999`** (CoreSight STM, a debug trace block, disabled): our `sm8250.dtsi` has no STM
+  node.
+- **Armada's command-mode panel refresh calibration** (`4b8294632`, 2026-10-25): a lead for
+  TODO 21 (60 Hz), to read when that TODO comes up.
+- **DroidDeck's Remote Play** goes through Android's video decoder; ours is Venus (`0016`-`0017`).
+- **pmaports**: the SM8250 kernel at 7.2 and the new OnePlus 8T (`kebab`) port, now in
+  sources.md; a newer kernel base is a project of its own.
+- **New versions**, no urgency: Mesa 26.2.5 (the Steam container gets it from Fedora), PipeWire
+  1.6.10, GE-Proton 11-11, Podman 6.1.4.

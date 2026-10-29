@@ -37,6 +37,14 @@ this page is the short version, so the same mistake is not made twice.
   from the mode clock, so the 60 Hz mode ran the link at 348 Mbps, far below the 652.8 Mbps the
   vendor always uses. Lesson: for command-mode DSI panels, keep the link at the vendor's rate and
   change refresh through the panel's own commands.
+- **A bandwidth without its path breaks the whole GPU frequency table (2026-10-27, avoided).**
+  The comparison image `r17a` (r17 without the GPU's memory votes) was made by deleting
+  properties from the r17 device tree. Deleting only the GPU's `interconnects` would have left
+  an `opp-peak-kBps` in every GPU frequency entry; the OPP core then rejects each entry
+  ("Mismatch between opp-peak-kBps and paths", `_read_bw()` in `drivers/opp/of.c`) and the GPU
+  would have had no frequencies. Both go together; `r17/mkimg.sh` also checks the DTB difference
+  line by line against what is expected. Lesson: read how the kernel parses a property before
+  removing half of a pair.
 
 ## Display and performance
 
@@ -103,6 +111,15 @@ this page is the short version, so the same mistake is not made twice.
   driver source told exactly which calls it waits for. A preload that does those calls for
   the client fixed it without touching Steam's binary. Lesson: when closed code misuses a
   kernel API, read the driver's state machine; the fix can sit between the two.
+  Moving that fix into the driver (patches 0016-0017, 2026-10-11) taught two more things.
+  First, read the API's own spec before inventing a rule: V4L2's decoder spec already lets a
+  client resume with buffers that fit (Capture Setup, step 6), Venus just never implemented
+  it, and Qualcomm's own driver for this phone does the same on a "sufficient" event; spec
+  plus vendor driver is the justification, not "it worked in the preload". Second, a
+  userspace fix can block the client inside an ioctl and the kernel cannot: the preload held
+  the client for 53 ms in its first `QBUF`, while in the driver the client's own 36 ms timer
+  keeps running. A driver-side version has to survive the client restarting its queues in
+  the middle (the decision is now kept across a `STREAMOFF`/`STREAMON`).
 - **Steam interface never appeared after a reboot (solved).** The phone has no usable real-time
   clock, so Steam started with the date at 1970, its TLS connections failed and its web helper
   stalled. `steam-gs.service` now waits for the first time sync (at most 90 s).
@@ -148,7 +165,11 @@ this page is the short version, so the same mistake is not made twice.
   state across re-seats; power-cycle it before suspecting the phone.
 - **The battery ran flat during a long PC session (2026-10-06).** The phone stayed in the Steam
   interface while the work happened on the PC, and it shut down at 0% (the gauge's 0%, 3.56 V
-  after shutdown, is still above the cell's own cut-off). On the PC's USB port it then charged
+  after shutdown, is still above the cell's own cut-off). **Corrected 2026-10-27:** it did not
+  shut down. The sampler log shows it kept running at the gauge's 0% for 25 minutes below
+  3.25 V and died when the battery cut out at 2.65 V; the 3.56 V was the cell recovering
+  afterwards. Nothing on the system turned the phone off on a low battery (now `op8-lowbatt`, see
+  below). On the PC's USB port it then charged
   at only ~0.66 A, about 3.3 W, little more than the idle Steam session uses (TODO 33); on a
   45 W charger (PD 5 V / 3 A, patch 0004) the battery got 0.76 A at 0%, the PMIC's default limit
   without a charger driver. Lessons: keep the phone on a wall charger during long sessions,
@@ -159,6 +180,55 @@ this page is the short version, so the same mistake is not made twice.
   percentage lost track. The battery itself was fine; the number is only to be trusted again
   after a full charge, and until then the phone stays on the charger (a low percentage on
   battery can trigger the system's low-battery power-off).
+  **It came back, worse (2026-10-27, open).** The gauge said 1-3% while charging at 4.1-4.2 V
+  (about 4.1 V resting, so most of the charge is there), with `charge_now` 2485 mAh above
+  `charge_full` 1234 mAh. The sampler log (`/var/log/op8/sample-*.csv`) shows how it got there:
+  in a game the battery gave 3.6-3.8 A and sagged to 3.32 V, below the 3.4 V terminate voltage
+  the driver writes from the device tree, and within 20 s the gauge jumped from 48% to 0%; since
+  then it counts up from that 0. Its learned full capacity fell from 3056 mAh (2026-10-01) to
+  1234 mAh in four weeks, too fast for real wear, so the gauge's learning is suspect as well. The
+  sag itself is real: about 0.18 ohm (435 mV over 2.44 A), a worn cell. OnePlus' driver for this
+  board (LineageOS `drivers/power/oplus/gauge_ic/oplus_bq27541.c`, DT `vendor/19821/kona-mtp.dtsi`
+  with `qcom,modify-soc-smooth`) rewrites three gauge settings at every boot and at shutdown
+  (Op Config B, CC dead band, DOD at EOC) and resets the gauge at shutdown when it is at 0% below
+  3.3 V; mainline does none of this. The OnePlus 8 Pro (19811) has a different cell and its own
+  DT: never take values from it. Lessons: the sampler log is the first place to look for battery
+  questions; and a percentage that jumps to 0 under load is the gauge reacting to voltage sag,
+  not a battery that is empty.
+  Read straight from the gauge the same day (`i2cget -f -y 16 0x55 <reg> w`, standard commands
+  only, all readable while sealed per TI SLUUAS7B), at 4.18 V while charging: StateOfCharge 15%
+  (what the driver and Steam show), StateOfChargeUnfiltered 62%, NominalAvailable / FullAvailable
+  2650 / 3155 mAh (84%, no load), FullChargeCapacityUnfiltered 1317 mAh, StateOfHealth 69%,
+  Flags 0x0188 (CHG, OCVTAKEN, BAT_DET; no ITPOR, so the configuration is intact). So the cell
+  holds about 3.1 Ah; the gauge expects to deliver only 1.3 Ah of it before 3.4 V at the load it
+  assumes; and the shown 15% is the smoothing filter (Op Config B [SMOOTHEN], on by TI default
+  and on OnePlus), which after the forced 0% "is not allowed to jump" and only climbs slowly back
+  to the real value, converging at full charge. Three things to fix: the terminate voltage
+  (3.4 V from the Xo666 DT, while OnePlus powers off at 3.25 V, `vbatt_power_off`), what the
+  driver reports, and a clean power-off at low voltage (`sample-0060` ends in NUL bytes: the
+  phone lost power without a shutdown).
+  **Deep discharges (2026-10-27, fixed with `op8-lowbatt`).** The minimum voltage of every
+  sampler log since 2026-10-03: two runs went to 2.65 V (2026-10-06 and 2026-10-12, idle in
+  Steam at about 0.38 A, 20-25 minutes below 3.25 V and 7-11 minutes below 3.0 V), both ending in
+  a power cut. Short dips under load are normal (2.95 V for one sample at 2.4 A, 3.09 V and
+  3.17 V for two samples) and come back within seconds. `userspace/system/op8-lowbatt` now powers
+  off cleanly when the battery stays below 3.25 V for 15 s while discharging: OnePlus' rule for
+  this phone (`oplus_charger.c`: the gauge's 0% is held at 1% while the battery is above
+  `vbatt_power_off`, 3250 mV in `vendor/19821/kona-mtp.dtsi`; below it the level runs down 1%
+  every 15 s to the power-off). Lesson: a protection the phone had on Android is not there on
+  mainline unless someone adds it; list what the vendor's charger code does, not only its
+  drivers.
+  **"Stuck at 96%" on the charger (2026-10-27, r16, not a fault).** The PMIC had ended the
+  charge by itself: charger state TERMINATE (`0x1006 = 0x45`, OnePlus `smb5-reg.h`), float
+  4.37 V (`0x1070 = 0x4d`), recharge only below 4.20 V (VBAT-based, `0x1051 = 0x2c`; threshold
+  `0x107e/0x107f = 0x544a`, x 194.637 uV = 4200 mV). The current went from about 0.6 A straight
+  to 0 at 4.35 V, with no taper, so the gauge never saw its own end-of-charge condition and
+  never reached 100%; resting at 4.26 V the cell holds about 90%. These are the bootloader's
+  settings (same values as on 2026-10-01; no charger driver touches them). OnePlus instead
+  charges to 4.435 V, ends at 220 mA (`qcom,iterm_ma`) and recharges 100 mV below float. Not
+  changed: PMIC charging values stay hands-off (hardware-safety.md 4.1), and a lower full point
+  is easier on a worn cell. What 0x1007 = 0x28 means on the PM8150B is not documented in the
+  vendor header and was not guessed.
 - **PD chargers could ask for 9 V (solved, patch 0004).** The device tree allowed sink PDOs up to
   12 V, while this phone never used PD above 5 V on Android. Now 5 V only.
 - **Cameras and modem drew power while unused (solved, patch 0005).** Every camera supply had to be
@@ -171,6 +241,99 @@ this page is the short version, so the same mistake is not made twice.
 - **Leftover debugging costs (solved).** `op8-top`, a `sync` every 2 s in the sampler, journald
   syncing every 2 s, SDL verbose logging, and real-time tasks forcing the CPU to its top clock
   (`sched_util_clamp_min_rt_default` now 0, no audio crackles).
+- **A sleep fix ruled out by its title (2026-10-27, patch 0019, to measure).** The source check
+  of 2026-10-27 found gennro's fix (SteamOS-ARM-Handhelds, Armada `0568`): the CPUs' memory
+  (DDR) votes stayed in the "sleep set", the votes the power controller applies while the
+  processors are powered down, so the RAM never reached self-refresh. It was parked as "only for
+  real suspend (s2idle)", which ARMDeck does not use. Wrong: in our `sm8250.dtsi` the controller
+  that applies those votes (`apps_rsc`) sits in the CPU cluster's power domain (`cluster_pd`,
+  idle state `cluster_sleep_0`, about 10 ms minimum), so the sleep set is used every time all
+  eight cores idle long enough: in `op8-standby` and in quiet moments with the screen on. Armada
+  reports about 25% less sleep power on SM8250. Lesson: check where a fix's mechanism triggers in
+  our own device tree before ruling it out by its title. Baseline before the test, kernel r16,
+  2026-10-27 evening (Steam menu idle, USB unplugged, WiFi on, battery current from the sampler,
+  steady minutes only): screen on about 380 mA (about 1.55 W at 4.06 V), screen off about
+  255 mA (about 1.05 W at 4.07-4.11 V, 16 minutes before plus 6 minutes in the test). Test image
+  `r17a` (0019-0021 without 0022), 2026-10-29, measured the same way: screen on about 395 mA at
+  full brightness and about 300 mA once Steam dims the idle screen (both as on r16), screen off
+  about 256 mA, so no measurable gain. Why: every core still enters idle about 260 times a
+  second (`cpuidle` usage counters over 30 s, read right after the test with the cable back in),
+  so a typical idle period is about 3 ms, shorter than the 10 ms the cluster needs before it
+  powers down and the sleep set is used. Over the same 30 s the CPUs got about 500 "function
+  call" interrupts a second (one CPU asking the others to run something; almost all of them, the
+  trace showed, are wake-ups of a task on another core) and about 830 timer interrupts. A 10 s
+  kernel trace with the screen off and the cable out (`wake-trace.sh`: trace events for
+  interrupts, timers and woken tasks) found about 690 task wake-ups a second, more than half of
+  them PipeWire's audio threads running a 94 Hz cycle although nothing was playing. Lesson:
+  before measuring a sleep-state fix, check that the system reaches that sleep state at all, and
+  note the screen and cable state of every reading. 0019 stays (it is correct and costs nothing);
+  the wake-ups are the open problem.
+
+- **Standby kept the audio path and the panel running (2026-10-29, solved).** "Screen off" in the tests above
+  is `op8-standby`: the power button makes Steam ask for sleep, the script sets the brightness
+  to 0 and freezes Steam, gamescope and the game, while PipeWire keeps running. A logger
+  (`audio-wake.sh`, every 2 s: open ALSA streams, PipeWire wake-ups, interrupts, battery
+  current) showed an ALSA playback stream opening at the moment of the press and staying open
+  for the whole 207 s of standby, PipeWire's audio thread running at 94 Hz: Steam starts a
+  sound as it asks for sleep and is frozen in the middle of it, so its stream never stops and
+  the audio DSP, codec and amplifiers keep working. After the wake-up Steam finished the sound
+  and the device closed by itself within a minute. The logger itself, started with
+  `systemd-run --user`, sat in the frozen `app.slice` and wrote nothing during standby (one
+  line covering the 210 s at the end); a measurement during standby must run as a system
+  service. Suspending the device from outside (`pactl suspend-sink`) would not hold while a
+  stream is linked; PipeWire's own `pulse.idle.timeout` pauses a client's stream after N
+  seconds without data and plays it again when data comes (`audio/50-op8-pulse-idle.conf`, 5 s,
+  the value PipeWire's own configuration uses for speech-dispatcher). The second half of the
+  loss was the panel: `op8-standby` only set the brightness to 0, so the display controller
+  kept reading the picture from memory (about 3.8 GB/s of DDR votes with the GPU asleep) and the
+  panel stayed powered; the sleep-stage test of 2026-10-03 (`op8-power-test`) had already
+  measured 275 -> 179 mA for "panel off through gamescope", and that step had never been
+  added to `op8-standby`. Now it switches the panel off with `gamescopectl
+  drm_sleep_internal_screen 1` before freezing, and back on after the CPU limits and the apps.
+  Result over 25 minutes of standby on r17: 160 mA (0.60 W at 3.75 V) against 256-266 mA
+  (1.01-1.05 W) before, 0 running ALSA streams 20 s after freezing, the panel back at wake-up.
+  With about 2500 mAh usable that is about 15 hours of standby, against 9-10 before. One
+  slip: the brightness written right after `drm_sleep_internal_screen 0` failed with "Invalid
+  argument" (gamescope switches the panel on asynchronously; Steam set its own brightness a
+  moment later); the script now waits for the panel to report On first (checked the same day:
+  "leaving standby: panel On", no error). Lesson: when an old
+  measurement already shows a big saving, check that it went into the product.
+
+- **Real suspend works, but the SoC never reaches its deep sleep (2026-10-29, open).**
+  `op8-s2idle-test 300` on r17 (panel off, apps frozen, `echo freeze > /sys/power/state`, RTC
+  wake-up): suspended 302 s, woke by itself, average 107 mA from the battery charge (9 mAh, so
+  about +-11%), against 160 mA for the fixed `op8-standby`. The power button is a wake-up source
+  (`pm8941_pwrkey`, `power/wakeup` enabled). But `qcom_stats` `aosd`, `cxsd` and `ddr` stayed at
+  0: no AOSS sleep, no CX rail collapse, no DDR self-refresh. The test now also saves what is
+  still on just before and after the suspend (`.before`/`.after`). Three holders found in the
+  power domain summary:
+  - `cx` at level 48 (low SVS) held by `a90000.serial`, the debug UART used as the kernel
+    console (runtime PM "unsupported"); nobody uses it on a closed phone;
+  - `mmcx` at level 64 held by `ad00000.clock-controller`, the camera clock controller, also
+    without runtime PM, although the cameras are off (patch 0005);
+  - `pcie_0_gdsc` on, `1c00000.pcie` and the WiFi chip (`17cb:1101`, ath11k) active in D0: with a
+    device on the link, `pcie-qcom` keeps the controller's resources on through the suspend.
+  Side notes: the touch controller (`s6sy761`) fails its resume callback with -19 (it is powered
+  with the panel, which is still off at that point) and works anyway afterwards; ath11k logs
+  "failed to process regulatory info -22" at resume and WiFi reconnects. "psci: [Firmware Bug]:
+  failed to set PC mode: -3" at boot is harmless: the next line is "Initialized CPU PM domain
+  topology using OSI mode".
+  Reading the 6.16 drivers took two of the three suspects off the list: the geni UART's
+  `uart_suspend_port()` path powers the port off (OPP rate 0, interconnect off) in system
+  suspend, and genpd votes a power domain off once all its devices are suspended, so the
+  console's and the camera clock controller's votes only cost power while awake. The PCIe
+  controller has no interconnect votes on SM8250 (no `interconnects` in its node), but
+  `qcom_pcie_suspend_noirq()` keeps its clocks, PHY and GDSC on whenever the link is up.
+  Experiment (`op8-s2idle-test 300 nowifi`: WiFi device removed from the bus and powered off
+  through its pwrctrl before the suspend): 83 mA instead of 107, still 0 in all three
+  counters, so PCIe is one holder among others. Costs of that route: ath11k's firmware crashed
+  into RDDM during the removal, and 6.16 does not train the link again at resume (WiFi back
+  only after a reboot); upstream solved it properly in May 2026 ("PCI: qcom: Add D3cold
+  support", 2cc0e7454c78, part of a series). For scale: Armada's `0568` notes that an SM8250
+  RP5 slept at about 1.7% an hour before the same CPU-vote fix (about 85 mA of its 5000 mAh)
+  and about 25% less after it, so on this SoC the deep states save tens of mA, not hundreds.
+  Their `armada_sleep_debug.py` traces clock, regulator and interconnect events across a
+  suspend to name what is still on at the end; that is the next tool if we go further.
 
 ## Audio
 
@@ -279,6 +442,36 @@ this page is the short version, so the same mistake is not made twice.
   cause written down, or the next person to see it starts from zero.
 
 ## Tools and workflow
+
+- **A logger started with `nohup ... &` over SSH died with the session (2026-10-29).** The
+  first run of `audio-wake.sh` wrote only its header: when the SSH command ended, systemd
+  stopped the session's scope and every process left in it, `nohup` or not. Started again with
+  `systemd-run --user --unit=... sh script.sh`, it runs as a user service outside the session and
+  survives. Use that for anything that must outlive an SSH command, and read the log once before
+  asking the maintainer to start a measurement.
+
+- **WiFi does not answer in standby (2026-10-29, explained).** SSH and ping time out while the
+  phone is in standby; awake it works again. The cause is NetworkManager, not the screen: Steam's
+  sleep request starts systemd's suspend target, NetworkManager takes WiFi down for the sleep
+  and reconnects at wake-up ("sleep: wake requested" in the journal, then a new association).
+  That saves power and stays. Measurements in standby have to start before it and must not
+  depend on the SSH session.
+
+- **A build script that follows someone else's master breaks on its own (2026-10-27).**
+  `build-gamescope-op8.sh` fetched Alpine's gamescope files from aports `master`. By the next
+  build master had moved to 3.16.31 and 3.17.0 (the script would have stopped on its version
+  check), and gitlab.alpinelinux.org did not answer at all (curl exit 28). Now pinned to the
+  aports commit of 3.16.29 through the GitHub mirror; the three Alpine patches are
+  byte-identical to the ones used on 2026-10-02. Pin every outside source to a commit.
+
+- **The phone's own boot.img is not the image we run (2026-10-27).** `install-kernel.sh` makes
+  `/boot/boot.img` with the cmdline from the device package's `kernel-cmdline.conf`, which adds
+  `clk_ignore_unused pd_ignore_unused` (unused clocks and power domains stay on). No image we
+  ran ever had them: every test image since r7 was repacked on the PC from the previous one's
+  header and cmdline (`r14/mkimg.sh`). Writing the phone's boot.img would have changed two
+  things at once, one of them untested and costly for the battery. Test images stay repacked
+  (`r16/mkimg.sh`: r16 kernel and DTB, r14 ramdisk, header and cmdline, checked byte for byte);
+  whether the device package should drop the two options is still open.
 
 - **WSL wipes `/tmp` between calls.** Work under `/mnt/d`.
 - **`sed` rewrote CRLF in a patch file.** Patch files are binary-exact: edit them with byte-level

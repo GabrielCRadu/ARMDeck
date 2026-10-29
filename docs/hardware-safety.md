@@ -253,7 +253,7 @@ or manual writes to other partitions, both forbidden in 3.4.
 | Fastboot unreachable | EDL + MSM Download Tool | your region's MSM package, the Qualcomm 9008 driver, a tested EDL entry | to prepare before flashing |
 | IMEI, fingerprint or sensors affected | `fastboot flash <partition>` or `dd` with root, from the backup | a verified backup | done |
 | The `super` backup is incomplete or corrupt | a round-trip `img2simg` / `simg2img` test with an identical hash, size equal to `partition-size:super` | `img2simg` | installed in WSL |
-| Battery fully drained under pmOS | hardware charging with the phone off or in fastboot | nothing | best avoided below about 15% |
+| Battery fully drained under pmOS | hardware charging with the phone off or in fastboot | nothing | best avoided below about 15%; `op8-lowbatt` powers off at 3.25 V |
 
 Full restore, with explicit slot names so nothing is written to the wrong slot (X = the slot
 noted at backup time):
@@ -342,8 +342,17 @@ physically, what has been checked, and the precise test to run on the phone.
 
 - **What the kernel does:** the `bq27xxx` driver reads the battery level and, because the node
   has `monitored-battery`, writes the capacity (4270 mAh), energy (16.37 Wh) and termination
-  voltage (3.4 V) to the chip's RAM at boot. The RAM configuration is lost only when the battery
+  voltage to the chip's RAM at boot. The RAM configuration is lost only when the battery
   is disconnected. It does not control charging, it only affects the reported percentage.
+  The termination voltage is the gauge's empty point: 3.4 V until r15 (from the Xo666 device
+  tree), 3.25 V from r16 (kernel patch 0018), where OnePlus powers this phone off
+  (`qcom,vbatt_power_off = <3250>`, `vendor/19821/kona-mtp.dtsi`; TI allows 2.8-3.7 V,
+  SLUUAS7B). With 3.4 V and the worn cell the gauge dropped to 0% under a game load while it
+  still held about 2 Ah (lessons-learned.md, 2026-10-27).
+- **Low-battery power-off (`op8-lowbatt`, 2026-10-27):** nothing turned the phone off on a low
+  battery, and it ran twice down to 2.65 V, where the battery cut out. `op8-lowbatt` powers off
+  cleanly when the battery stays below 3.25 V for 15 s while discharging (OnePlus' own rule,
+  `drivers/power/oplus/oplus_charger.c`). Check: `journalctl -t op8-lowbatt`.
 - **Risk:** a wrong percentage, nothing physical.
 - **Test:** `cat /sys/class/power_supply/bq27411-0/uevent`; the voltage must be plausible
   (3.4-4.45 V) and rise while charging.
@@ -450,6 +459,17 @@ physically, what has been checked, and the precise test to run on the phone.
   865+ (`opp-supported-hw` + `gpu_speed_bin`), so on a plain 865 the maximum stays at 587 MHz.
 - **Test:** `cat /sys/class/devfreq/3d00000.gpu/available_frequencies` (maximum 587000000 on a
   plain 865) and `dmesg | grep -iE "zap|a6xx|adreno"`.
+- **Memory bandwidth votes (kernel r17, patch 0022, 2026-10-27):** each GPU frequency asks the
+  memory (DDR) for the bandwidth the vendor kernel asks for at that frequency: 587 MHz 2092 MHz,
+  525-441.6 MHz 1555 MHz, 400 MHz 1017 MHz, 305 MHz 451 MHz (LPDDR4X, `kona-v2-gpu.dtsi` speed
+  bin 0 and the `ddr7` bus table of `kona-gpu.dtsi`). A vote only picks one of the memory's own
+  levels; it cannot raise any clock or voltage above its table. The cost is power while the GPU
+  is awake, which `op8-thermal` watches like the rest. The memory type, written by the
+  bootloader into the device tree, was read on the phone on 2026-10-27, before the test:
+  `/proc/device-tree/memory@80000000/ddr_device_type` = `00 00 00 07`, 7 = LPDDR4X, so the
+  `ddr7` table above is the right one (8 would be the 8 Pro's LPDDR5, whose vendor levels at
+  525-400 MHz are lower). Test image `r17a` is the same kernel without these votes, for the
+  comparison.
 
 ### 4.10 CPU
 
