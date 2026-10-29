@@ -1,0 +1,101 @@
+From: ARMDeck <noreply@localhost>
+Subject: [PATCH] arm64: dts: qcom: sm8250: vote DDR bandwidth for the GPU
+
+The Adreno 650 node has no interconnect path, and the GMU firmware gets
+a single "off" bus vote from a650_build_bw_table(). So nothing asks for
+memory bandwidth on the GPU's behalf: the DDR clock follows the CPU
+votes alone, which scale with the busiest CPU cluster. In a GPU-bound
+game with lightly loaded CPUs (or with the big cores capped by a thermal
+guard) the GPU runs at its top clock on a fraction of the bandwidth the
+vendor kernel gives it.
+
+Add the GPU-to-DDR path and a peak bandwidth to each GPU OPP. The OPP
+core finds the path and sets the bandwidth with every frequency change
+(a6xx_gmu_set_freq() calls dev_pm_opp_set_opp() when the GMU has no
+bandwidth table of its own, as on A650), and drops it when the GPU
+suspends (a6xx_gmu_stop()). The tag is ALWAYS: the GPU keeps running
+while the CPUs power-collapse.
+
+The values are the vendor's, for LPDDR4X (LineageOS
+android_kernel_oneplus_sm8250, kona-v2-gpu.dtsi, speed bin 0, and bin 1
+for 670 MHz: qcom,bus-freq-ddr7 levels 11/9/7/3 in the ddr7 bus table of
+kona-gpu.dtsi, 2092/1555/1017/451 MHz x 4 bytes), written in kBps like
+the CPU OPP tables of this file. ROCKNIX's 9998-sm8250-gpu-tuning.patch
+votes the same levels (in 1024-byte units); its overclocked OPPs and ACD
+levels are not part of this patch. The votes cannot raise any clock
+above its own table: they only choose among the DDR levels the vendor
+uses for these GPU frequencies.
+
+Uses QCOM_ICC_TAG_ALWAYS from <dt-bindings/interconnect/qcom,icc.h>,
+included by the previous patch (0019).
+
+[ARMDeck: compile-tested only as of 2026-10-27 (test image r17); to be
+measured in a GPU-bound game against the same image without the GPU
+path (fps, power, temperatures).]
+---
+
+diff --git a/arch/arm64/boot/dts/qcom/sm8250.dtsi b/arch/arm64/boot/dts/qcom/sm8250.dtsi
+index 04a85a5f6..3447e5745 100644
+--- a/arch/arm64/boot/dts/qcom/sm8250.dtsi
++++ b/arch/arm64/boot/dts/qcom/sm8250.dtsi
+@@ -2939,6 +2939,10 @@ gpu: gpu@3d00000 {
+ 
+ 			operating-points-v2 = <&gpu_opp_table>;
+ 
++			interconnects = <&gem_noc MASTER_GRAPHICS_3D QCOM_ICC_TAG_ALWAYS
++					 &mc_virt SLAVE_EBI_CH0 QCOM_ICC_TAG_ALWAYS>;
++			interconnect-names = "gfx-mem";
++
+ 			qcom,gmu = <&gmu>;
+ 
+ 			nvmem-cells = <&gpu_speed_bin>;
+@@ -2958,42 +2962,49 @@ opp-670000000 {
+ 					opp-hz = /bits/ 64 <670000000>;
+ 					opp-level = <RPMH_REGULATOR_LEVEL_NOM_L1>;
+ 					opp-supported-hw = <0xa>;
++					opp-peak-kBps = <8368000>;
+ 				};
+ 
+ 				opp-587000000 {
+ 					opp-hz = /bits/ 64 <587000000>;
+ 					opp-level = <RPMH_REGULATOR_LEVEL_NOM>;
+ 					opp-supported-hw = <0xb>;
++					opp-peak-kBps = <8368000>;
+ 				};
+ 
+ 				opp-525000000 {
+ 					opp-hz = /bits/ 64 <525000000>;
+ 					opp-level = <RPMH_REGULATOR_LEVEL_SVS_L2>;
+ 					opp-supported-hw = <0xf>;
++					opp-peak-kBps = <6220000>;
+ 				};
+ 
+ 				opp-490000000 {
+ 					opp-hz = /bits/ 64 <490000000>;
+ 					opp-level = <RPMH_REGULATOR_LEVEL_SVS_L1>;
+ 					opp-supported-hw = <0xf>;
++					opp-peak-kBps = <6220000>;
+ 				};
+ 
+ 				opp-441600000 {
+ 					opp-hz = /bits/ 64 <441600000>;
+ 					opp-level = <RPMH_REGULATOR_LEVEL_SVS_L0>;
+ 					opp-supported-hw = <0xf>;
++					opp-peak-kBps = <6220000>;
+ 				};
+ 
+ 				opp-400000000 {
+ 					opp-hz = /bits/ 64 <400000000>;
+ 					opp-level = <RPMH_REGULATOR_LEVEL_SVS>;
+ 					opp-supported-hw = <0xf>;
++					opp-peak-kBps = <4068000>;
+ 				};
+ 
+ 				opp-305000000 {
+ 					opp-hz = /bits/ 64 <305000000>;
+ 					opp-level = <RPMH_REGULATOR_LEVEL_LOW_SVS>;
+ 					opp-supported-hw = <0xf>;
++					opp-peak-kBps = <1804000>;
+ 				};
+ 			};
+ 		};

@@ -7,7 +7,7 @@ maintainer=""
 _flavor="oneplus-instantnoodle"
 pkgname=linux-$_flavor
 pkgver=6.16.7
-pkgrel=14
+pkgrel=17
 pkgdesc="OnePlus 8 (instantnoodle) mainline kernel, Xo666 fork"
 arch="aarch64"
 _carch="arm64"
@@ -98,6 +98,44 @@ makedepends="
 #         gamescope paced frames from wrong times. They now come from the
 #         tear-check counter. Test image r14 on hardware since 2026-10-06:
 #         LIMBO runs smoothly; frame pacing not measured yet.
+#   0016-0017: Steam Remote Play on the Venus video decoder (TODO 11),
+#         the logic of userspace/steam/armdeck-v4l2-fix.c moved into the
+#         driver; software only, no hardware values change. 0016: Steam's
+#         client starts the CAPTURE queue before the first frame and never
+#         listens for the source change, so decoding waited forever for a
+#         capture setup; the decoder now does that setup itself when the
+#         client's buffers fit the stream (V4L2 Capture Setup step 6, as
+#         Qualcomm's msm_vidc does on a sufficient sequence change). 0017:
+#         the client keeps 16 CAPTURE buffers and crashed when the driver
+#         gave it 18 (the worst-case DPB, which on SM8250 lives in separate
+#         driver buffers); the minimum is now 16 in split mode, above the
+#         vendor's 8 + 6. Compile-tested only as of 2026-10-11 (test image
+#         r15); running in r16 and r17 since 2026-10-27, Remote Play not
+#         retested on them yet.
+#   0018: the battery's empty point 3.4 -> 3.25 V, where OnePlus powers
+#         this phone off (vbatt_power_off, vendor DT 19821). bq27xxx writes
+#         it to the gauge as its Terminate Voltage; it changes only the
+#         reported level (a worn cell sagged below 3.4 V under a game and
+#         the gauge dropped from 48% to 0%). Not read by charging. The
+#         power-off itself is userspace/system/op8-lowbatt, same voltage.
+#         Tested on hardware as test image r16 since 2026-10-27: the level
+#         now follows the charge drawn (96% -> 81% for 440 mAh).
+#   0019-0022: found by the source check of 2026-10-27. Tested on hardware
+#         on 2026-10-29 as test images r17a (0019-0021) and r17 (all four),
+#         r17 kept: no change at rest, about 1% more in Tomb Raider's
+#         benchmark at the same power, GPU vote seen on the memory
+#         controller (docs/performance-scan.md 3.2).
+#   0019: from gennro (SteamOS-ARM-Handhelds, Armada 0568). The CPUs' DDR
+#         votes also stayed in the sleep set, so the RAM never dropped to
+#         self-refresh while every CPU slept (op8-standby, quiet moments);
+#         they are now active-only. Tags only, no clock or voltage values.
+#   0020-0021: from Nova-Deck/Armada (gennro). The GMU (the controller that
+#         powers the GPU up and down) could lose its answers to the
+#         driver; preventive, software only.
+#   0022: the GPU never voted for memory bandwidth, so the RAM clock
+#         followed the CPUs alone (half speed in GPU-bound games with idle
+#         CPUs). Vendor values for LPDDR4X (kona-v2-gpu.dtsi, bin 0): no
+#         clock above the vendor's own table.
 #
 # armdeck.config is merged over op8_defconfig: NTSYNC, preemption
 # switchable at runtime (default full), MGLRU and the lockup detectors. See
@@ -128,6 +166,13 @@ source="
 	0013-ASoC-qdsp6-q6afe-wait-for-the-DSP-audio-services-before-probing.patch
 	0014-drm-msm-dsi-keep-link-clocks-up-while-display-active.patch
 	0015-drm-msm-dpu-fix-vblank-timestamps-on-command-mode-panels.patch
+	0016-media-venus-vdec-do-the-capture-setup-for-clients-that-started-CAPTURE-early.patch
+	0017-media-venus-vdec-do-not-ask-CAPTURE-for-the-whole-DPB-in-split-mode.patch
+	0018-arm64-dts-qcom-instantnoodle-battery-empty-at-OnePlus-power-off-voltage.patch
+	0019-arm64-dts-qcom-sm8250-make-the-CPU-DDR-votes-active-only.patch
+	0020-drm-msm-a6xx-the-HFI-IRQ-clears-only-the-CM3-fault-bit.patch
+	0021-drm-msm-a6xx-mask-the-HFI-interrupt-before-booting-the-GMU.patch
+	0022-arm64-dts-qcom-sm8250-vote-DDR-bandwidth-for-the-GPU.patch
 	armdeck.config
 "
 builddir="$srcdir/mainline-instantnoodle-$pkgver"
@@ -190,5 +235,12 @@ b69d54b9ad431baecf9559558af149d78005fe276e8a7d1327c1ceb7ac7a32f045c18c5a3e0396e8
 f921a23da3232f0d7e8d63e3342e813b29e26b3ce7251ac691ab12ee63889eade6d8a9076011a714577e5da2010839b30b20d93cedaa5c387370639c89e3f11e  0013-ASoC-qdsp6-q6afe-wait-for-the-DSP-audio-services-before-probing.patch
 fe3c8f8c0d7ed8eeb6cfcb39388ce4b5c5d8ac658e38a58d64083d55c21c4f91c2f9d60b56c02100b9fbd4a132f12a66e8ecdc25c7cff1b0f4a4592c7365431d  0014-drm-msm-dsi-keep-link-clocks-up-while-display-active.patch
 35c7b1171f2d95ebf95b5d56dfd94313713eb5bee6b8ca33233af4c274d4f69ff14f2db53b094ae9a86da44951efcb1fc3ae88c5339077c26914d47574e811a6  0015-drm-msm-dpu-fix-vblank-timestamps-on-command-mode-panels.patch
+d71165a87953dc9835c0ce0210ef7f81e7696accc505f6c276e0e17b53b9daa4a1e9f0baeb52695cbef2a95a5b1b7a035dbc47e0ee4e8da2d8301ca2c6e6bdac  0016-media-venus-vdec-do-the-capture-setup-for-clients-that-started-CAPTURE-early.patch
+71f4c585ce36d6b213c3ca8a36866711797d4aba05e035df619bbc8d91d65564a205eb57ed33a6909e97c6ae0358a6d97ac67a44e6e620088c5e3f77059895e7  0017-media-venus-vdec-do-not-ask-CAPTURE-for-the-whole-DPB-in-split-mode.patch
+ffebabe230cea4576c22bb52aebec41522c2acbcfc042277e2e093ac391e0f5ef7db1a99b2d1b2b7ee5b815420b88083c560511b04943caef3ffa79186c2527a  0018-arm64-dts-qcom-instantnoodle-battery-empty-at-OnePlus-power-off-voltage.patch
+b214d2ee01b3a9bc4957dea35afdcf0e226357f2d88cd15fc84208a702e7cfd0b726fcda65532412ea7f2e508f4b41b15a38fab87228176b58b583a5cb901190  0019-arm64-dts-qcom-sm8250-make-the-CPU-DDR-votes-active-only.patch
+c16ce516e3551746fc472a63daa345457452a09e12b554a0291cc32ec7224a1e0301bbb6e24962abce4dc66e2f6fed1f972bf308ba0331bd3a47c818c2bc002b  0020-drm-msm-a6xx-the-HFI-IRQ-clears-only-the-CM3-fault-bit.patch
+7f6e3432cbded0fa7551e30fe510318e7fb0a963903fe9618da635882fa045cd06929347808adf1095be37e25983489b9dd815df1019dafb9f01ac2deb4fbb22  0021-drm-msm-a6xx-mask-the-HFI-interrupt-before-booting-the-GMU.patch
+8f13f71dad5d968710ce314ac1520dfad3766fa94d3a92614067abee28cccf5eb9ead8c3bdac6538589f959805e60e5a12bb1814778c171adac062f6801ca864  0022-arm64-dts-qcom-sm8250-vote-DDR-bandwidth-for-the-GPU.patch
 1efc9b20d75aebc72b002d808e219abc45e8b31ea9818f2bd4e6eb062e03e8243225514903ed93b1c6e4df66f1f26d086073f7ea9b4f91eaf80b5124d27ab4bd  armdeck.config
 "

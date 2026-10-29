@@ -1,0 +1,51 @@
+From: ARMDeck <noreply@localhost>
+Subject: [PATCH] arm64: dts: qcom: sm8250-oneplus-instantnoodle: battery empty at
+ OnePlus' power-off voltage
+
+bq27xxx writes the battery's voltage-min-design-microvolt to the bq27411
+as its Terminate Voltage: the voltage at which the gauge's compensated
+remaining capacity, and so its reported level, reach 0. 3.4 V came with
+this device tree and does not match what OnePlus does on this phone.
+
+OnePlus' charger code for the OnePlus 8 (LineageOS
+android_kernel_oneplus_sm8250, drivers/power/oplus/oplus_charger.c, with
+qcom,vbatt_power_off = <3250> in arch/arm64/boot/dts/vendor/19821/
+kona-mtp.dtsi) keeps the shown level at 1% while the battery is above
+3.25 V, even when the gauge reports 0, and powers the phone off once it
+stays below 3.25 V. The OnePlus 8 Pro (19811) has a different cell and is
+not a reference here.
+
+With a worn cell the 3.4 V point comes early under load. Measured on an
+IN2013 (2026-10-22): a game drew 3.6-3.8 A, the battery sagged to 3.32 V
+and the gauge went from 48% to 0% within 20 s, then counted up from 0 for
+days (the level is smoothed and may not jump back). On 2026-10-27, at
+4.18 V while charging, it read StateOfCharge 15% against
+StateOfChargeUnfiltered 62% and NominalAvailable/FullAvailable 2650/3155
+mAh; FullChargeCapacityUnfiltered was 1317 mAh, the charge the gauge
+expected to deliver above 3.4 V.
+
+Set the battery's empty point to 3.25 V, where OnePlus powers this phone
+off. It is inside the gauge's range (2800-3700 mV, TI SLUUAS7B, Data
+Memory subclass 82 offset 16) and only changes what the gauge reports:
+charging and the cell's own protection do not read it, and no other node
+uses this battery. The power-off itself is done in userspace (ARMDeck's
+op8-lowbatt) at the same voltage.
+
+[ARMDeck: compile-tested only as of 2026-10-27; not yet on hardware.]
+---
+--- a/arch/arm64/boot/dts/qcom/sm8250-oneplus-instantnoodle.dts
++++ b/arch/arm64/boot/dts/qcom/sm8250-oneplus-instantnoodle.dts
+@@ -353,7 +353,12 @@
+ 		compatible = "simple-battery";
+ 		energy-full-design-microwatt-hours = <16370000>;
+ 		charge-full-design-microamp-hours = <4270000>;
+-		voltage-min-design-microvolt = <3400000>;
++		/*
++		 * Where OnePlus powers this phone off (vbatt_power_off in the
++		 * vendor DT). bq27xxx writes it to the gauge as its Terminate
++		 * Voltage, the voltage at which the gauge reports 0%.
++		 */
++		voltage-min-design-microvolt = <3250000>;
+ 		voltage-max-design-microvolt = <4435000>;
+ 	};
+ };

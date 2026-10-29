@@ -1,0 +1,105 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: ARMDeck <noreply@localhost>
+Date: Sun, 11 Oct 2026 16:20:00 +0300
+Subject: [PATCH] media: venus: vdec: do not ask CAPTURE for the whole DPB in
+ split mode on HFI v6
+
+vdec_queue_setup() raises every CAPTURE REQBUFS to the count_min of
+HFI_BUFFER_OUTPUT, which on HFI v6 is output_buffer_count() from
+hfi_plat_bufs_v6.c: 18 for H.264 and HEVC, the worst-case DPB. On HFI v6
+the decoder runs in split mode (vdec_output_conf() picks a UBWC DPB format
+plus a linear output format): reference frames go to DPB buffers that the
+driver allocates itself with that full count (venus_helper_alloc_dpb_bufs()),
+and the CAPTURE buffers only receive the finished pictures. They do not
+need the DPB count.
+
+Steam's Remote Play client keeps its CAPTURE buffers in a fixed table of
+16. It asks REQBUFS for 16, gets 18, fills 18 table entries and overwrites
+its own OUTPUT buffer list: it crashes before the first frame.
+
+Qualcomm's msm_vidc for this SoC asks for 8 output buffers for H.264 and
+HEVC (msm_vidc_calculate_output_buffer_count()) plus at most 6 extra (4 for
+DCVS, or 6 for decode batching, msm_vidc_get_extra_output_buff_count()).
+In split mode on HFI v6, lower the CAPTURE minimum for H.264 and HEVC to
+16: above everything the vendor driver asks for, and the count tested with
+Steam's client on SM8250. vdec_verify_conf() and the capture setup done by
+the decoder check the same minimum. The DPB count and
+V4L2_CID_MIN_BUFFERS_FOR_CAPTURE (still 18) stay as they were, so clients
+that size their buffers from that control get what they got before.
+
+[ARMDeck: until now armdeck-v4l2-fix.c (an LD_PRELOAD for the client)
+reported 16 back to the client while the driver kept 18. Compile-tested
+only (clang 18, W=1, checkpatch --strict clean); not yet tested on
+hardware.]
+---
+diff --git a/drivers/media/platform/qcom/venus/vdec.c b/drivers/media/platform/qcom/venus/vdec.c
+index 96c3a14..7b1e073 100644
+--- a/drivers/media/platform/qcom/venus/vdec.c
++++ b/drivers/media/platform/qcom/venus/vdec.c
+@@ -909,6 +909,36 @@ static int vdec_num_buffers(struct venus_inst *inst, unsigned int *in_num,
+ 	return 0;
+ }
+ 
++/*
++ * On HFI v6 the decoder runs in split mode (vdec_output_conf()): reference
++ * frames go to DPB buffers that the driver allocates itself with the full
++ * count (venus_helper_alloc_dpb_bufs()), and the CAPTURE buffers only get the
++ * finished pictures. They do not need the worst-case H.264/HEVC DPB count of
++ * 18 from output_buffer_count() in hfi_plat_bufs_v6.c. Qualcomm's msm_vidc
++ * asks for 8 plus at most 6 extra on this SoC
++ * (msm_vidc_calculate_output_buffer_count()); 16 is what Steam's Remote Play
++ * client allocates, tested on SM8250.
++ */
++#define VDEC_SPLIT_CAPTURE_MIN	16
++
++static unsigned int vdec_capture_min_bufs(struct venus_inst *inst,
++					  unsigned int count)
++{
++	u32 out_fmt, out2_fmt;
++
++	if (!IS_V6(inst->core) ||
++	    (inst->fmt_out->pixfmt != V4L2_PIX_FMT_H264 &&
++	     inst->fmt_out->pixfmt != V4L2_PIX_FMT_HEVC))
++		return count;
++
++	/* the formats vdec_output_conf() picks; both set means split mode */
++	if (venus_helper_get_out_fmts(inst, inst->fmt_cap->pixfmt, &out_fmt,
++				      &out2_fmt, true) || !out_fmt || !out2_fmt)
++		return count;
++
++	return min_t(unsigned int, count, VDEC_SPLIT_CAPTURE_MIN);
++}
++
+ static int vdec_queue_setup(struct vb2_queue *q,
+ 			    unsigned int *num_buffers, unsigned int *num_planes,
+ 			    unsigned int sizes[], struct device *alloc_devs[])
+@@ -984,7 +1014,8 @@ static int vdec_queue_setup(struct vb2_queue *q,
+ 						    inst->width,
+ 						    inst->height);
+ 		inst->output_buf_size = sizes[0];
+-		*num_buffers = max(*num_buffers, out_num);
++		*num_buffers = max(*num_buffers,
++				   vdec_capture_min_bufs(inst, out_num));
+ 		inst->num_output_bufs = *num_buffers;
+ 
+ 		mutex_lock(&inst->lock);
+@@ -1017,8 +1048,9 @@ static int vdec_verify_conf(struct venus_inst *inst)
+ 	if (ret)
+ 		return ret;
+ 
+-	if (inst->num_output_bufs < bufreq.count_actual ||
+-	    inst->num_output_bufs < hfi_bufreq_get_count_min(&bufreq, ver))
++	if (inst->num_output_bufs <
++	    vdec_capture_min_bufs(inst, max(bufreq.count_actual,
++					    hfi_bufreq_get_count_min(&bufreq, ver))))
+ 		return -EINVAL;
+ 
+ 	ret = venus_helper_get_bufreq(inst, HFI_BUFFER_INPUT, &bufreq);
+@@ -1046,6 +1078,7 @@ static bool vdec_capture_bufs_fit(struct venus_inst *inst)
+ 	if (vdec_num_buffers(inst, &in_num, &out_num))
+ 		return false;
+ 
++	out_num = vdec_capture_min_bufs(inst, out_num);
+ 	dst_vq = v4l2_m2m_get_dst_vq(inst->m2m_ctx);
+ 	if (vb2_get_num_buffers(dst_vq) < out_num) {
+ 		dev_info(dev, "dec: %u CAPTURE buffers, %u needed: capture setup left to the client\n",

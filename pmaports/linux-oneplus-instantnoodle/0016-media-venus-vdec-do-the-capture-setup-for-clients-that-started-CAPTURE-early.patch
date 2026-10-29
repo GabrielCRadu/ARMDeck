@@ -1,0 +1,289 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: ARMDeck <noreply@localhost>
+Date: Sun, 11 Oct 2026 16:20:00 +0300
+Subject: [PATCH] media: venus: vdec: do the capture setup for clients that
+ started CAPTURE early
+
+Steam's Remote Play client (steamrtarm64/streaming_client, V4L2 decoder
+class CV4L2Accel) sets the OUTPUT and CAPTURE formats to the stream size,
+starts both queues and queues its CAPTURE buffers before the first frame,
+and never subscribes to V4L2_EVENT_SOURCE_CHANGE. Venus ignores that early
+CAPTURE STREAMON (vdec_start_capture() returns early in the INIT state),
+sends the source change once the first frame's headers are parsed, and then
+waits in CAPTURE_SETUP for a STREAMOFF, REQBUFS and STREAMON on CAPTURE that
+this client never does. The client waits about 36 ms for a frame, restarts
+both queues and loops; no frame is ever decoded.
+
+dev-decoder.rst lets a client resume at once when the CAPTURE buffers it
+already has fit the parsed stream (Capture Setup, step 6). Qualcomm's
+msm_vidc for this SoC goes on with the buffers it has after a sequence
+change that changed nothing: handle_event_change() sends session_continue
+on a sufficient event whose size, bit depth and interlacing match. Do the
+same for a client that does not subscribe to source changes, when the
+stream kept the CAPTURE format that client set and its CAPTURE buffers are
+enough and big enough:
+
+ - at the event, schedule a work item that runs vdec_start_capture() from
+   CAPTURE_SETUP when CAPTURE already streams (the event arrives in the HFI
+   message thread, which must not wait for HFI replies);
+ - if the client restarts CAPTURE first, its STREAMON does the same.
+
+Clients that subscribe to source changes do their own capture setup, as
+before.
+
+CAPTURE buffers queued before the capture setup now stay with the driver
+until vdec_start_capture() hands them over. They used to go to the firmware
+at once, before the output was configured for the parsed stream, and
+nothing took them back before a client freed them in its own capture
+setup.
+
+[ARMDeck: the same handshake was first done in userspace, as an
+LD_PRELOAD for the client (userspace/steam/armdeck-v4l2-fix.c), and gave
+working Remote Play on 2026-10-11: 61 fps, 4.7 ms decode. This patch moves
+it into the driver. Compile-tested only (clang 18, W=1, checkpatch
+--strict clean); not yet tested on hardware.]
+---
+diff --git a/drivers/media/platform/qcom/venus/core.h b/drivers/media/platform/qcom/venus/core.h
+index 5b1ba1c..5e0dbf2 100644
+--- a/drivers/media/platform/qcom/venus/core.h
++++ b/drivers/media/platform/qcom/venus/core.h
+@@ -444,6 +444,11 @@ enum venus_inst_modes {
+  * @pic_struct:		bitstream progressive vs interlaced
+  * @next_buf_last: a flag to mark next queued capture buffer as last
+  * @drain_active:	Drain sequence is in progress
++ * @early_capture:	the CAPTURE queue was started before the capture setup
++ * @resume_capture:	the last source change kept the CAPTURE format of a
++ *			client that does not subscribe to it: the decoder does
++ *			the capture setup for that client
++ * @resume_capture_work:	a work_struct for that capture setup
+  * @flags:	bitmask flags describing current instance mode
+  * @dpb_ids:	DPB buffer ID's
+  */
+@@ -515,6 +520,9 @@ struct venus_inst {
+ 	unsigned int pic_struct;
+ 	bool next_buf_last;
+ 	bool drain_active;
++	bool early_capture;
++	bool resume_capture;
++	struct work_struct resume_capture_work;
+ 	enum venus_inst_modes flags;
+ 	struct ida dpb_ids;
+ };
+diff --git a/drivers/media/platform/qcom/venus/vdec.c b/drivers/media/platform/qcom/venus/vdec.c
+index fca27be..96c3a14 100644
+--- a/drivers/media/platform/qcom/venus/vdec.c
++++ b/drivers/media/platform/qcom/venus/vdec.c
+@@ -1031,10 +1031,51 @@ static int vdec_verify_conf(struct venus_inst *inst)
+ 	return 0;
+ }
+ 
++/*
++ * Whether the CAPTURE buffers the client already has can take the parsed
++ * stream: enough of them, and every queued one big enough (dev-decoder.rst,
++ * Capture Setup, step 6).
++ */
++static bool vdec_capture_bufs_fit(struct venus_inst *inst)
++{
++	struct device *dev = inst->core->dev_dec;
++	unsigned int in_num, out_num, size;
++	struct v4l2_m2m_buffer *buf, *n;
++	struct vb2_queue *dst_vq;
++
++	if (vdec_num_buffers(inst, &in_num, &out_num))
++		return false;
++
++	dst_vq = v4l2_m2m_get_dst_vq(inst->m2m_ctx);
++	if (vb2_get_num_buffers(dst_vq) < out_num) {
++		dev_info(dev, "dec: %u CAPTURE buffers, %u needed: capture setup left to the client\n",
++			 vb2_get_num_buffers(dst_vq), out_num);
++		return false;
++	}
++
++	size = venus_helper_get_framesz(inst->fmt_cap->pixfmt, inst->width,
++					inst->height);
++	v4l2_m2m_for_each_dst_buf_safe(inst->m2m_ctx, buf, n) {
++		if (vb2_plane_size(&buf->vb.vb2_buf, 0) < size) {
++			dev_info(dev, "dec: CAPTURE buffer %u is under %u bytes: capture setup left to the client\n",
++				 buf->vb.vb2_buf.index, size);
++			return false;
++		}
++	}
++
++	return true;
++}
++
+ static int vdec_start_capture(struct venus_inst *inst)
+ {
+ 	int ret;
+ 
++	/* started before the capture setup, see vdec_resume_capture_work() */
++	if (inst->codec_state == VENUS_DEC_STATE_DEINIT ||
++	    inst->codec_state == VENUS_DEC_STATE_INIT ||
++	    inst->codec_state == VENUS_DEC_STATE_CAPTURE_SETUP)
++		inst->early_capture = true;
++
+ 	if (!inst->streamon_out)
+ 		return 0;
+ 
+@@ -1048,6 +1089,14 @@ static int vdec_start_capture(struct venus_inst *inst)
+ 		return 0;
+ 	}
+ 
++	if (inst->codec_state == VENUS_DEC_STATE_CAPTURE_SETUP &&
++	    inst->resume_capture && vdec_capture_bufs_fit(inst)) {
++		dev_info(inst->core->dev_dec,
++			 "dec: capture setup by the decoder, with the client's buffers (%ux%u)\n",
++			 inst->width, inst->height);
++		inst->codec_state = VENUS_DEC_STATE_STOPPED;
++	}
++
+ 	if (inst->codec_state != VENUS_DEC_STATE_STOPPED)
+ 		return 0;
+ 
+@@ -1094,6 +1143,8 @@ reconfigure:
+ 	inst->sequence_cap = 0;
+ 	inst->reconfig = false;
+ 	inst->drain_active = false;
++	inst->early_capture = false;
++	inst->resume_capture = false;
+ 
+ 	return 0;
+ 
+@@ -1282,10 +1333,12 @@ static void vdec_stop_streaming(struct vb2_queue *q)
+ 
+ 	mutex_lock(&inst->lock);
+ 
+-	if (q->type == V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE)
++	if (q->type == V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE) {
++		inst->early_capture = false;
+ 		ret = vdec_stop_capture(inst);
+-	else
++	} else {
+ 		ret = vdec_stop_output(inst);
++	}
+ 
+ 	venus_helper_buffers_done(inst, q->type, VB2_BUF_STATE_ERROR);
+ 
+@@ -1388,6 +1441,22 @@ static void vdec_vb2_buf_queue(struct vb2_buffer *vb)
+ 		return;
+ 	}
+ 
++	/*
++	 * CAPTURE buffers queued before the capture setup stay here until the
++	 * setup hands them over (venus_helper_process_initial_cap_bufs() in
++	 * vdec_start_capture()). Sent now, they reached the firmware before the
++	 * output was configured for the parsed stream, and nothing took them
++	 * back before a client freed them in its own capture setup.
++	 */
++	if (V4L2_TYPE_IS_CAPTURE(vb->vb2_queue->type) &&
++	    (inst->codec_state == VENUS_DEC_STATE_DEINIT ||
++	     inst->codec_state == VENUS_DEC_STATE_INIT ||
++	     inst->codec_state == VENUS_DEC_STATE_CAPTURE_SETUP)) {
++		v4l2_m2m_buf_queue(inst->m2m_ctx, vbuf);
++		mutex_unlock(&inst->lock);
++		return;
++	}
++
+ 	venus_helper_vb2_buf_queue(vb);
+ 	mutex_unlock(&inst->lock);
+ }
+@@ -1476,9 +1545,15 @@ static void vdec_event_change(struct venus_inst *inst,
+ 		.u.src_change.changes = V4L2_EVENT_SRC_CH_RESOLUTION };
+ 	struct device *dev = inst->core->dev_dec;
+ 	struct v4l2_format format = {};
++	const struct venus_format *old_fmt_cap;
++	u32 old_width, old_height;
+ 
+ 	mutex_lock(&inst->lock);
+ 
++	old_fmt_cap = inst->fmt_cap;
++	old_width = inst->width;
++	old_height = inst->height;
++
+ 	format.type = V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE;
+ 	format.fmt.pix_mp.pixelformat = inst->fmt_cap->pixfmt;
+ 	format.fmt.pix_mp.width = ev_data->width;
+@@ -1559,6 +1634,60 @@ static void vdec_event_change(struct venus_inst *inst,
+ 	v4l2_event_queue_fh(&inst->fh, &ev);
+ 	wake_up(&inst->reconf_wait);
+ 
++	/*
++	 * A client that does not subscribe to source changes never does the
++	 * capture setup. If the stream kept the CAPTURE format that client set,
++	 * the decoder does it with the client's buffers, at once when CAPTURE
++	 * already streams (vdec_resume_capture_work()).
++	 */
++	inst->resume_capture = false;
++	if (inst->codec_state == VENUS_DEC_STATE_CAPTURE_SETUP &&
++	    !(inst->subscriptions & V4L2_EVENT_SOURCE_CHANGE)) {
++		inst->resume_capture = inst->fmt_cap == old_fmt_cap &&
++				       inst->width == old_width &&
++				       inst->height == old_height;
++		if (inst->resume_capture && inst->early_capture)
++			schedule_work(&inst->resume_capture_work);
++		else if (inst->early_capture)
++			dev_info(dev, "dec: stream is %ux%u, not the %ux%u CAPTURE format the client set\n",
++				 inst->width, inst->height, old_width,
++				 old_height);
++	}
++
++	mutex_unlock(&inst->lock);
++}
++
++/*
++ * The capture setup for a client that started the CAPTURE queue before the
++ * first source change and does not subscribe to it, such as Steam's Remote
++ * Play client: decoding would stay in CAPTURE_SETUP forever. The buffers it
++ * already has are used when they fit, as dev-decoder.rst lets a client resume
++ * at once in that case (Capture Setup, step 6) and as Qualcomm's msm_vidc
++ * goes on with the buffers it has after a sequence change that changed
++ * nothing. vdec_start_capture() does it: here, right after the event (from a
++ * work item, because the event arrives in the HFI message thread, which must
++ * not wait for HFI replies), or on the client's next CAPTURE STREAMON if the
++ * client restarted the queue first.
++ */
++static void vdec_resume_capture_work(struct work_struct *work)
++{
++	struct venus_inst *inst = container_of(work, struct venus_inst,
++					       resume_capture_work);
++	int ret;
++
++	vdec_pm_get_put(inst);
++
++	mutex_lock(&inst->lock);
++
++	if (inst->resume_capture && inst->early_capture &&
++	    inst->codec_state == VENUS_DEC_STATE_CAPTURE_SETUP) {
++		ret = vdec_start_capture(inst);
++		if (ret)
++			dev_err(inst->core->dev_dec,
++				"dec: capture setup with the client's buffers failed (%d)\n",
++				ret);
++	}
++
+ 	mutex_unlock(&inst->lock);
+ }
+ 
+@@ -1698,6 +1827,7 @@ static int vdec_open(struct file *file)
+ 	inst->bit_depth = VIDC_BITDEPTH_8;
+ 	inst->pic_struct = HFI_INTERLACE_FRAME_PROGRESSIVE;
+ 	init_waitqueue_head(&inst->reconf_wait);
++	INIT_WORK(&inst->resume_capture_work, vdec_resume_capture_work);
+ 	inst->nonblock = file->f_flags & O_NONBLOCK;
+ 
+ 	venus_helper_init_instance(inst);
+@@ -1756,6 +1886,14 @@ static int vdec_close(struct file *file)
+ 
+ 	vdec_pm_get(inst);
+ 	cancel_work_sync(&inst->delayed_process_work);
++
++	/* no new capture setup can be scheduled once early_capture is clear */
++	mutex_lock(&inst->lock);
++	inst->early_capture = false;
++	inst->resume_capture = false;
++	mutex_unlock(&inst->lock);
++	cancel_work_sync(&inst->resume_capture_work);
++
+ 	venus_close_common(inst);
+ 	ida_destroy(&inst->dpb_ids);
+ 	vdec_pm_put(inst, false);
