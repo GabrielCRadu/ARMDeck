@@ -13,9 +13,16 @@ HERE=$(cd "$(dirname "$0")" && pwd)
 OUT=${1:-$HERE}
 # 9003: with ARMDECK_FPS_LIMIT_FILE set, Steam's frame limit is handed to an in-game limiter
 # (MangoHud fps_limit) instead of being enforced by gamescope (see the patch header)
-PATCHES="9001-armdeck-xwayland-panel-aspect.patch 9003-armdeck-external-frame-limiter.patch"
+# 9004: ConVar paint_blank_overlay_plane, off with ARMDECK_NO_BLANK_OVERLAY=1 (no blank layer
+# composited in the hidden Steam overlay's place on every frame; see the patch header)
+# 9005: GAMESCOPE_COMPOSITE_GRAPHICS=1 composites with a fragment shader instead of compute, so
+# the rotated output stays compressed (Nova-Deck 0019; opt-in, see the patch header)
+PATCHES="9001-armdeck-xwayland-panel-aspect.patch 9003-armdeck-external-frame-limiter.patch 9004-armdeck-no-blank-overlay-layer.patch 9005-armdeck-fragment-shader-composite.patch"
 PMB="python3 $HOME/pmbootstrap/pmbootstrap.py"
-A=https://gitlab.alpinelinux.org/alpine/aports/-/raw/master/community/gamescope
+# aports pinned to "community/gamescope: upgrade to 3.16.29" (master moved on to 3.16.31 and
+# 3.17.0 in October 2026), through the GitHub mirror (gitlab.alpinelinux.org timed out on
+# 2026-10-27); the three Alpine patches are byte-identical to the ones used on 2026-10-02
+A=https://raw.githubusercontent.com/alpinelinux/aports/5a1d97f67da4a0447201ff3c47a606eb309cdd2b/community/gamescope
 D=~/pmaports/temp/gamescope
 rm -rf "$D"
 mkdir -p "$D"
@@ -37,5 +44,7 @@ T=$(mktemp -d)
 tar -xzf "$W/packages/edge/aarch64/gamescope-3.16.29-r100.apk" -C "$T" 2>/dev/null
 grep -q "panel aspect ratio" "$T/usr/bin/gamescope" || { echo "STOPPED: patch 9001 is missing from the binary"; exit 1; }
 grep -q "ARMDECK_FPS_LIMIT_FILE" "$T/usr/bin/gamescope" || { echo "STOPPED: patch 9003 is missing from the binary"; exit 1; }
+grep -q "ARMDECK_NO_BLANK_OVERLAY" "$T/usr/bin/gamescope" || { echo "STOPPED: patch 9004 is missing from the binary"; exit 1; }
+grep -q "GAMESCOPE_COMPOSITE_GRAPHICS" "$T/usr/bin/gamescope" || { echo "STOPPED: patch 9005 is missing from the binary"; exit 1; }
 cp "$T/usr/bin/gamescope" "$OUT/gamescope-op8"
 sha256sum "$OUT/gamescope-op8"

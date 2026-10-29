@@ -1,0 +1,50 @@
+armdeck: a switch for the blank layer behind the hidden Steam overlay
+
+On a session backend gamescope composites a blank full-screen layer in the
+Steam overlay's place while the overlay is hidden (upstream fe3dbc6b), so
+the first frame of the overlay does not stutter. On the OnePlus 8 every
+frame is composited on the GPU anyway (the panel is rotated and the SM8250
+display planes cannot rotate 90 degrees), so that layer is one more
+texture read and blend per output pixel on every frame, in every game.
+ConVar paint_blank_overlay_plane (default on, the upstream behaviour)
+leaves it out when cleared; ARMDECK_NO_BLANK_OVERLAY=1 makes the default
+off, and gamescopectl can switch it at runtime for an A/B test. The Steam
+overlay itself still paints when shown.
+
+Idea and ConVar name from Nova-Deck's os-build (patch 0037 by Philippe
+Simons, 2026-10-26), where on SM8250 with planes the layer halved the frame
+rate; written again here for 3.16.29. Not yet measured on the OnePlus 8.
+
+--- a/src/steamcompmgr.cpp
++++ b/src/steamcompmgr.cpp
+@@ -3076,6 +3076,12 @@
+ gamescope::ConVar<bool> cv_paint_primary_plane{ "paint_primary_plane", true };
+ gamescope::ConVar<bool> cv_paint_override_redirect_plane{ "paint_override_redirect_plane", true };
+ gamescope::ConVar<bool> cv_paint_steam_overlay_plane{ "paint_steam_overlay_plane", true };
++// armdeck: on a session backend, while the Steam overlay is hidden, gamescope composites a blank
++// full-screen layer in its place, so the first frame of the overlay does not stutter. Where every
++// frame is composited on the GPU anyway (the OnePlus 8 panel is rotated and SM8250 planes cannot
++// rotate 90 degrees), that layer is one more texture read and blend per output pixel on every
++// frame. ARMDECK_NO_BLANK_OVERLAY=1 makes the default off; gamescopectl can switch it at runtime.
++gamescope::ConVar<bool> cv_paint_blank_overlay_plane{ "paint_blank_overlay_plane", !getenv( "ARMDECK_NO_BLANK_OVERLAY" ), "Composite a blank layer in place of the hidden Steam overlay, so showing the overlay does not stutter. Costs one more layer on every frame." };
+ gamescope::ConVar<bool> cv_paint_external_overlay_plane{ "paint_external_overlay_plane", true };
+ gamescope::ConVar<bool> cv_paint_cursor_plane{ "paint_cursor_plane", true };
+ gamescope::ConVar<bool> cv_paint_mura_plane{ "paint_mura_plane", true };
+@@ -3250,7 +3256,7 @@
+ 		nReservedLayers++;
+ 	if ( cv_paint_steam_overlay_plane &&
+ 		 ( ( overlay && overlay->opacity ) ||
+-		   ( !GetBackend()->UsesVulkanSwapchain() && GetBackend()->IsSessionBased() ) ) )
++		   ( !GetBackend()->UsesVulkanSwapchain() && GetBackend()->IsSessionBased() && cv_paint_blank_overlay_plane ) ) )
+ 		nReservedLayers++;
+ 	if ( notification && notification->opacity )
+ 		nReservedLayers++;
+@@ -3308,7 +3314,7 @@
+ 			if ( overlay == pFocus->inputFocusWindow && pFocus == GetCurrentMouseFocus() )
+ 				update_touch_scaling( &frameInfo );
+ 		}
+-		else if ( !GetBackend()->UsesVulkanSwapchain() && GetBackend()->IsSessionBased() )
++		else if ( !GetBackend()->UsesVulkanSwapchain() && GetBackend()->IsSessionBased() && cv_paint_blank_overlay_plane )
+ 		{
+ 			auto tex = vulkan_get_hacky_blank_texture();
+ 			if ( tex != nullptr && frameInfo.layers.count() < k_nMaxLayers )
