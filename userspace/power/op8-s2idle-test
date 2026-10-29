@@ -5,8 +5,20 @@
 # If it does not wake up: Power + both volume buttons held about 30 s = hardware reset
 # (Power + Volume Down alone did not work on 2026-10-04).
 #   sudo systemd-run --unit=op8-s2idle-test /bin/sh /home/gabriel/op8-s2idle-test [seconds]
-# Result: /var/log/op8/s2idle-test-<date>.txt
+# Result: /var/log/op8/s2idle-test-<date>.txt, plus .before and .after with what is still
+# switched on just before the suspend and just after it (power domains, regulators, clocks,
+# memory votes, wake-up sources, DSPs, PCIe devices), to find what keeps the SoC out of its
+# deep sleep states (qcom_stats aosd, cxsd and ddr stay at 0 when it never gets there).
+#   ... op8-s2idle-test 300 nowifi
+# also takes the WiFi chip off the PCIe link and powers it off before the suspend, so the PCIe
+# controller finds the link down and switches itself off (pcie-qcom keeps it on, with its clocks,
+# while a device is on the link). On kernel 6.16 the controller does not train the link again
+# at resume, so WiFi stays off until the next reboot: an experiment, not for daily use.
 SLEEP_S=${1:-60}
+NOWIFI=${2:-}
+WIFI_PCI=/sys/bus/pci/devices/0000:01:00.0
+WIFI_PWR=1c00000.pcie:pcie@0:wifi@0
+PWRCTRL=/sys/bus/platform/drivers/pci-pwrctrl-pwrseq
 U=/sys/fs/cgroup/user.slice/user-10000.slice/user@10000.service
 BL=$(ls -d /sys/class/backlight/* | head -1)
 BAT=/sys/class/power_supply/bq27411-0
@@ -16,6 +28,19 @@ OUT=/var/log/op8/s2idle-test-$(date +%Y%m%d-%H%M%S).txt
 
 out() { echo "$*" >> "$OUT"; logger -t op8-s2idle-test -- "$*"; }
 gsctl() { su -s /bin/sh gabriel -c "XDG_RUNTIME_DIR=/run/user/10000 gamescopectl $*" >/dev/null 2>&1; }
+diag() {   # $1 = before or after
+	D=/sys/kernel/debug
+	{
+		echo "== pm_genpd_summary"; cat $D/pm_genpd/pm_genpd_summary
+		echo "== regulators (enabled ones have use count > 0)"; cat $D/regulator/regulator_summary
+		echo "== interconnect_summary"; cat $D/interconnect/interconnect_summary
+		echo "== clocks with enable count > 0"; awk 'NR <= 3 || $2 > 0' $D/clk/clk_summary
+		echo "== wakeup sources with events (name active_count event_count wakeup_count ... active_since)"
+		awk 'NR == 1 || $3 > 0' $D/wakeup_sources
+		echo "== remoteproc"; for r in /sys/class/remoteproc/*; do echo "$(cat $r/name) $(cat $r/state)"; done
+		echo "== PCI"; for p in /sys/bus/pci/devices/*; do echo "$p $(cat $p/vendor):$(cat $p/device) $(cat $p/power_state) runtime $(cat $p/power/runtime_status)"; done
+	} > "$OUT.$1" 2>&1
+}
 stats() {
 	for f in "$QS"/aosd "$QS"/cxsd "$QS"/ddr; do
 		[ -f "$f" ] || continue
@@ -32,6 +57,9 @@ restore() {
 	for c in "$U/app.slice" "$U/user.slice"; do echo 0 > "$c/cgroup.freeze"; done
 	sleep 1
 	gsctl drm_sleep_internal_screen 0
+	# the panel comes on asynchronously; brightness written before that fails (as in op8-standby)
+	i=0
+	while [ "$(cat /sys/class/drm/card1-DSI-1/dpms)" != On ] && [ $i -lt 30 ]; do sleep 0.1; i=$((i + 1)); done
 	echo "$old_bl" > "$BL/brightness"
 	rm -f /run/op8-standby.active
 	out "restored $(date '+%T'): brightness $(cat "$BL/brightness"), panel $(cat /sys/class/drm/card1-DSI-1/dpms)"
@@ -46,8 +74,17 @@ gsctl drm_sleep_internal_screen 1
 sleep 2
 for c in "$U/app.slice" "$U/user.slice"; do echo 1 > "$c/cgroup.freeze"; done
 sleep 1
+if [ "$NOWIFI" = nowifi ] && [ -e "$WIFI_PCI" ]; then
+	# ath11k lets go of the chip first (as on module removal), then its power control powers it off
+	echo 1 > "$WIFI_PCI/remove"
+	sleep 1
+	echo "$WIFI_PWR" > "$PWRCTRL/unbind"
+	sleep 2
+	out "WiFi off: PCI device $([ -e "$WIFI_PCI" ] && echo present || echo removed), power control $([ -e "$PWRCTRL/$WIFI_PWR" ] && echo bound || echo unbound), root port link $(cat /sys/bus/pci/devices/0000:00:00.0/current_link_speed 2>&1)"
+fi
 out "before: panel $(cat /sys/class/drm/card1-DSI-1/dpms), battery $(cat $BAT/capacity)% $(cat $BAT/charge_now) uAh"
 stats
+diag before
 
 echo 0 > "$RTC/wakealarm"
 echo "+$SLEEP_S" > "$RTC/wakealarm"
@@ -60,5 +97,6 @@ out "woke up $(date '+%T'): rc=$rc, $((t1 - t0)) s suspended, wake-up irq $(cat 
 c1=$(cat $BAT/charge_now)
 out "after: battery $(cat $BAT/capacity)% $c1 uAh, average draw $(( (c0 - c1) * 3600 / ((t1 - t0) * 1000) )) mA (from the battery charge, 1 mAh steps)"
 stats
-dmesg | grep -i -E "PM: |suspend|resume|Freezing|Restarting|wakeup|s2idle|failed" | tail -40 >> "$OUT"
+diag after
+dmesg | grep -i -E "PM: |suspend|resume|Freezing|Restarting|wakeup|s2idle|failed|pcie|ath11k" | tail -50 >> "$OUT"
 echo 0 > /sys/power/pm_debug_messages 2>/dev/null
