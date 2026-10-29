@@ -335,6 +335,41 @@ this page is the short version, so the same mistake is not made twice.
   Their `armada_sleep_debug.py` traces clock, regulator and interconnect events across a
   suspend to name what is still on at the end; that is the next tool if we go further.
 
+- **Deep sleep in standby held back by its own review (2026-10-29, open).** A version of
+  `op8-standby` that goes into s2idle on battery (RTC check every 30 min, light standby with a
+  cable or a low battery) was reviewed by three independent agents before any install, at the
+  maintainer's request. Not deployed; what they found, checked against the 6.16 sources:
+  - charging: the pm8150b Type-C driver (`qcom_pmic_typec`) arms no wake-up and has no resume
+    handler; the SPMI interrupt controller masks its interrupts in suspend and clears their
+    latched state on unmask, so a cable plugged or pulled during s2idle is never seen by TCPM.
+    The PMIC still charges at 5 V on its own, but the worst case is real: phone powering the X3
+    (OTG, `online` = 0, so deep sleep allowed), phone taken out during sleep, the boost keeps
+    5 V on the empty port, and a USB-C charger plugged in later never switches on. `online` is
+    also 0 whenever the phone is the power source; `/sys/class/typec/port0-partner` is the
+    better "something is plugged in" signal;
+  - battery: a hang in a driver's resume (ath11k is the likely one) has no recovery: the
+    hung-task detector is off during suspend, systemd's runtime watchdog is off
+    (`RuntimeWatchdogUSec=0`, `/dev/watchdog0` exists), so the phone would sit at about 100 mA
+    until the cell cuts out, the October failure again. 3500 mV is a thin margin on a worn cell
+    whose charge between 3.5 and 3.25 V was never measured, and the voltage right after a
+    charger is pulled reads high;
+  - the script: a SIGTERM ran `restore` and then let the loop go on (it could re-suspend with
+    nobody watching the button), a dead or late button watcher meant a forced reset,
+    `gamescopectl` had no timeout, and a killed run left `/run/op8-standby.active` behind, which
+    switches `op8-thermal`'s caps off until reboot. Some of these also hold for the light
+    standby on the phone now.
+  Since then (same day): the light standby got the script fixes and its emergency exit was
+  tested (`systemctl kill`, see Tools), and kernel r18 (patch 0024) makes the Type-C driver read
+  the port again at every resume. Test: a charger plugged in during a 300 s s2idle did not wake
+  the phone, the PMIC charged on its own at about 1.2 A (+101 mAh), and right after the RTC
+  wake-up TCPM saw it (`online` 1, `port0-partner`, PD traffic). A cable pulled during the sleep:
+  after the wake-up `online` 0, no partner, sink role, the VBUS boost regulator off. Still to do
+  before deep sleep: the watchdog, wider battery thresholds, the X3 (phone as the source), a
+  soak test.
+  Lesson: a sleep mode that the kernel enters on its own must have a way back that does not
+  depend on the code that may have hung, and every "cable present" test must cover the phone
+  being the power source as well as the power sink.
+
 ## Audio
 
 - **Speakers quiet and earpiece quieter.** The TFA9874 amps are protected by a filter chain with a
@@ -442,6 +477,15 @@ this page is the short version, so the same mistake is not made twice.
   cause written down, or the next person to see it starts from zero.
 
 ## Tools and workflow
+
+- **`systemctl stop` cannot end a standby (2026-10-29, solved).** To let `op8-lowbatt` end a
+  standby before it powers off, the first version ran `systemctl stop systemd-suspend.service`.
+  Tested with a timer during a standby: systemd refused, "Transaction for
+  systemd-suspend.service/stop is destructive (systemd-suspend.service has 'start' job queued)",
+  because logind starts the suspend as an irreversible job. The standby went on until the power
+  button. `systemctl kill -s TERM systemd-suspend.service` sends the signal without a job:
+  `op8-standby` traps TERM, restores and exits, and the suspend job ends normally. Lesson: test
+  the emergency path the way it will really be used, not only the normal one.
 
 - **A logger started with `nohup ... &` over SSH died with the session (2026-10-29).** The
   first run of `audio-wake.sh` wrote only its header: when the SSH command ended, systemd
