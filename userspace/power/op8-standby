@@ -2,8 +2,11 @@
 # op8-standby (armdeck, OnePlus 8): a safe "sleep" WITHOUT kernel suspend (s2idle is not tested
 # on our kernel; if it does not wake up, only a forced reset is left).
 # Steam -> dbus-send login1 Suspend -> systemd-suspend.service -> this script (instead of
-# systemd-sleep). Black screen, the user's apps frozen, the big cores at their minimum frequency;
+# systemd-sleep). Panel off, the user's apps frozen, the big cores at their minimum frequency;
 # waits for the power button, then restores everything. Steam sees a normal sleep/wake cycle.
+# Audio: Steam starts a sound as it asks for sleep and is frozen in the middle of it; PipeWire's
+# pulse.idle.timeout (audio/50-op8-pulse-idle.conf) pauses that stream after 5 s, so the audio
+# path can switch off. Step 3b logs whether it did.
 # Modeled on konkr-standby from SteamOS-ARM-Handhelds.
 # Log: journalctl -t op8-standby. Markers for op8-powerbtn: /run/op8-standby.active
 # (while it runs) and /run/op8-standby.resumed (the moment it ends).
@@ -15,6 +18,11 @@ for e in /sys/class/input/event*; do
 	[ "$(cat "$e/device/name" 2>/dev/null)" = pm8941_pwrkey ] && EV=/dev/input/$(basename "$e")
 done
 log() { logger -t op8-standby -- "$*"; }
+# gamescope's own control tool, as the user who runs gamescope
+gsctl() { su -s /bin/sh gabriel -c "XDG_RUNTIME_DIR=/run/user/10000 gamescopectl $*" >/dev/null 2>&1; }
+dpms() { cat /sys/class/drm/card*-DSI-1/dpms 2>/dev/null | head -1; }
+# open ALSA streams (playback or capture) that are running
+pcm_running() { grep -l RUNNING /proc/asound/card*/pcm*/sub*/status 2>/dev/null | wc -l; }
 
 touch /run/op8-standby.active
 old_bl=$(cat "$BL/brightness" 2>/dev/null)
@@ -28,16 +36,30 @@ restore() {
 	for c in "$U/app.slice" "$U/user.slice"; do
 		[ -w "$c/cgroup.freeze" ] && echo 0 > "$c/cgroup.freeze"
 	done
+	# the panel back on only after the CPU limits and gamescope are back: with the cores at their
+	# minimum the panel did not come back (DSI errors, black screen; op8-power-test, 2026-10-03)
+	sleep 1
+	gsctl drm_sleep_internal_screen 0
+	# gamescope switches the panel on asynchronously; the brightness written before that fails
+	# ("write error: Invalid argument", 2026-10-29), so wait for it, at most 3 s
+	i=0
+	while [ "$(dpms)" != On ] && [ $i -lt 30 ]; do
+		sleep 0.1
+		i=$((i + 1))
+	done
 	[ -n "$old_bl" ] && echo "$old_bl" > "$BL/brightness"
 	rm -f /run/op8-standby.active
 	touch /run/op8-standby.resumed
-	log "leaving standby: brightness $(cat "$BL/brightness"), app.slice frozen=$(cat "$U/app.slice/cgroup.freeze"), max cpu4=$(cat "$CF/policy4/scaling_max_freq") cpu7=$(cat "$CF/policy7/scaling_max_freq")"
+	log "leaving standby: panel $(dpms), brightness $(cat "$BL/brightness"), app.slice frozen=$(cat "$U/app.slice/cgroup.freeze"), max cpu4=$(cat "$CF/policy4/scaling_max_freq") cpu7=$(cat "$CF/policy7/scaling_max_freq")"
 }
 trap restore EXIT INT TERM
 
-# 1. black screen
+# 1. black screen, then the panel off through gamescope (DPMS): the display controller stops
+#    reading the picture from memory. 275 -> 179 mA in op8-power-test (2026-10-03)
 [ -n "$BL" ] && echo 0 > "$BL/brightness"
-log "step 1: brightness $(cat "$BL/brightness")"
+gsctl drm_sleep_internal_screen 1
+sleep 2
+log "step 1: brightness $(cat "$BL/brightness"), panel $(dpms)"
 # 2. Steam, gamescope, the game and the container frozen; PipeWire (session.slice) keeps running
 for c in "$U/app.slice" "$U/user.slice"; do
 	[ -w "$c/cgroup.freeze" ] && echo 1 > "$c/cgroup.freeze"
@@ -50,6 +72,12 @@ for p in policy4 policy7; do
 	cat "$CF/$p/scaling_min_freq" > "$CF/$p/scaling_max_freq"
 done
 log "step 3: max cpu4=$(cat "$CF/policy4/scaling_max_freq") cpu7=$(cat "$CF/policy7/scaling_max_freq"); waiting for the power button"
+# 3b. a check, 20 s later, that the audio path has switched off (WiFi does not answer in standby,
+#    so it goes to the journal): 0 running ALSA streams expected
+(
+	sleep 20
+	[ -e /run/op8-standby.active ] && log "step 3b: 20 s after freezing, running ALSA streams: $(pcm_running)"
+) &
 
 # 4. wait for the power button: a 64-bit input_event = 24 bytes, type at byte 16 (EV_KEY = 1),
 #    code at 18 (KEY_POWER = 116), value at 20 (1 = pressed).

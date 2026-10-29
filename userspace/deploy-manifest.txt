@@ -58,6 +58,7 @@ host-user  power/op8-usbpd-capture                /home/gabriel/op8-usbpd-captur
 host-user  op8-log/op8-top                        /home/gabriel/op8-top                                                         0755
 host-user  op8-log/op8-top.service                /home/gabriel/.config/systemd/user/op8-top.service                            0644
 host-user  audio/50-op8-speakers.conf             /home/gabriel/.config/pipewire/pipewire.conf.d/50-op8-speakers.conf           0644
+host-user  audio/50-op8-pulse-idle.conf           /home/gabriel/.config/pipewire/pipewire-pulse.conf.d/50-op8-pulse-idle.conf   0644
 host-user  audio/50-op8-wireplumber.conf          /home/gabriel/.config/wireplumber/wireplumber.conf.d/50-op8-wireplumber.conf  0644
 host-user  audio/51-op8-bluetooth.conf            /home/gabriel/.config/wireplumber/wireplumber.conf.d/51-op8-bluetooth.conf    0644
 

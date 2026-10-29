@@ -4,6 +4,8 @@
 #   tools/deploy.sh          check: each manifest entry as same, DIFFERENT, missing or root-only
 #   tools/deploy.sh stage    copies the entries that are not "same" to ~/armdeck-staging/deploy/
 #                            on the phone, with an install.sh; nothing is installed yet
+#   tools/deploy.sh check|stage 'regex'   only the manifest entries whose line matches the regex
+#                            (grep -E), e.g. 'op8-standby|pulse-idle', to install one change alone
 # Then on the phone (it asks for the sudo password):
 #   sh ~/armdeck-staging/deploy/install.sh
 # install.sh backs up every file it replaces under ~/armdeck-staging/deploy/backup-<time>/,
@@ -22,7 +24,11 @@ PHONE=${PHONE:-gabriel@172.16.42.1}
 SSH=(ssh -i "$HOME/.ssh/op8_pmos" -o HostKeyAlias=172.16.42.1 -o ConnectTimeout=10 "$PHONE")
 STAGE=armdeck-staging/deploy
 
-entries() { grep -v -E '^[[:space:]]*(#|$)' "$MANIFEST"; }
+FILTER=${2:-}
+
+entries() {
+	grep -v -E '^[[:space:]]*(#|$)' "$MANIFEST" | if [ -n "$FILTER" ]; then grep -E -- "$FILTER"; else cat; fi
+}
 lhash() { sed 's/\r$//' "$1" | sha256sum | cut -c1-16; }
 
 # prints "target hash" for every entry; the hash is "missing" or "root-only" when it cannot be read
@@ -122,7 +128,7 @@ case "$changed" in *" /etc/sysctl.d/"*) sudo systemctl restart systemd-sysctl &&
 case "$changed" in *" /etc/nftables.d/"*)
 	if sudo nft -c -f /etc/nftables.nft; then sudo systemctl reload nftables && echo "firewall rules reloaded"
 	else echo "FIREWALL RULES REJECTED by nft -c: the old rules stay active"; fi ;; esac
-for s in op8-thermal op8-sampler op8-tune; do
+for s in op8-thermal op8-lowbatt op8-sampler op8-tune; do
 	case "$changed" in *"/$s "*|*"/$s.service"*|*"/$s") sudo systemctl try-restart "$s.service" && echo "$s restarted" ;; esac
 done
 case "$changed" in *op8-powerbtn*) systemctl --user try-restart op8-powerbtn.service && echo "op8-powerbtn restarted" ;; esac
