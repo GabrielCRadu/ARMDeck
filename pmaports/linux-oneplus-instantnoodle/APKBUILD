@@ -7,7 +7,7 @@ maintainer=""
 _flavor="oneplus-instantnoodle"
 pkgname=linux-$_flavor
 pkgver=6.16.7
-pkgrel=17
+pkgrel=18
 pkgdesc="OnePlus 8 (instantnoodle) mainline kernel, Xo666 fork"
 arch="aarch64"
 _carch="arm64"
@@ -125,6 +125,19 @@ makedepends="
 #         r17 kept: no change at rest, about 1% more in Tomb Raider's
 #         benchmark at the same power, GPU vote seen on the memory
 #         controller (docs/performance-scan.md 3.2).
+#   0023: Rob Clark's GMU firmware init timeout, 10 -> 100 ms as kgsl
+#         (Nova-Deck 0275); preventive, software only.
+#   0024: the Type-C port driver reads the port again at resume: its
+#         interrupts are lost across a system sleep, so a cable plugged in
+#         or pulled out during s2idle went unseen (found by the review of
+#         a deep-sleep standby, 2026-10-29). Software only, no charging
+#         value touched. Tested on hardware as test image r18 on
+#         2026-10-29: a charger plugged in during a 300 s s2idle did not
+#         wake the phone, the PMIC charged by itself (+101 mAh, about
+#         1.2 A), and right after the wake-up TCPM saw the port (online,
+#         partner registered, power delivery traffic). And a cable pulled
+#         during the sleep: after the wake-up `online` 0, no partner, sink
+#         role, usb_vbus regulator off.
 #   0019: from gennro (SteamOS-ARM-Handhelds, Armada 0568). The CPUs' DDR
 #         votes also stayed in the sleep set, so the RAM never dropped to
 #         self-refresh while every CPU slept (op8-standby, quiet moments);
@@ -173,6 +186,8 @@ source="
 	0020-drm-msm-a6xx-the-HFI-IRQ-clears-only-the-CM3-fault-bit.patch
 	0021-drm-msm-a6xx-mask-the-HFI-interrupt-before-booting-the-GMU.patch
 	0022-arm64-dts-qcom-sm8250-vote-DDR-bandwidth-for-the-GPU.patch
+	0023-drm-msm-a6xx-increase-the-GMU-firmware-init-timeout.patch
+	0024-usb-typec-qcom-pmic-typec-read-the-port-again-at-resume.patch
 	armdeck.config
 "
 builddir="$srcdir/mainline-instantnoodle-$pkgver"
@@ -242,5 +257,7 @@ b214d2ee01b3a9bc4957dea35afdcf0e226357f2d88cd15fc84208a702e7cfd0b726fcda65532412
 c16ce516e3551746fc472a63daa345457452a09e12b554a0291cc32ec7224a1e0301bbb6e24962abce4dc66e2f6fed1f972bf308ba0331bd3a47c818c2bc002b  0020-drm-msm-a6xx-the-HFI-IRQ-clears-only-the-CM3-fault-bit.patch
 7f6e3432cbded0fa7551e30fe510318e7fb0a963903fe9618da635882fa045cd06929347808adf1095be37e25983489b9dd815df1019dafb9f01ac2deb4fbb22  0021-drm-msm-a6xx-mask-the-HFI-interrupt-before-booting-the-GMU.patch
 8f13f71dad5d968710ce314ac1520dfad3766fa94d3a92614067abee28cccf5eb9ead8c3bdac6538589f959805e60e5a12bb1814778c171adac062f6801ca864  0022-arm64-dts-qcom-sm8250-vote-DDR-bandwidth-for-the-GPU.patch
+c665133f9ca8efd465b9c42152a8e40a8577088f9edce903fc1a6c82ce80b49532a693b0edc5713dd4f86f0b2612934aae4e457169d8a25f72adb2dd5e83ea54  0023-drm-msm-a6xx-increase-the-GMU-firmware-init-timeout.patch
+01a99147f21ace0bd4990e5a205be1207afdfbbd55066c6842e010b0f6507aead28d2e7e822ca7452e277dffad2041728450627713125c8c28f1ffb482f75eca  0024-usb-typec-qcom-pmic-typec-read-the-port-again-at-resume.patch
 1efc9b20d75aebc72b002d808e219abc45e8b31ea9818f2bd4e6eb062e03e8243225514903ed93b1c6e4df66f1f26d086073f7ea9b4f91eaf80b5124d27ab4bd  armdeck.config
 "

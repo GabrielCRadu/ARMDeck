@@ -1,0 +1,68 @@
+From: ARMDeck <noreply@localhost>
+Subject: [PATCH] usb: typec: qcom-pmic-typec: read the port again at resume
+
+The pm8150b Type-C port's interrupts (attach-detach, cc-state-change,
+vbus-change, ...) are requested without wake-up, and the SPMI PMIC
+arbiter masks them for a system sleep (IRQCHIP_MASK_ON_SUSPEND) and
+clears what they latched when it unmasks them at resume. So a cable
+plugged in, pulled out or a VBUS change during s2idle is never reported,
+and TCPM, which only reacts to these interrupts, keeps its old state.
+
+Examples on a OnePlus 8 that sleeps in s2idle:
+- a charger plugged in during the sleep: the PMIC charges by itself at
+  5 V, but TCPM still sees an empty port after the wake-up, with no
+  power delivery and no USB data until the cable is plugged again;
+- the phone powering a USB accessory (OTG) and pulled out of it during
+  the sleep: TCPM still believes it is the source and keeps the VBUS
+  boost on the empty port; a USB-C charger plugged in later waits for
+  0 V on VBUS and never switches on.
+
+Have TCPM read CC and VBUS again at resume. tcpm_cc_change() and
+tcpm_vbus_change() only queue events; TCPM reads the port through
+get_cc()/get_vbus() and acts only on what differs from its state.
+
+[ARMDeck: found by a review of a deep-sleep standby before it was
+installed (docs/lessons-learned.md, "Deep sleep in standby held back by
+its own review", 2026-10-29); no upstream fix found. Software only: no
+charging value, voltage or current limit is touched, and patch 0004
+still limits the sink to 5 V. It runs only at resume from a system
+sleep, which ARMDeck's standby does not use yet. Test image r18.]
+---
+diff --git a/drivers/usb/typec/tcpm/qcom/qcom_pmic_typec.c b/drivers/usb/typec/tcpm/qcom/qcom_pmic_typec.c
+index 3766790c1..a6ecf3b7e 100644
+--- a/drivers/usb/typec/tcpm/qcom/qcom_pmic_typec.c
++++ b/drivers/usb/typec/tcpm/qcom/qcom_pmic_typec.c
+@@ -140,6 +140,25 @@ static void qcom_pmic_typec_remove(struct platform_device *pdev)
+ 	fwnode_handle_put(tcpm->tcpc.fwnode);
+ }
+ 
++static int qcom_pmic_typec_resume(struct device *dev)
++{
++	struct pmic_typec *tcpm = dev_get_drvdata(dev);
++
++	/*
++	 * The port's interrupts are not wake-up sources, and the SPMI
++	 * interrupt controller masks them across a system sleep and clears
++	 * what they latched when it unmasks them. An attach, a detach or a
++	 * VBUS change during the sleep is therefore never reported. Have TCPM
++	 * read CC and VBUS again; it acts only on what differs from its state.
++	 */
++	tcpm_cc_change(tcpm->tcpm_port);
++	tcpm_vbus_change(tcpm->tcpm_port);
++
++	return 0;
++}
++
++static DEFINE_SIMPLE_DEV_PM_OPS(qcom_pmic_typec_pm_ops, NULL, qcom_pmic_typec_resume);
++
+ static const struct pmic_typec_resources pm8150b_typec_res = {
+ 	.pdphy_res = &pm8150b_pdphy_res,
+ 	.port_res = &pm8150b_port_res,
+@@ -161,6 +180,7 @@ static struct platform_driver qcom_pmic_typec_driver = {
+ 	.driver = {
+ 		.name = "qcom,pmic-typec",
+ 		.of_match_table = qcom_pmic_typec_table,
++		.pm = pm_sleep_ptr(&qcom_pmic_typec_pm_ops),
+ 	},
+ 	.probe = qcom_pmic_typec_probe,
+ 	.remove = qcom_pmic_typec_remove,
