@@ -1,0 +1,60 @@
+#!/bin/sh
+# op8-lowbatt (armdeck): a clean power-off when the battery is really empty.
+# Nothing turned the phone off on a low battery: twice (2026-10-06 and 2026-10-12) it sat in the
+# Steam interface at the gauge's 0% until the battery itself cut out at 2.65 V, 20-25 minutes
+# below 3.25 V each time (op8-sampler logs; the second log ends in NUL bytes, the file system
+# lost its last writes). A deep discharge like that wears a Li-ion cell, and a power cut can
+# corrupt files.
+# The rule is OnePlus' for this phone (LineageOS android_kernel_oneplus_sm8250,
+# drivers/power/oplus/oplus_charger.c, DT vendor/19821/kona-mtp.dtsi qcom,vbatt_power_off = 3250):
+# the gauge's 0% alone never turns the phone off while the battery is above 3.25 V; once it stays
+# below 3.25 V the shown level runs down 1% every 15 s and the phone powers off at 0. Here: off
+# when the voltage stays below 3.25 V for 15 s while the battery is discharging. Short dips under
+# a heavy load (down to 2.95 V for one sample at 2.4 A, 2026-10-06) last a few seconds and do not
+# count; a charger that keeps up (current >= 0) stops the count.
+# Log: journalctl -t op8-lowbatt.
+B=/sys/class/power_supply/bq27411-0
+OFF_MV=3250
+HOLD=15
+# slow polling while the battery is far from empty, fast near the threshold
+WATCH_MV=3400
+SLOW=10
+FAST=2
+
+log() { logger -t op8-lowbatt -- "$*"; }
+
+log "started: power-off below $OFF_MV mV for $HOLD s while discharging"
+below=0
+while :; do
+	v=$(cat "$B/voltage_now" 2>/dev/null)
+	i=$(cat "$B/current_now" 2>/dev/null)
+	if [ -z "$v" ] || [ -z "$i" ]; then
+		below=0
+		sleep "$SLOW"
+		continue
+	fi
+	mv=$((v / 1000))
+	ma=$((i / 1000))
+	if [ "$mv" -lt "$OFF_MV" ] && [ "$ma" -lt 0 ]; then
+		[ "$below" = 0 ] && log "battery $mv mV at $ma mA: below $OFF_MV mV, powering off if it stays there for $HOLD s"
+		below=$((below + FAST))
+		if [ "$below" -ge "$HOLD" ]; then
+			log "battery $mv mV at $ma mA for $below s: powering off"
+			systemctl poweroff
+			# if the normal shutdown hangs, force it a minute later
+			sleep 60
+			log "shutdown still not done: forcing it"
+			systemctl poweroff --force
+			exit 0
+		fi
+		sleep "$FAST"
+		continue
+	fi
+	[ "$below" -gt 0 ] && log "battery back to $mv mV at $ma mA after $below s: no power-off"
+	below=0
+	if [ "$mv" -lt "$WATCH_MV" ]; then
+		sleep "$FAST"
+	else
+		sleep "$SLOW"
+	fi
+done

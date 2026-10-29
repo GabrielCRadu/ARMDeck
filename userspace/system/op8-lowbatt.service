@@ -1,0 +1,12 @@
+[Unit]
+Description=op8-lowbatt: clean power-off when the battery stays below 3.25 V
+After=local-fs.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/op8-lowbatt
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
