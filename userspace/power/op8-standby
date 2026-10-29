@@ -1,37 +1,44 @@
 #!/bin/sh
-# op8-standby (armdeck, OnePlus 8): a safe "sleep" WITHOUT kernel suspend (s2idle is not tested
-# on our kernel; if it does not wake up, only a forced reset is left).
+# op8-standby (armdeck, OnePlus 8): a safe "sleep" WITHOUT kernel suspend (real suspend is held
+# back until it has a way back that does not depend on the code that may hang, see
+# docs/lessons-learned.md, "Deep sleep in standby held back by its own review").
 # Steam -> dbus-send login1 Suspend -> systemd-suspend.service -> this script (instead of
 # systemd-sleep). Panel off, the user's apps frozen, the big cores at their minimum frequency;
 # waits for the power button, then restores everything. Steam sees a normal sleep/wake cycle.
+# The kernel stays awake, so op8-lowbatt, op8-thermal and the USB-C port driver (charging, power
+# negotiation) keep running as usual.
 # Audio: Steam starts a sound as it asks for sleep and is frozen in the middle of it; PipeWire's
 # pulse.idle.timeout (audio/50-op8-pulse-idle.conf) pauses that stream after 5 s, so the audio
 # path can switch off. Step 3b logs whether it did.
 # Modeled on konkr-standby from SteamOS-ARM-Handhelds.
-# Log: journalctl -t op8-standby. Markers for op8-powerbtn: /run/op8-standby.active
-# (while it runs) and /run/op8-standby.resumed (the moment it ends).
+#   op8-standby           the standby (ExecStart of systemd-suspend.service)
+#   op8-standby cleanup   ExecStopPost: undoes a standby that ended without restoring (killed,
+#                         stop timeout), so the apps are never left frozen and the marker below
+#                         never stays behind (op8-thermal applies no limits while it exists)
+# Ending a standby from outside: sudo systemctl kill -s TERM systemd-suspend.service (op8-lowbatt
+# does this before it powers off). Not "systemctl stop": logind's suspend job cannot be replaced
+# by a stop job ("transaction is destructive"). WiFi is down during a standby (NetworkManager),
+# so not over WiFi.
+# Log: journalctl -t op8-standby. Markers for op8-powerbtn and op8-thermal:
+# /run/op8-standby.active (while it runs) and /run/op8-standby.resumed (the moment it ends).
 U=/sys/fs/cgroup/user.slice/user-10000.slice/user@10000.service
 CF=/sys/devices/system/cpu/cpufreq
 BL=$(ls -d /sys/class/backlight/* 2>/dev/null | head -1)
-EV=
-for e in /sys/class/input/event*; do
-	[ "$(cat "$e/device/name" 2>/dev/null)" = pm8941_pwrkey ] && EV=/dev/input/$(basename "$e")
-done
 log() { logger -t op8-standby -- "$*"; }
-# gamescope's own control tool, as the user who runs gamescope
-gsctl() { su -s /bin/sh gabriel -c "XDG_RUNTIME_DIR=/run/user/10000 gamescopectl $*" >/dev/null 2>&1; }
+# gamescope's own control tool, as the user who runs gamescope; it waits for gamescope's answer,
+# so a hung gamescope must not hang the standby with it
+gsctl() { timeout 5 su -s /bin/sh gabriel -c "XDG_RUNTIME_DIR=/run/user/10000 gamescopectl $*" >/dev/null 2>&1; }
 dpms() { cat /sys/class/drm/card*-DSI-1/dpms 2>/dev/null | head -1; }
 # open ALSA streams (playback or capture) that are running
 pcm_running() { grep -l RUNNING /proc/asound/card*/pcm*/sub*/status 2>/dev/null | wc -l; }
 
-touch /run/op8-standby.active
-old_bl=$(cat "$BL/brightness" 2>/dev/null)
-log "entering standby: brightness $old_bl, button $EV, uptime $(cut -d' ' -f1 /proc/uptime)"
-
+# Everything restore needs is in /run, so the cleanup run (another process) can do the same.
 restore() {
-	trap - EXIT INT TERM
+	trap - EXIT
+	trap '' INT TERM
 	for p in policy4 policy7; do
 		[ -s "/run/op8-standby-$p" ] && cat "/run/op8-standby-$p" > "$CF/$p/scaling_max_freq"
+		rm -f "/run/op8-standby-$p"
 	done
 	for c in "$U/app.slice" "$U/user.slice"; do
 		[ -w "$c/cgroup.freeze" ] && echo 0 > "$c/cgroup.freeze"
@@ -47,12 +54,36 @@ restore() {
 		sleep 0.1
 		i=$((i + 1))
 	done
+	old_bl=$(cat /run/op8-standby-bl 2>/dev/null)
 	[ -n "$old_bl" ] && echo "$old_bl" > "$BL/brightness"
-	rm -f /run/op8-standby.active
+	rm -f /run/op8-standby-bl
+	# "resumed" first: op8-powerbtn must never see neither marker while the wake-up press arrives
 	touch /run/op8-standby.resumed
+	rm -f /run/op8-standby.active
 	log "leaving standby: panel $(dpms), brightness $(cat "$BL/brightness"), app.slice frozen=$(cat "$U/app.slice/cgroup.freeze"), max cpu4=$(cat "$CF/policy4/scaling_max_freq") cpu7=$(cat "$CF/policy7/scaling_max_freq")"
 }
-trap restore EXIT INT TERM
+
+if [ "${1:-}" = cleanup ]; then
+	[ -e /run/op8-standby.active ] || exit 0
+	log "cleanup: the standby ended without restoring, restoring now"
+	restore
+	exit 0
+fi
+
+# Traps before the marker: an INT or TERM ends the script (exit runs restore once); restore itself
+# ignores further signals so a second TERM cannot cut it in half.
+trap restore EXIT
+trap 'exit 0' INT TERM
+
+EV=
+for e in /sys/class/input/event*; do
+	[ "$(cat "$e/device/name" 2>/dev/null)" = pm8941_pwrkey ] && EV=/dev/input/$(basename "$e")
+done
+# leftovers of an earlier run that ended badly
+rm -f /run/op8-wake /run/op8-standby-policy4 /run/op8-standby-policy7
+touch /run/op8-standby.active
+cat "$BL/brightness" > /run/op8-standby-bl 2>/dev/null
+log "entering standby: brightness $(cat /run/op8-standby-bl 2>/dev/null), button $EV, uptime $(cut -d' ' -f1 /proc/uptime)"
 
 # 1. black screen, then the panel off through gamescope (DPMS): the display controller stops
 #    reading the picture from memory. 275 -> 179 mA in op8-power-test (2026-10-03)
@@ -82,30 +113,40 @@ log "step 3: max cpu4=$(cat "$CF/policy4/scaling_max_freq") cpu7=$(cat "$CF/poli
 # 4. wait for the power button: a 64-bit input_event = 24 bytes, type at byte 16 (EV_KEY = 1),
 #    code at 18 (KEY_POWER = 116), value at 20 (1 = pressed).
 #    Presses in the first 2 seconds are ignored (the same press that asked for sleep).
-#    Fallback exit: the file /run/op8-wake (sudo touch /run/op8-wake, over SSH).
+#    The device is opened once (fd 3): a dd per event on the path would lose the events that
+#    arrive between two reads. If the button cannot be read, the standby ends (better awake than
+#    stuck with the panel off).
+#    Fallback exit: the file /run/op8-wake, looked at after each event.
 start=$(cut -d. -f1 /proc/uptime)
+if [ -z "$EV" ] || ! exec 3< "$EV"; then
+	log "power button not found or not readable ($EV): leaving standby"
+	exit 0
+fi
+fails=0
 while :; do
 	if [ -e /run/op8-wake ]; then
 		rm -f /run/op8-wake
 		log "woken through /run/op8-wake"
 		break
 	fi
-	if [ -n "$EV" ]; then
-		if ! dd if="$EV" bs=24 count=1 of=/run/op8-standby-ev 2>/dev/null; then
-			log "read from $EV failed"
-			sleep 1
-			continue
-		fi
-		set -- $(od -An -tu2 -j16 -N4 /run/op8-standby-ev) 0 0
-		val=$(od -An -td4 -j20 -N4 /run/op8-standby-ev | tr -d ' ')
-		now=$(cut -d. -f1 /proc/uptime)
-		[ "$1" = 1 ] && log "event type=$1 code=$2 value=$val at +$((now - start)) s"
-		if [ "$1" = 1 ] && [ "$2" = 116 ] && [ "$val" = 1 ] && [ $((now - start)) -ge 2 ]; then
-			log "woken by the power button"
+	if ! dd bs=24 count=1 of=/run/op8-standby-ev <&3 2>/dev/null || [ ! -s /run/op8-standby-ev ]; then
+		fails=$((fails + 1))
+		log "read from $EV failed ($fails)"
+		if [ "$fails" -ge 10 ]; then
+			log "the power button cannot be read: leaving standby"
 			break
 		fi
-	else
 		sleep 1
+		continue
+	fi
+	fails=0
+	set -- $(od -An -tu2 -j16 -N4 /run/op8-standby-ev) 0 0
+	val=$(od -An -td4 -j20 -N4 /run/op8-standby-ev | tr -d ' ')
+	now=$(cut -d. -f1 /proc/uptime)
+	[ "$1" = 1 ] && log "event type=$1 code=$2 value=$val at +$((now - start)) s"
+	if [ "$1" = 1 ] && [ "$2" = 116 ] && [ "$val" = 1 ] && [ $((now - start)) -ge 2 ]; then
+		log "woken by the power button"
+		break
 	fi
 done
 exit 0

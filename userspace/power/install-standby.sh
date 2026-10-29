@@ -1,5 +1,6 @@
 #!/bin/sh
-# armdeck: Steam's sleep becomes op8-standby (without kernel suspend).
+# armdeck: Steam's sleep becomes op8-standby (without kernel suspend). Later updates of these
+# files go through tools/deploy.sh (userspace/deploy-manifest.txt).
 # Undo: sudo rm -r /etc/systemd/system/systemd-suspend.service.d/10-op8-standby.conf \
 #   /etc/polkit-1/rules.d/50-armdeck-power.rules && sudo systemctl daemon-reload
 # Run: sudo sh /tmp/op8-log/install-standby.sh
@@ -8,12 +9,7 @@ S=$(dirname "$0")
 install -m 755 "$S/op8-standby" /usr/local/bin/
 mkdir -p /etc/polkit-1/rules.d /etc/systemd/system/systemd-suspend.service.d
 install -m 644 "$S/50-armdeck-power.rules" /etc/polkit-1/rules.d/
-cat > /etc/systemd/system/systemd-suspend.service.d/10-op8-standby.conf <<'EOF'
-# armdeck: a safe standby instead of kernel suspend (s2idle not tested)
-[Service]
-ExecStart=
-ExecStart=/usr/local/bin/op8-standby
-EOF
+install -m 644 "$S/10-op8-standby.conf" /etc/systemd/system/systemd-suspend.service.d/
 sync
 systemctl daemon-reload
 systemctl restart polkit

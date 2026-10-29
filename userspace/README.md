@@ -83,8 +83,14 @@ On the PC: `pc/op8-live.sh [ip]` saves the phone's live log, the samples and a p
   in `docs/hardware-safety.md` 4.4). It is not raised without a test. Never use `aplay` on the
   host: there ALSA goes straight to the hardware and bypasses the limiter.
 - **Never `apk upgrade --prune` / `--available`** on the phone (they remove the local packages).
-- **Sleep:** `op8-standby` does not suspend the kernel (s2idle is still being tested). Wake-up:
-  the power button; as a fallback `sudo touch /run/op8-wake`.
+- **Sleep:** `op8-standby` does not suspend the kernel: real suspend works but is held back until
+  it has a way back that does not depend on the code that may hang, and until the USB-C driver
+  notices cables plugged in during it (docs/lessons-learned.md). Panel off, apps frozen, about
+  160 mA. Wake-up: the power button; from outside,
+  `sudo systemctl kill -s TERM systemd-suspend.service` (`systemctl stop` is refused while
+  logind's suspend job runs; WiFi is down during a standby, so not over WiFi; `op8-lowbatt` does
+  this before it powers off). A standby that ends badly is undone by `op8-standby cleanup`
+  (ExecStopPost).
 
 ## Logs
 

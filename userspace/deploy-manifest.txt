@@ -11,7 +11,7 @@
 #   replaces  optional: an older name of the same file, moved out of the way when installing
 #
 # Not listed: install-only scripts, PC tools, test tools, and the files the install scripts
-# generate themselves (72-armdeck-backlight.rules, 10-op8-standby.conf, ...).
+# generate themselves (72-armdeck-backlight.rules, ...).
 
 host-root  system/op8-tune                        /usr/local/bin/op8-tune                                                       0755
 host-root  system/op8-tune.service                /etc/systemd/system/op8-tune.service                                          0644
@@ -19,6 +19,7 @@ host-root  system/op8-thermal                     /usr/local/bin/op8-thermal    
 host-root  system/op8-thermal.service             /etc/systemd/system/op8-thermal.service                                       0644
 host-root  system/op8-lowbatt                     /usr/local/bin/op8-lowbatt                                                    0755
 host-root  system/op8-lowbatt.service             /etc/systemd/system/op8-lowbatt.service                                       0644
+host-root  system/armdeck-poweroff-timeout.conf  /etc/systemd/system/poweroff.target.d/armdeck-poweroff-timeout.conf          0644
 host-root  system/armdeck-usb-gadget-off          /usr/local/bin/armdeck-usb-gadget-off                                         0755
 host-root  system/armdeck-usb-gadget-off.service  /etc/systemd/system/armdeck-usb-gadget-off.service                            0644
 host-root  system/armdeck-boot-rw                 /etc/apk/commit_hooks.d/armdeck-boot-rw                                       0755
@@ -27,6 +28,7 @@ host-root  system/60_armdeck_remote_play.nft      /etc/nftables.d/60_armdeck_rem
 host-root  audio/armdeck-audio-recover           /usr/local/bin/armdeck-audio-recover                                          0755
 host-root  audio/armdeck-audio-recover.service   /etc/systemd/system/armdeck-audio-recover.service                             0644
 host-root  power/op8-standby                      /usr/local/bin/op8-standby                                                    0755
+host-root  power/10-op8-standby.conf               /etc/systemd/system/systemd-suspend.service.d/10-op8-standby.conf             0644
 host-root  power/50-armdeck-power.rules           /etc/polkit-1/rules.d/50-armdeck-power.rules                                  0644  /etc/polkit-1/rules.d/50-steamed-noodle-power.rules
 host-root  op8-log/op8-bootreport                 /usr/local/bin/op8-bootreport                                                 0755
 host-root  op8-log/op8-bootreport.service         /etc/systemd/system/op8-bootreport.service                                    0644

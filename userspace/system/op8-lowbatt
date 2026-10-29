@@ -22,17 +22,51 @@ SLOW=10
 FAST=2
 
 log() { logger -t op8-lowbatt -- "$*"; }
+# A standby (op8-standby) keeps the user's apps frozen with cgroup.freeze, which systemd does not
+# know about: a shutdown would then wait for every frozen unit's stop timeout, minutes of a draining
+# battery below 3.25 V. End the standby first (its restore thaws the apps), and thaw them here as
+# well in case that did not work. A signal, not "systemctl stop": logind's suspend job cannot be
+# replaced by a stop job ("transaction is destructive", tested 2026-10-29); op8-standby ends on
+# TERM and restores.
+end_standby() {
+	[ -e /run/op8-standby.active ] || return 0
+	log "standby active: ending it before the power-off"
+	systemctl kill -s TERM systemd-suspend.service
+	n=0
+	while [ -e /run/op8-standby.active ] && [ $n -lt 15 ]; do
+		sleep 1
+		n=$((n + 1))
+	done
+	[ -e /run/op8-standby.active ] && log "standby still marked active after $n s"
+	u=/sys/fs/cgroup/user.slice/user-10000.slice/user@10000.service
+	for c in "$u/app.slice" "$u/user.slice"; do
+		[ -w "$c/cgroup.freeze" ] && echo 0 > "$c/cgroup.freeze"
+	done
+}
 
 log "started: power-off below $OFF_MV mV for $HOLD s while discharging"
 below=0
+blind=0
 while :; do
 	v=$(cat "$B/voltage_now" 2>/dev/null)
 	i=$(cat "$B/current_now" 2>/dev/null)
 	if [ -z "$v" ] || [ -z "$i" ]; then
+		# without the gauge nothing protects the battery: 10 minutes blind is a fault, not a glitch,
+		# and a clean power-off is better than running the battery down unseen
+		[ "$blind" = 0 ] && log "battery gauge unreadable"
+		blind=$((blind + SLOW))
+		if [ "$blind" -ge 600 ]; then
+			log "battery gauge unreadable for $blind s: powering off"
+			end_standby
+			systemctl poweroff
+			exit 0
+		fi
 		below=0
 		sleep "$SLOW"
 		continue
 	fi
+	[ "$blind" -gt 0 ] && log "battery gauge readable again after $blind s"
+	blind=0
 	mv=$((v / 1000))
 	ma=$((i / 1000))
 	if [ "$mv" -lt "$OFF_MV" ] && [ "$ma" -lt 0 ]; then
@@ -40,8 +74,11 @@ while :; do
 		below=$((below + FAST))
 		if [ "$below" -ge "$HOLD" ]; then
 			log "battery $mv mV at $ma mA for $below s: powering off"
+			end_standby
 			systemctl poweroff
-			# if the normal shutdown hangs, force it a minute later
+			# Only for a poweroff request that never starts: once the shutdown starts, systemd
+			# stops this service too, and the safety net is the 3 minute job timeout of
+			# poweroff.target (armdeck-poweroff-timeout.conf, then a forced power-off).
 			sleep 60
 			log "shutdown still not done: forcing it"
 			systemctl poweroff --force
