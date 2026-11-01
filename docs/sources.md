@@ -75,6 +75,9 @@ To add a source, add a row; to stop following one, delete its row.
 | [WirePlumber](https://gitlab.freedesktop.org/pipewire/wireplumber) | `tags: ^[0-9]+\.[0-9]+\.[0-9]+$` | Audio session manager (routing, volume). |
 | [gamesir-linux-tools](https://github.com/broroeror/gamesir-linux-tools) | `commits` | Linux configuration of GameSir controllers through their vendor HID protocol (G7 Pro, T4 today); watch for GameSir X3 Pro support (fan, pass-through charging). |
 | [SDL GameSir driver](https://github.com/libsdl-org/SDL) | `commits: src/joystick/hidapi/SDL_hidapi_gamesir.c` | SDL's GameSir support (G7 Pro 8K, Tarantula 8K so far); the X3 Pro may be added. |
+| [Decky Loader](https://github.com/SteamDeckHomebrew/decky-loader) | `releases` | The plugin menu in Quick Access (`steam/install-decky.sh`), which our ARMDeck plugin runs in. Official ARM64 Linux builds since v3.3.0 (2026-10-18), which also brought the `@decky/ui` fix for a Steam beta change. Added 2026-10-30, after that release went unseen for 12 days. |
+| [Decky Loader, DroidDeck's ARM64 fork](https://github.com/Droid-Deck/decky-loader) | `releases` | The ARM64 build we installed (`droiddeck-arm64-preview.2`, Decky v3.2.9-dev8) before upstream had one. |
+| [decky-frontend-lib](https://github.com/SteamDeckHomebrew/decky-frontend-lib) | `releases` | `@decky/ui`, the library Decky gives plugins at run time (the `DFL` global) and our plugin is typed against; its fixes follow Steam's own interface changes. |
 | [GalaxyBudsClient](https://github.com/timschneeb/GalaxyBudsClient) | `releases` | Implements the Galaxy Buds' own control protocol, including the low-latency Gaming mode we want to switch on (TODO 27). |
 
 Not followed automatically: single articles, issue threads and mailing list patches (for example

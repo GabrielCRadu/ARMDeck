@@ -1,0 +1,147 @@
+#!/bin/sh
+# op8-thermal-test (armdeck): a test of op8-thermal with fake battery temperatures, without
+# heating anything. Stops the real service, runs a copy that reads the temperature from a file,
+# checks the level and the limits in sysfs at every step, triggers one real standby pause and
+# the power-off counter inside it (held well below OFF_HOLD), then restores the limits and
+# starts the service again. Detached from SSH, since WiFi goes down in standby:
+#   sudo systemd-run --unit=op8-thermal-test --collect /bin/sh /home/<user>/op8-thermal-test
+# About 2.5 min after the start the panel goes off (the pause): wait about 30 s, then wake the
+# phone with the power button. The whole test takes about 5 min.
+# Result: /var/log/op8/thermal-test-<date>.txt, ending with "failures: 0" when all passed.
+# Safety: while it runs the real protection is off, so it aborts and starts the service again
+# as soon as the real battery reaches 41 C.
+# The expected limits are the OnePlus 8's frequency tables (cpuinfo_max_freq 1804800, 2419200
+# and 2841600 kHz, GPU 587 MHz); first passed on the phone 2026-10-30.
+LOG=/var/log/op8/thermal-test-$(date +%Y%m%d-%H%M%S).txt
+F=/run/op8-thermal-test.temp
+REAL=/sys/class/power_supply/bq27411-0/temp
+CF=/sys/devices/system/cpu/cpufreq
+GPU=/sys/class/devfreq/3d00000.gpu
+STANDBY=/run/op8-standby.active
+mkdir -p /var/log/op8
+exec > "$LOG" 2>&1
+START=$(date '+%Y-%m-%d %H:%M:%S')
+fails=0
+pid=
+
+caps() { echo "$(cat $CF/policy0/scaling_max_freq) $(cat $CF/policy4/scaling_max_freq) $(cat $CF/policy7/scaling_max_freq) $(cat $GPU/max_freq)"; }
+
+cleanup() {
+	echo 300 > "$F"
+	[ -n "$pid" ] && kill "$pid" 2>/dev/null
+	sleep 1
+	/usr/local/bin/op8-thermal restore
+	rm -f "$F" /run/op8-thermal.paused
+	systemctl start op8-thermal
+	sleep 6
+	echo "== service: $(systemctl is-active op8-thermal), level $(cat /run/op8-thermal.level 2>/dev/null), caps $(caps)"
+	echo "== journal (op8-thermal since $START):"
+	journalctl -t op8-thermal --since "$START" --no-pager -o short-precise
+	echo "== failures: $fails"
+}
+trap 'cleanup; exit' INT TERM
+
+fail() {
+	echo "FAIL  $*"
+	fails=$((fails + 1))
+}
+
+# the level and the four limits it should have set
+expect() {
+	case "$1" in
+		0) e="1804800 2419200 2841600 587000000" ;;
+		1) e="1804800 2054400 2457600 587000000" ;;
+		2) e="1804800 1766400 2073600 525000000" ;;
+		3) e="1516800 1478400 1632000 441600000" ;;
+		4) e="1248000 1056000 1190400 305000000" ;;
+		5) e="883200 710400 844800 305000000" ;;
+	esac
+	l=$(cat /run/op8-thermal.level 2>/dev/null)
+	c=$(caps)
+	if [ "$l" = "$1" ] && [ "$c" = "$e" ]; then
+		echo "PASS  fake $(cat $F): level $l, caps $c"
+	else
+		fail "fake $(cat $F): level $l (want $1), caps $c (want $e)"
+	fi
+}
+
+# waits $1 seconds, aborting if the real battery gets warm
+hold() {
+	h=$1
+	while [ "$h" -gt 0 ]; do
+		r=$(cat "$REAL")
+		if [ "$r" -ge 410 ]; then
+			fail "the real battery is at $r (tenths of a degree): aborted"
+			cleanup
+			exit 1
+		fi
+		sleep 1
+		h=$((h - 1))
+	done
+}
+
+step() { echo "$1" > "$F"; hold "$2"; }
+
+echo "== start $START, real battery $(cat $REAL), caps before: $(caps)"
+systemctl stop op8-thermal
+echo 300 > "$F"
+OP8_THERMAL_TEMP_FILE=$F /usr/local/bin/op8-thermal &
+pid=$!
+hold 8
+expect 0
+
+echo "== going up, one level at a time"
+step 415 12; expect 1
+step 425 12; expect 2
+step 435 12; expect 3
+step 450 12; expect 4
+step 475 12; expect 5
+
+echo "== cooling: one level at a time, 1 C below each threshold"
+step 465 12; expect 5
+step 455 12; expect 4
+step 430 12; expect 3
+step 300 25; expect 0
+
+echo "== a jump: straight to level 5"
+step 480 8; expect 5
+
+echo "== pause: the phone goes into standby now; wake it with the power button after about 30 s"
+echo 521 > "$F"
+t0=$(date +%s)
+since() { echo $(($(date +%s) - t0)); }
+while [ ! -e "$STANDBY" ] && [ "$(since)" -lt 15 ]; do hold 1; done
+if [ -e "$STANDBY" ]; then
+	echo "PASS  standby started after $(since) s, paused file: $(cat /run/op8-thermal.paused 2>/dev/null)"
+else
+	fail "no standby within 15 s"
+fi
+# the loop must keep running in standby: 58.5 C for about 10 s, then back down (no power-off)
+hold 3
+echo "== in standby: 58.5 C for about 10 s, then back to 52.1 C"
+step 585 11
+echo 521 > "$F"
+while [ -e "$STANDBY" ] && [ "$(since)" -lt 600 ]; do hold 1; done
+echo "== woken up $(since) s after the pause"
+hold 8
+expect 5
+
+echo "== still at 52.1 C after waking: no second pause"
+hold 15
+if [ -e "$STANDBY" ]; then
+	fail "a second pause started"
+else
+	echo "PASS  no second pause"
+fi
+if journalctl -t op8-thermal --since "$START" --no-pager | grep -q "after .* s: no power-off"; then
+	echo "PASS  the power-off counter ran in standby and was reset"
+else
+	fail "no power-off counter log from the standby"
+fi
+
+echo "== re-arming the pause below 47 C, then cooling to normal"
+step 465 8
+step 300 30
+expect 0
+
+cleanup

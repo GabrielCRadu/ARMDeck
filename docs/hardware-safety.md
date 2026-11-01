@@ -440,12 +440,31 @@ physically, what has been checked, and the precise test to run on the phone.
   `sm8250.dtsi`. Careful: `QCOM_TSENS`, `QCOM_SPMI_TEMP_ALARM` and `QCOM_LMH` are **modules**, so
   the software thermal protection exists only once they load from the root filesystem.
   Independently of the OS, the SoC resets itself in hardware at a critical temperature.
-  ARMDeck adds `op8-thermal`, which limits the big CPU cores and the GPU by battery temperature
-  (41-44.5 °C).
+  ARMDeck adds `op8-thermal`, which limits the CPU cores and the GPU by battery temperature.
+- **OnePlus' battery limits for this phone** (LineageOS `android_kernel_oneplus_sm8250`, DT
+  `vendor/oplus/instantnoodle/kona-mtp.dtsi`, read 2026-10-30): normal 16-44.9 °C; "warm" from
+  45 °C, where charging drops to 1.1 A and 4.13 V; "hot" from 50 °C, where charging stops.
+  `oplus_charger.h` powers the phone off only above 77 °C (85 °C at once), a last resort behind
+  Android's own throttling.
+- **Charging here:** Linux has no charger driver on this phone (only the gauge and the Type-C
+  port are power supplies); the PM8150B charges on its own with the bootloader's setup, and its
+  JEITA compensation is off (`JEITA_EN_CFG` = 0x00), so it charges at full current up to its
+  hard hot limit. There is no standard interface to stop it, and the PMIC's charging registers
+  stay untouched (rule 3.4), so the protection cuts the heat instead and asks the user to
+  unplug.
+- **`op8-thermal` (levels since 2026-10-30):** 41, 42, 43 and 44.5 °C cap the big cores, the
+  prime core and the GPU step by step, from level 3 also the little cores; level 5 (47 °C) holds
+  everything near its minimum. At 52 °C it pauses the phone once in standby (apps frozen, panel
+  and WiFi off; armed again below 47 °C), and at 58 °C held for 30 s it powers off cleanly, in
+  any state. The ARMDeck plugin warns in Steam at level 5, after a pause, and when the battery
+  charges at 45 °C or more. The levels before 2026-10-30 capped only the big cores and the GPU,
+  and a Steam download took the battery to 56.4 °C past them (lessons-learned.md).
 - **Test:**
   ```
   lsmod | grep -E "tsens|lmh|temp_alarm"
   for z in /sys/class/thermal/thermal_zone*; do echo "$(cat $z/type) $(cat $z/temp)"; done
+  # op8-thermal itself, with fake temperatures (passed 2026-10-30; one real standby pause):
+  sudo systemd-run --unit=op8-thermal-test --collect /bin/sh /home/gabriel/op8-thermal-test
   ```
   Then a 2-minute stress test (`stress-ng --cpu 8 --timeout 120`) with the temperatures
   logged. The thresholds in `sm8250.dtsi`: throttling from 90 °C, stronger at 95 °C, protective

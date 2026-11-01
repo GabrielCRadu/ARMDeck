@@ -58,9 +58,17 @@ while kill -0 "$STEAM_PID" 2>/dev/null; do
 	# the variables of Decky's own service file, with this user instead of "deck"; nothing from
 	# the Steam session (its LD_LIBRARY_PATH would load Steam's libraries into Decky). Its
 	# restarts go through our systemctl (decky-systemctl, first in PATH).
+	# CHOWN_PLUGIN_PATH=0 and LIVE_RELOAD=0: run as the host user, Decky found every plugin folder
+	# "not owned by the effective user" (it checks the host user first, and here both are the
+	# same) and ran chown -R and chmod -R 755 on it each time it looked at the plugin; its hot
+	# reload saw those metadata changes as edits and looked again, 12 times a second without end,
+	# once a plugin update had started it (2026-10-30, Decky v3.3.1). Everything here already
+	# belongs to this user; the plugin store loads what it installs by itself, and
+	# deploy-decky-plugin.sh restarts Decky.
 	setsid env -i HOME=/home/gabriel USER=gabriel PATH="$H/armdeck:/usr/local/bin:/usr/bin:/bin" \
 		LANG=C.UTF-8 XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-}" LINUX_SERVICE_MANAGER=systemd \
 		UNPRIVILEGED_PATH="$H" PRIVILEGED_PATH="$H" UNPRIVILEGED_USER=gabriel LOG_LEVEL=INFO \
+		CHOWN_PLUGIN_PATH=0 LIVE_RELOAD=0 \
 		"$BIN" >> "$LOG" 2>&1 &
 	LOADER=$!
 	while kill -0 "$STEAM_PID" 2>/dev/null && kill -0 "$LOADER" 2>/dev/null; do

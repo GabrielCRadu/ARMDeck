@@ -799,9 +799,9 @@ was running (udev rules + `udevadm trigger` + restarting nftables).
     Decky restarts itself with `systemctl restart plugin_loader` (after some settings changes, or
     its Restart button); here that service does not exist, so the first restart left Decky
     waiting with its menu half loaded. `op8-decky` now puts `decky-systemctl` first in Decky's
-    PATH: "restart" and "stop" end the loader and `op8-decky` starts it again. Its own updater does
-    nothing on ARM64 (DroidDeck's fork leaves updates to an outside installer); updates go through
-    `install-decky.sh`.
+    PATH: "restart" and "stop" end the loader and `op8-decky` starts it again. DroidDeck's fork
+    left updates to an outside installer; upstream's own build (since 2026-10-30, below) updates
+    itself from upstream's ARM64 asset, and `install-decky.sh` stays the checked way in.
     Second problem, the same evening: after a Steam session restart the screen stayed black.
     Two plugin processes (Decky LSFG-VK, CSS Loader) ignored SIGTERM and outlived the loader;
     gamescope's reaper waits for every process of the session, so `steam-gs` hung in
@@ -825,6 +825,17 @@ was running (udev rules + `udevadm trigger` + restarting nftables).
     To remove a plugin by hand: delete `~/homebrew/plugins/<name>` and its `settings`, `data` and
     `logs` folders, then restart Decky; killing only a plugin's process left the loader unable to
     stop, and it needed SIGKILL.
+    **Upstream Decky v3.3.1 (2026-10-30).** A Steam beta update broke `@decky/ui`'s lookup of
+    `staticClasses` in DroidDeck's v3.2.9-dev8, and with it Decky's whole Quick Access panel.
+    Upstream ships its own ARM64 build since v3.3.0, with the fix; `install-decky.sh` installs
+    v3.3.1 now (sha256 checked, the old binary kept as `PluginLoader.prev`). The same day, two
+    problems that cost battery:
+    - the hot reload loop of 2026-10-05 came back after a CSS Loader update, 12 times a second.
+      Its cause: run as the host user, Decky chowns and chmods a plugin's folder every time it
+      looks at it, and the hot reload takes those metadata changes for edits.
+      `op8-decky` now passes `CHOWN_PLUGIN_PATH=0 LIVE_RELOAD=0`;
+    - SteamGridDB 1.8.1 grew to 14 GB of memory within minutes and was disabled.
+    Idle Steam menu afterwards: 423 mA with the X3 attached, CPU 3 % busy (lessons-learned.md).
     **ARMDeck's own plugin (2026-10-06).** `userspace/decky/armdeck` (TypeScript panel, Python
     backend, built and copied by `tools/deploy-decky-plugin.sh`), in Quick Access:
     - Frame generation for the running game: the switch adds or removes the plugin's part of the
@@ -997,6 +1008,201 @@ was running (udev rules + `udevadm trigger` + restarting nftables).
     (dwc3-qcom drops its votes), but `op8-standby` and every idle minute with the screen on pay
     for it. To find out: why dwc3 never runtime-suspends without a cable (gadget mode,
     `armdeck-usb-gadget-off`, role switch), and what the vendor kernel does there.
+38. **Non-Steam games and emulators, added from Game Mode (asked by the maintainer 2026-10-30):
+    in progress.** Steam's Game Mode cannot add a non-Steam game; only its desktop client can.
+    The goal is to do it all from Game Mode, in the ARMDeck Decky plugin, through Steam's live
+    API (`SteamClient.Apps.AddShortcut`): Steam keeps writing its own `shortcuts.vdf` and needs no
+    restart. Armada's `decky/armada-store` and Nova-Deck's `novadeck-stores` (GPL-2.0) work this
+    way. Steam runs in the Fedora container, so whatever a tile starts runs there too. The
+    emulators therefore go in the container, as aarch64 AppImages (one-file programs) from
+    official releases with pinned checksums, or as Fedora packages. They do not go on the host,
+    and not as Flatpaks, which bring their own Mesa instead of the one we control. The five
+    parts:
+    1. a Library tab with an emulator catalog: install with one tap, each emulator gets a tile
+       and a controller layout (for Dolphin, bind the D-pad to the evdev hat axes, which is how
+       many controllers report it: pocknix-os, 2026-10-30);
+    2. "Add a game" with Decky's file picker, the way to start it chosen from the file: `.exe`
+       Proton 11 (ARM64), a ROM the emulator of its system, an AppImage or a script natively.
+       Decky's picker is drawn by the plugin itself; Steam's own file dialog
+       (`SteamClient.System.OpenFileDialog`, behind "Add a Non-Steam Game > Browse...") never
+       returns on the ARM64 client and then blocks Steam's shutdown, which is why DroidDeck
+       replaces it with its own (DroidDeck PR 1798, 2026-10-30);
+    3. an Inbox folder: whatever lands there is recognized, unpacked, moved to its place and
+       gets a tile, with a toast in Steam;
+    4. files without a cable: a QR code in Quick Access opens an upload page served by the
+       phone, with a one-time token, only on the home network, closing by itself (safer than
+       pocknix's share without a password, which pocknix itself warns about);
+    5. artwork: libretro-thumbnails for ROMs (no account needed), SteamGridDB for PC games.
+
+    **Part 1 on the phone (2026-10-30):** PPSSPP installed from the Library page, got its tile,
+    started from Steam and left through Steam's Exit game. Fixed on the way, in `armdeck-run`:
+    PPSSPP's own window now opens full screen (`--fullscreen`, given before only with a game);
+    Steam's `VK_INSTANCE_LAYERS` (two Valve layers that exist only in its game container) made the
+    Vulkan loader fail, so PPSSPP greyed out Vulkan, and Steam's `LD_LIBRARY_PATH` (Steam's
+    libraries, plus an empty entry, the current folder) reached the emulator; both are cleaned
+    now. PPSSPP's menu with its animated background costs about 600 mA over the idle Steam menu,
+    the same in OpenGL and Vulkan (the GPU stays at 587 MHz, redrawing at 90 Hz). Still to do:
+    - AppImages: the container has no `fusermount` for them, so each start unpacked the whole
+      program into `/tmp`, which is in RAM (231 MB for PPSSPP) and slows the start. **Done
+      2026-10-30 (tested on the PC with fake AppImages, then on the phone, see Part 2):** the Library
+      unpacks each AppImage once, at install, with its own runtime (`--appimage-extract`; the
+      "anylinux" builds are DwarFS images, which only their runtime reads) into `app/` next to
+      it, with a stamp naming the AppImage it came from. `armdeck-run` starts `app/AppRun` when
+      the stamp matches, the AppImage as before otherwise. Emulators installed earlier are
+      unpacked when the plugin loads, one at a time.
+    - The "anylinux" AppImages (PPSSPP, Dolphin, Azahar) are built with sharun and bring their
+      own Mesa (26.0.6 in PPSSPP 1.20.4; the container has 26.2.3). In the running PPSSPP the
+      bundled Turnip, the container's Turnip, `lvp` (Vulkan on the CPU, with LLVM) and `dzn` were
+      all loaded, with two "Turnip" shader caches: on aarch64 their hook sets
+      `SHARUN_ALLOW_SYS_VKICD=1`, and sharun then puts every driver of the system and of the
+      bundle before the session's `VK_DRIVER_FILES` (sharun's `main.rs`). **Same change:** the
+      unpacked copy loses the bundled Vulkan driver list and `armdeck-run` sets
+      `SHARUN_ALLOW_SYS_VKICD=0`, so Vulkan uses only the container's Turnip. OpenGL still uses
+      the bundled Mesa (the next step, if OpenGL matters for an emulator). `armdeck-run` also
+      sets `DISABLE_AUTO_UPDATES=1`: the same AppImages carry a self-updater hook that would
+      replace the pinned, checked version.
+      To check on the phone: PPSSPP's `/proc/<pid>/maps` shows only `/usr/lib64/libvulkan_freedreno.so`,
+      Vulkan still offered, the start time.
+    - First real game (GTA Vice City Stories, PSP, Vulkan, 2x internal resolution): smooth, about
+      930 mA from the battery with the X3 attached (less than PPSSPP's animated menu), CPU 22 %
+      busy, battery 36.4 °C, thermal level 0. But with Quick Access open the game ran at 3x speed,
+      and the overlay showed 90 fps: something paces the emulation by the screen's refresh while
+      the overlay is up (the game draws 30 fps on a 60 Hz PSP; the panel runs at 90 Hz). To find:
+      PPSSPP's frame pacing and refresh rate settings, gamescope's behaviour while the overlay is
+      up, and whether the tile should run the panel at 60 Hz. The maintainer also saw a much
+      steadier frametime graph at those 90 fps than at the normal 30: a 60 Hz emulator on a 90 Hz
+      panel can only show its frames 1 or 2 refreshes apart, never evenly, which points the same
+      way (60 Hz for emulators of 60 Hz systems).
+    - Whether Steam's frame limit reaches an emulator started this way.
+    - Every emulator's menu reachable from the controller out of the box: Steam keeps the Guide
+      button, and PPSSPP's default Pause on the left trigger does not work in its SDL build
+      ([lessons-learned.md](lessons-learned.md), Steam session). The rule: L3 + R3 opens the
+      emulator's menu. RetroArch has it (`armdeck-retroarch.cfg`); PPSSPP gets it from
+      `armdeck-run`, once, with the left trigger as well (on the phone 2026-10-30: both open
+      the menu). DuckStation, ARMSX2, Dolphin, melonDS and Azahar: to look up in each one's defaults
+      when they are installed.
+
+    **Part 2 written (2026-10-30, tested on the PC, not yet on the phone):** "Add a game" at the
+    top of the Library page opens Decky's file picker in `Emulation/roms` (else the games
+    partition). The backend (`armdeck_library/games.py`) says what the file is (`detect.py`), and
+    the frontend then asks which console when the file alone does not tell (a CHD, a CSO), says
+    which emulator to install first, or that the game already has a tile, and otherwise shows
+    how the game will start with an editable name. The tile points at the file where it is: an
+    emulated game through `armdeck-run game <system> <file>`, a Windows `.exe` through Proton 11
+    (ARM64), an ARM64 program or script directly (made executable if it was not). Tested with
+    sample files: a PSP ISO, an `.exe` with a generic name (the tile takes its folder's name), a
+    script, an `.nds` without melonDS, a CHD with no metadata (three choices), a text file.
+    **On the phone the same evening:** with the plugin deployed, the plugin unpacked the
+    PPSSPP installed earlier at load, in under a second (232 MB in `app/`, the bundled Vulkan
+    list gone). GTA Vice City Stories got its tile through "Add a game" and started from
+    `app/AppRun`, with no copy in `/tmp`. The running PPSSPP's maps then showed one Vulkan
+    driver, `/usr/lib64/libvulkan_freedreno.so` (the container's Turnip), next to the bundled
+    Vulkan loader: no second Turnip, no `lvp`, no LLVM, no `dzn`. Still to check: a Windows game.
+
+#### Ideas for later: more non-Steam games, emulation, a phone-style desktop (2026-10-30)
+
+Researched on 2026-10-30 (Bazzite, SteamOS, Armada, pocknix, Nova-Deck, DroidDeck), kept here
+for after item 38. Builds for aarch64 checked that day on the release pages: ES-DE 3.5.0
+(`ES-DE_aarch64.AppImage`), Steam ROM Manager 2.5.44 (arm64 AppImage), Heroic 2.22.4 (official
+arm64 AppImage and rpm), DuckStation (`DuckStation-arm64.AppImage`), ARMSX2 2.9.1 (PS2,
+`Linux-arm64-4K-pages.AppImage`), and in Armada's catalog RPCS3, Vita3K, xemu, Azahar, melonDS
+and Cemu. Fedora 44 ships retroarch 1.22.0, dolphin-emu 2503a and plasma-mobile 6.6.4.
+RetroDECK is x86_64 only. On the phone: 12 GB of RAM, 25 GB free of 215 on the games partition.
+
+- **Windows installers** (GOG offline `setup.exe`, itch.io archives): run the installer in Proton
+  as a temporary tile; when it closes, read the Start Menu `.lnk` files it left in the prefix
+  (the game's Windows folder) and offer tiles with the real names, sharing that prefix. Like
+  Lutris, but in Game Mode.
+- **Stores:** Heroic (arm64) as a tile for Epic, GOG and Amazon. The games it installs get a
+  tile that starts their `.exe` through Steam's Proton, so Steam composes Proton, its runtime
+  and FEX (Nova-Deck's "model B"). The bigger version is Nova-Deck's: the whole owned library as
+  tiles, installed on the first tap. Epic games that need the launcher's login token may not
+  start this way.
+- **BIOS assistant:** which systems lack their BIOS, checked by hash, with the exact file names;
+  BIOS files dropped in the Inbox go to their folder by themselves.
+- **ES-DE as a "Retro" tile** (a console-style menu made for the controller), plus favourite
+  games as tiles. Folder names as in EmuDeck (`Emulation/roms/<system>`), so guides
+  found online apply.
+- **The emulator set for SM8250:** RetroArch (8/16-bit, GBA, N64, PS1), PPSSPP (PSP), melonDS
+  (DS), Azahar (3DS), Dolphin (GameCube, Wii), ARMSX2 (PS2), Flycast (Dreamcast); Vita3K, xemu
+  (Xbox) and Cemu (Wii U) experimental; Switch only with a build the user brings, as in pocknix.
+- **Per-system profiles for the battery:** 2D systems on the small cores, GameCube and PS2 on
+  the big ones; Steam's Frame Limit already works through MangoHud for Vulkan emulators.
+- **Compression on import:** ISO to CHD (PS1, PS2, Dreamcast, Saturn), ISO to RVZ (GameCube,
+  Wii), about half the space.
+- **A save state before the low-battery shutdown:** `op8-lowbatt` asks RetroArch for one first,
+  through RetroArch's network commands.
+- **The desktop as a tile in Game Mode** (Armada's `armada-plasma-session nested`):
+  `kwin_wayland --x11-display` draws into gamescope's Xwayland, with the Plasma Mobile shell
+  (app grid, swipes, large touch targets). Steam keeps running, so Quick Access, Steam's keyboard
+  (Steam + X) and standby keep working, with no session switch. "Switch to Desktop"
+  (`op8-session-select`) would open this tile instead of restarting Steam.
+- **Plasma Mobile or Plasma Desktop** (Deck style), chosen in the same session.
+- **Desktop apps:** Firefox (downloads go to the Inbox and are imported by themselves), a file
+  manager, Heroic; some also as their own tiles.
+- **PortMaster:** a catalog of game ports native to ARM handhelds, some commercial games running
+  natively with the user's own files (Stardew Valley, Celeste), without FEX, so much better for
+  the battery. It already has a desktop Linux platform (`harbourmaster/platform/retrodeck.py`), so
+  an adapter for us looks possible. To check.
+- **Android games as tiles** through Lepton, Valve's Waydroid fork for the Steam Frame (Armada:
+  `packages/lepton`, compatibility tool `lepton_armada`). Our kernel already has
+  `CONFIG_ANDROID_BINDER_IPC=y` with the binder devices (binderfs off), read on 2026-10-30.
+- **Streaming apps as tiles:** Moonlight, chiaki-ng (PlayStation Remote Play), Greenlight (Xbox
+  cloud); aarch64 builds to check.
+
+39. **Lower clocks when a game does not need them (asked by the maintainer 2026-10-30).** The
+    clocks already follow the load (`schedutil` on the CPU, `simple_ondemand` on the GPU); the
+    question is how high they go in a game that needs little, such as a PSP game at 30 fps.
+    Read in the kernel source (`drivers/gpu/drm/msm/msm_gpu_devfreq.c`,
+    `drivers/devfreq/governor_simpleondemand.c`):
+    - The msm driver sets the GPU governor's up threshold to 50% (the governor's own default is
+      90%): the GPU goes straight to 587 MHz once it is busy for more than half of a polling
+      window and only steps down below 40%. The driver's comment says why: a double-buffered game
+      waiting for vblank could otherwise stay at 30 fps with the GPU 50% busy.
+    - A boost: when the GPU starts work after being idle for longer than the polling interval,
+      its minimum clock becomes twice its current one for one interval. With our 16 ms polling
+      (`op8-tune`, P3 in [performance-crash-audit.md](performance-crash-audit.md)), a 30 fps
+      game (33 ms per frame) may be idle that long in most frames, and get the boost every time.
+    - Both can be changed at runtime, back to the defaults at reboot:
+      `/sys/kernel/debug/dri/<n>/devfreq/upthreshold` and `downdifferential` (root, debugfs is in
+      our kernel), the polling interval in sysfs.
+
+    Seen so far: the GPU 92% of the time at 587 MHz in menus (TODO 33) and at 587 MHz in PPSSPP's
+    menu (TODO 38). Plan, one step at a time, every step only lowering clocks (the limits stay
+    305-587 MHz and the factory CPU maximums):
+    1. Measure, read only: the GPU's `trans_stat` and the CPU's `time_in_state` before and after
+       5 minutes of a game (GTA Vice City Stories), with the current from the battery.
+    2. At runtime, one change at a time: GPU up threshold 70, then 85; polling 32 ms against
+       16 ms (the boost). For each: current, fps and the frametime graph.
+    3. CPU caps per profile, as in Armada's `power-profiles.conf` ([patch-scan.md](patch-scan.md)).
+       `op8-thermal` already writes `scaling_max_freq`, so a profile cap has to go through it
+       (the lower of the two caps wins).
+    4. A switch in the ARMDeck plugin (profiles, remembered per game), like the Steam Deck's TDP
+       limit in Quick Access; it joins the per-system battery profiles in the ideas above.
+
+    **Step 1 measured (2026-10-30, GTA Vice City Stories in PPSSPP, Vulkan, 2x resolution, 30 fps,
+    X3 attached, 389 s):** the CPU is already at its lowest clocks (big cores 97% of the time at
+    710 MHz, the prime core 99% at 844 MHz, little cores 76% at 691 MHz), so CPU caps would gain
+    nothing in a game like this one. The GPU spent 56% of the time at 587 MHz (average 501 MHz),
+    15% at 305 MHz. Battery: about 846 mA at 3.70 V (3.1 W), 28.8 to 31.1 °C; the idle Steam
+    menu with the X3 is 423 mA. The little cores never went below 691 MHz although 300-614 MHz
+    exist and `scaling_min_freq` is 300 MHz. The kernel does this on purpose: `qcom-cpufreq-hw`
+    takes each frequency's voltage from the hardware table, the energy model marks a frequency
+    "inefficient" when a higher one costs no more per unit of work (the same voltage), and
+    cpufreq then skips it (`kernel/power/energy_model.c`, `CPUFREQ_INEFFICIENT_FREQ`). So
+    300-614 MHz most likely share 691 MHz's voltage, and going lower would only make the work
+    slower, not cheaper. To confirm with root: `/sys/kernel/debug/energy_model/cpu0/ps:*/inefficient`.
+
+    **Step 2, GPU up threshold 70 (2026-10-30, same game, set at runtime through debugfs; the
+    three `devfreq` folders under `/sys/kernel/debug/dri/` are one setting):** the GPU's time at
+    587 MHz fell from 56-61% to 35%, its average clock from about 510 to 420-450 MHz, and the
+    maintainer saw the same frametime graph. The current barely moved: averages of `op8-sampler`'s
+    2 s log were 786 and 853 mA in two stretches at threshold 50, 831 mA at 70 (only 106 s). Two
+    game scenes differ more than the threshold does, so the GPU clock is a small part of the
+    3 W here. Not made permanent: the driver's reason for 50 (a game stuck at a lower rate while
+    it waits for vblank) matters for heavy games, and the gain is too small to measure in a light
+    one. Note: `op8-thermal` writes the GPU's `max_freq` again every loop, so a test cap on the
+    GPU has to go through it.
 
 Also solved on 2026-10-02, later:
 

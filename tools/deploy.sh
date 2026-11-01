@@ -101,7 +101,10 @@ put() {   # where file target mode [old name]
 	else
 		if $S test -e "$t"; then mkdir -p "$B$(dirname "$t")"; $S cp -p "$t" "$B$t"; fi
 		$S mkdir -p "$(dirname "$t")"
-		$S install -m "$m" "$s" "$t" && echo "installed  $t"
+		# a new file moved into place, not written over the old one: BusyBox install truncates
+		# and rewrites the same file, and a running shell script (op8-decky, op8-thermal) reads
+		# itself as it goes, so it would carry on in the middle of the new text
+		$S install -m "$m" "$s" "$t.armdeck-new" && $S mv -f "$t.armdeck-new" "$t" && echo "installed  $t"
 		changed="$changed $t"
 	fi
 	if [ -n "$o" ] && $S test -e "$o"; then

@@ -1,0 +1,223 @@
+#!/usr/bin/python3
+# armdeck-run (armdeck): what an ARMDeck Library tile starts. Steam runs it in the "steam"
+# container, as it runs every game, so it finds the emulators the ARMDeck plugin installed there.
+#   armdeck-run emulator <id>          the emulator's own window (settings, its own game list)
+#   armdeck-run game <system> <file>   a game, full screen, in the emulator of its system
+# The plugin copies this file, systems.json and armdeck-asound.conf to ~/.local/lib/armdeck/ when
+# it loads; the tiles point there, so they keep working when the plugin is updated.
+# Log: ~/armdeck-run.log
+import base64
+import json
+import os
+import sys
+import time
+
+HOME = os.path.expanduser("~")
+HERE = os.path.dirname(os.path.realpath(__file__))
+GAMES = os.path.join(HOME, "games")
+if not os.path.isdir(GAMES):
+    GAMES = HOME
+EMU = os.path.join(GAMES, "Emulation", "emulators")
+LOG = os.path.join(HOME, "armdeck-run.log")
+
+
+def log(msg):
+    try:
+        with open(LOG, "a") as f:
+            f.write(f"{time.strftime('%F %T')} {msg}\n")
+    except OSError:
+        pass
+
+
+def fail(msg):
+    log(msg)
+    print(f"armdeck-run: {msg}", file=sys.stderr)
+    sys.exit(1)
+
+
+def appimage(emu):
+    d = os.path.join(EMU, emu)
+    try:
+        names = sorted(n for n in os.listdir(d) if n.endswith(".AppImage"))
+    except OSError:
+        names = []
+    return os.path.join(d, names[0]) if names else None
+
+
+# The plugin unpacks each AppImage once into app/ next to it (armdeck_library.emulators), with a
+# stamp naming the AppImage it came from: the same line as emulators.stamp().
+def unpacked(image):
+    app = os.path.join(os.path.dirname(image), "app")
+    run = os.path.join(app, "AppRun")
+    try:
+        st = os.stat(image)
+        with open(os.path.join(app, ".armdeck-appimage")) as f:
+            same = f.read().strip() == f"{os.path.basename(image)} {st.st_size} {st.st_mtime_ns}"
+    except OSError:
+        return None
+    return run if same and os.access(run, os.X_OK) else None
+
+
+def binary(emu):
+    if emu == "retroarch":
+        return "/usr/bin/retroarch"
+    image = appimage(emu)
+    return image and (unpacked(image) or image)
+
+
+# RetroArch: our fixed settings, then the folders, which depend on where the games partition is
+def retroarch_config():
+    run = os.environ.get("XDG_RUNTIME_DIR") or "/tmp"
+    dirs = os.path.join(run, "armdeck-retroarch-dirs.cfg")
+    emulation = os.path.join(GAMES, "Emulation")
+    with open(dirs, "w") as f:
+        f.write(f'system_directory = "{emulation}/BIOS"\n'
+                f'libretro_directory = "{EMU}/retroarch/cores"\n')
+    return f"--appendconfig={HERE}/armdeck-retroarch.cfg|{dirs}"
+
+
+# How each emulator opens a game full screen, and its own window ("emulator" mode). DuckStation
+# and ARMSX2 (a PCSX2 fork) have a Big Picture mode made for the controller.
+def game_args(emu, system, path):
+    if emu == "retroarch":
+        core = os.path.join(EMU, "retroarch", "cores", f"{system['core']}_libretro.so")
+        if not os.path.exists(core):
+            fail(f"the RetroArch core {system['core']} is missing ({core})")
+        return ["-f", "-L", core, retroarch_config(), path]
+    return {
+        "duckstation": ["-batch", "-fullscreen", "--", path],
+        "armsx2": ["-batch", "-fullscreen", "--", path],
+        "ppsspp": ["--fullscreen", "--pause-menu-exit", path],
+        "dolphin": ["-b", "-C", "Dolphin.Display.Fullscreen=True", "-e", path],
+        "melonds": ["-f", path],
+        "azahar": ["-f", path],
+    }[emu]
+
+
+# PPSSPP's menu from the controller. Steam keeps the Guide button, and PPSSPP's SDL build passes
+# SDL's own axis numbers on while its default controls.ini waits for its own: the default Pause on
+# the left trigger (axis 17, "10-4034") never fires (2026-10-30). Pause gets L3 + R3, the same as
+# RetroArch's menu, and the left trigger as SDL reports it (axis 4, "10-4008"). Once, before
+# PPSSPP starts (it writes the file back when it closes): a marker keeps whatever the user changes
+# afterwards. Without a controls.ini yet (PPSSPP never closed) it waits for the next start.
+PPSSPP_PAUSE = ("10-106:10-107", "10-4008")
+
+
+def ppsspp_pause_buttons():
+    marker = os.path.join(HERE, "ppsspp-pause-mapped")
+    conf = os.environ.get("XDG_CONFIG_HOME") or os.path.join(HOME, ".config")
+    ini = os.path.join(conf, "ppsspp", "PSP", "SYSTEM", "controls.ini")
+    if os.path.exists(marker) or not os.path.exists(ini):
+        return
+    with open(ini, "rb") as f:
+        raw = f.read()
+    bom = b"\xef\xbb\xbf" if raw.startswith(b"\xef\xbb\xbf") else b""
+    lines = raw[len(bom):].decode("utf-8").split("\n")
+    section = None
+    for i, line in enumerate(lines):
+        s = line.strip()
+        if s.startswith("["):
+            section = s
+        elif section == "[ControlMapping]" and s.partition("=")[0].strip() == "Pause":
+            key, _, value = line.partition("=")
+            binds = [b.strip() for b in value.split(",") if b.strip()]
+            new = [b for b in PPSSPP_PAUSE if b not in binds]
+            if new:
+                lines[i] = f"{key.rstrip()} = {','.join(binds + new)}"
+                tmp = ini + ".armdeck-new"
+                with open(tmp, "wb") as f:
+                    f.write(bom + "\n".join(lines).encode("utf-8"))
+                os.replace(tmp, ini)
+                log(f"PPSSPP: Pause also on {', '.join(new)}")
+            break
+    open(marker, "w").close()
+
+
+def own_window_args(emu):
+    if emu == "retroarch":
+        return ["-f", retroarch_config()]
+    # PPSSPP opened its menu in a window without this (2026-10-30)
+    return {
+        "duckstation": ["-bigpicture"],
+        "armsx2": ["-bigpicture"],
+        "ppsspp": ["--fullscreen"],
+    }.get(emu, [])
+
+
+def main():
+    if len(sys.argv) < 3 or sys.argv[1] not in ("emulator", "game"):
+        fail(f"usage: armdeck-run emulator <id> | game <system> <file> (got {sys.argv[1:]})")
+    if sys.argv[1] == "emulator":
+        emu = sys.argv[2]
+        args = own_window_args(emu)
+        what = f"{emu} (its own window)"
+    else:
+        if len(sys.argv) < 4:
+            fail("usage: armdeck-run game <system> <file>")
+        with open(os.path.join(HERE, "systems.json")) as f:
+            systems = {s["id"]: s for s in json.load(f)["systems"]}
+        system = systems.get(sys.argv[2]) or fail(f"unknown system {sys.argv[2]}")
+        path = sys.argv[3]
+        # names with characters a shell treats specially come in base64 (tiles.path_argument)
+        if path.startswith("b64:"):
+            path = base64.urlsafe_b64decode(path[4:]).decode()
+        if not os.path.exists(path):
+            fail(f"the game file is gone: {path}")
+        emu = system["emulator"]
+        args = game_args(emu, system, path)
+        what = f"{emu}: {path}"
+    exe = binary(emu)
+    if not exe or not os.access(exe, os.X_OK):
+        fail(f"{emu} is not installed (ARMDeck > Library)")
+    if emu == "ppsspp":
+        try:
+            ppsspp_pause_buttons()
+        except (OSError, UnicodeDecodeError) as e:
+            log(f"PPSSPP: could not add the Pause buttons: {e}")
+
+    env = dict(os.environ)
+    # gamescope's X11 side (Xwayland): Qt and SDL would otherwise look for a Wayland compositor
+    env.pop("WAYLAND_DISPLAY", None)
+    env["QT_QPA_PLATFORM"] = "xcb"
+    env["SDL_VIDEODRIVER"] = "x11"
+    env["SDL_VIDEO_DRIVER"] = "x11"
+    # Steam asks every app it starts for two Valve Vulkan layers (VK_LAYER_VALVE_rpo and
+    # VK_LAYER_VALVE_fdm_injection, in VK_INSTANCE_LAYERS) that do not exist outside its game
+    # container: the Vulkan loader then fails, and PPSSPP greyed out its Vulkan backend
+    # (2026-10-30). Any other layer asked for stays.
+    layers = [l for l in env.get("VK_INSTANCE_LAYERS", "").split(":")
+              if l and not l.startswith("VK_LAYER_VALVE_")]
+    if layers:
+        env["VK_INSTANCE_LAYERS"] = ":".join(layers)
+    else:
+        env.pop("VK_INSTANCE_LAYERS", None)
+    # Steam's own libraries are for Steam; its LD_LIBRARY_PATH also starts with an empty entry,
+    # which means the current folder
+    env.pop("LD_LIBRARY_PATH", None)
+    # Sound only through PipeWire's protected speaker output (docs/hardware-safety.md 4.4). SDL is
+    # told to use PulseAudio (served by PipeWire) and nothing else, and ALSA reads our file instead
+    # of alsa.conf: its default device is PipeWire and it knows no hardware device, so an
+    # emulator falling back to ALSA gets PipeWire or silence, never the amplifiers directly.
+    env["SDL_AUDIODRIVER"] = "pulseaudio"
+    env["SDL_AUDIO_DRIVER"] = "pulseaudio"
+    env["ALSA_CONFIG_PATH"] = os.path.join(HERE, "armdeck-asound.conf")
+    if exe.endswith("/AppRun"):
+        # what an AppImage's runtime sets for the AppRun it starts; APPIMAGE stays unset, so the
+        # emulator does not take itself for an AppImage it could update
+        env["APPDIR"] = os.path.dirname(exe)
+        env["OWD"] = os.getcwd()
+    elif exe.endswith(".AppImage") and not os.access("/dev/fuse", os.R_OK | os.W_OK):
+        # not unpacked yet: without FUSE in the container it unpacks itself to /tmp at every start
+        env["APPIMAGE_EXTRACT_AND_RUN"] = "1"
+    if emu != "retroarch":
+        # the "anylinux" AppImages (sharun) would add every Vulkan driver of the system to their
+        # own; with 0, an unpacked copy uses only VK_DRIVER_FILES from the Steam session (the
+        # container's Turnip, see emulators._drop_bundled_vulkan)
+        env["SHARUN_ALLOW_SYS_VKICD"] = "0"
+        # their self-updater hook: versions come from the Library's catalog, checked by sha256
+        env["DISABLE_AUTO_UPDATES"] = "1"
+    log(f"start {what} ({exe})")
+    os.execve(exe, [exe] + args, env)
+
+
+main()

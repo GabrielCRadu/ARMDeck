@@ -16,9 +16,13 @@ pnpm install --frozen-lockfile >/dev/null
 pnpm run build
 T=$(mktemp -d)
 mkdir -p "$T/ARMDeck/dist"
-cp plugin.json package.json main.py "$T/ARMDeck/"
+cp plugin.json package.json main.py catalog.json "$T/ARMDeck/"
 cp "$ROOT/LICENSE" "$T/ARMDeck/"
 cp dist/index.js "$T/ARMDeck/dist/"
+# the Library: the launcher files the tiles use, and the backend modules (without caches)
+cp -r library py_modules "$T/ARMDeck/"
+find "$T/ARMDeck" -name __pycache__ -type d -prune -exec rm -rf {} +
+chmod 755 "$T/ARMDeck/library/armdeck-run"
 "${SSH[@]}" "rm -rf ~/$DEST.new && mkdir -p ~/homebrew/plugins"
 scp -q -r -i "$HOME/.ssh/op8_pmos" -o HostKeyAlias=172.16.42.1 "$T/ARMDeck" "$PHONE:$DEST.new"
 "${SSH[@]}" "rm -rf ~/$DEST.old; [ -d ~/$DEST ] && mv ~/$DEST ~/$DEST.old; mv ~/$DEST.new ~/$DEST && rm -rf ~/$DEST.old && ls -la ~/$DEST ~/$DEST/dist"

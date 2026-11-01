@@ -1,0 +1,97 @@
+{
+  "comment": "ARMDeck Library: the emulators the plugin installs. Each AppImage is pinned to one release, with the sha256 GitHub publishes for that asset (checked 2026-10-30). Updating an emulator = a new entry here, tested first. RetroArch comes from Fedora (signed packages); its cores from the libretro buildbot (official, nightly only, so they cannot be pinned: their sha256 is recorded at install).",
+  "emulators": [
+    {
+      "id": "retroarch",
+      "name": "RetroArch",
+      "systems": "NES, SNES, Game Boy, GBA, Mega Drive, Master System, N64, Dreamcast",
+      "source": "Fedora 44 packages retroarch + retroarch-assets; cores from buildbot.libretro.com",
+      "size": 160000000,
+      "install": {
+        "type": "dnf",
+        "packages": ["retroarch", "retroarch-assets"],
+        "exec": "/usr/bin/retroarch",
+        "cores_url": "https://buildbot.libretro.com/nightly/linux/aarch64/latest/",
+        "cores": ["fceumm", "snes9x", "gambatte", "mgba", "genesis_plus_gx", "mupen64plus_next", "flycast"]
+      }
+    },
+    {
+      "id": "duckstation",
+      "name": "DuckStation",
+      "systems": "PlayStation",
+      "source": "github.com/stenzek/duckstation v0.1-12083",
+      "size": 86483200,
+      "install": {
+        "type": "appimage",
+        "version": "v0.1-12083",
+        "url": "https://github.com/stenzek/duckstation/releases/download/v0.1-12083/DuckStation-arm64.AppImage",
+        "sha256": "0c3a005183f65538f78fa0231d4c97aa2333684b481985c8d4cfab0640e297c7"
+      }
+    },
+    {
+      "id": "ppsspp",
+      "name": "PPSSPP",
+      "systems": "PlayStation Portable",
+      "source": "github.com/hrydgard/ppsspp v1.20.4",
+      "size": 48581283,
+      "install": {
+        "type": "appimage",
+        "version": "v1.20.4",
+        "url": "https://github.com/hrydgard/ppsspp/releases/download/v1.20.4/PPSSPP-v1.20.4-anylinux-aarch64.AppImage",
+        "sha256": "18c1d515fd99b0b10ca5fa8cbab192f6d4c9d8a10381e16f5de8fb8f9d39bbe1"
+      }
+    },
+    {
+      "id": "dolphin",
+      "name": "Dolphin",
+      "systems": "GameCube, Wii",
+      "source": "github.com/pkgforge-dev/Dolphin-emu-AppImage 2609a (Dolphin 2609a packaged by pkgforge-dev; Dolphin publishes no Linux builds itself)",
+      "size": 62977169,
+      "install": {
+        "type": "appimage",
+        "version": "2609a",
+        "url": "https://github.com/pkgforge-dev/Dolphin-emu-AppImage/releases/download/2609a%402026-10-22_1792688909/Dolphin_Emulator-2609a-anylinux-aarch64.AppImage",
+        "sha256": "7183a467c1dfe087e2e7cc6be2962823917082263aab8d72c216b62df8fb9247"
+      }
+    },
+    {
+      "id": "armsx2",
+      "name": "ARMSX2",
+      "systems": "PlayStation 2",
+      "source": "github.com/ARMSX2/ARMSX2 2.9.1 (the 4K-page build, like our kernel)",
+      "size": 62982664,
+      "install": {
+        "type": "appimage",
+        "version": "2.9.1",
+        "url": "https://github.com/ARMSX2/ARMSX2/releases/download/2.9.1/ARMSX2-2.9.1-Linux-arm64-4K-pages.AppImage",
+        "sha256": "fe35d1cc76c3ffb91953a17e067d341d271ad5aa25c961fee12a6d492948c748"
+      }
+    },
+    {
+      "id": "melonds",
+      "name": "melonDS",
+      "systems": "Nintendo DS",
+      "source": "github.com/melonDS-emu/melonDS 1.1",
+      "size": 33391635,
+      "install": {
+        "type": "appimage-zip",
+        "version": "1.1",
+        "url": "https://github.com/melonDS-emu/melonDS/releases/download/1.1/melonDS-1.1-appimage-aarch64.zip",
+        "sha256": "c537ae018d6dcedfe9da0317a1d5c0163e69201e23abfa163fa2a63e437ace09"
+      }
+    },
+    {
+      "id": "azahar",
+      "name": "Azahar",
+      "systems": "Nintendo 3DS",
+      "source": "github.com/pkgforge-dev/Azahar-AppImage-Enhanced 2126.2 (Azahar packaged by pkgforge-dev, as in Armada)",
+      "size": 83645873,
+      "install": {
+        "type": "appimage",
+        "version": "2126.2",
+        "url": "https://github.com/pkgforge-dev/Azahar-AppImage-Enhanced/releases/download/2126.2%402026-10-22_1792689914/Azahar-2126.2-anylinux-aarch64.AppImage",
+        "sha256": "49340d1ebbe79fa1b504848d0946884d2c9310d0716c9b7f16ee415221e6e43d"
+      }
+    }
+  ]
+}

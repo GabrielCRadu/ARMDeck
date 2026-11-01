@@ -136,6 +136,67 @@ this page is the short version, so the same mistake is not made twice.
   fact never appeared. Lessons: a cleanup helper must not share the process group of what it
   cleans up after; test every exit path (session restart, shutdown), and look for the log
   line each path should write.
+- **A Steam beta update stopped three Decky plugins from loading (2026-10-30).** ARMDeck and
+  SteamGridDB failed with `Cannot read properties of undefined (reading 'Title')`, Game Theme
+  Music with another error; their Python side loaded fine, so nothing showed in Decky's logs.
+  Steam's console (read through its local debugging port, 127.0.0.1:8080) had the reason:
+  `@decky/ui` finds Steam's Quick Access style module by a list of class names, the new Steam
+  build dropped one of them (`BatteryDetailsLabels`), and `staticClasses` became undefined.
+  Plugins get `@decky/ui` from Decky itself at run time (the `DFL` global), so updating it in a
+  plugin's own `package.json` changes only the types; the fix in `@decky/ui` (2026-10-17) reaches
+  Steam only with a newer Decky (upstream v3.3.0). ARMDeck now looks the module up itself when
+  `staticClasses` is missing. Upstream Decky had shipped official ARM64 builds 12 days earlier,
+  unseen because Decky was not in `docs/sources.md`; it is now, with DroidDeck's fork and
+  `@decky/ui`. Lessons: read a plugin's error in Steam's console, not only in Decky's logs; a
+  plugin must not let one optional lookup stop it from loading; every project we run belongs in
+  the sources list, not only the ones we patch.
+- **The SteamGridDB plugin took 14 GB of memory and made Steam crawl (2026-10-30, open).** Right
+  after Decky v3.3.1 started and SteamGridDB updated itself to v1.8.1 (Python 3.14 in Decky now),
+  its Python process grew to 7.5 GB of RAM plus 6.7 GB of swap within 6 minutes, with 350 MB of
+  RAM left. kswapd and swap kept the CPU busy (51 % system time, 87-93 °C, at the kernel's 90 °C
+  throttling point) and the battery at 2.1-2.3 A; Steam's menus and Quick Access lagged badly,
+  which first looked like the Steam interface being drawn by the CPU. It is not: Steam's GPU
+  report and the GPU process' open `/dev/dri` show ANGLE on freedreno (FD650, Mesa 26.2.3) with
+  GPU compositing and rasterization on. Stopping the SteamGridDB process brought 8.6 GB back at
+  once. Lessons: after any Decky or plugin update, watch the memory of every plugin process for
+  a few minutes; when the interface lags, look at memory and swap first (`top`, `/proc/meminfo`),
+  then at the GPU.
+- **Decky reloaded CSS Loader 12 times a second, without end (2026-10-30, solved).** With
+  SteamGridDB stopped, the idle Steam menu still drew about 670 mA (380 mA on 2026-10-27, the X3
+  controller attached adds some) and the little cores were 28-36 % busy. `op8-decky.log` grew by
+  1.2 KB a second with "Plugin CSS Loader (v2.1.3) is already loaded and has requested to not be
+  re-loaded". The file contents had not changed since its 15:05 update, but their ctime was the
+  current second. Decky's `PluginWrapper` asks whether a plugin folder belongs to the effective
+  user; `file_owner()` checks the host user first, and when Decky runs as that same user (ours
+  does) the answer is never "effective user", so every look at a plugin ran `chown -R` and
+  `chmod -R 755` on its folder. The hot reload watcher (watchdog) reports those metadata changes
+  as modified files and queues the plugin again: a loop, started by the plugin update. Fix:
+  `op8-decky` sets Decky's own switches `CHOWN_PLUGIN_PATH=0` and `LIVE_RELOAD=0`. Found on the
+  way: `deploy.sh`'s `install.sh` wrote files in place (BusyBox `install` truncates and rewrites),
+  which a running shell script such as `op8-decky` would then read from the middle; it now
+  moves a new file into place. After a Steam session restart with the new `op8-decky`: no reload
+  attempts in 30 s, and the settled idle menu at 423 mA over 40 s with the X3 attached, CPU 3 %
+  busy, every core and the GPU at their lowest frequency. Lesson: when something keeps a loop
+  going, look at what changes between two turns (here the ctime) rather than at the contents.
+- **PPSSPP's pause menu could not be opened from the controller (2026-10-30).** Steam keeps
+  the Guide button, the only controller button PPSSPP's SDL build treats as "back to the menu"
+  (`NKCODE_BACK`). The default mapping also puts Pause on the left trigger, but neither trigger
+  did anything: the SDL build passes SDL's own axis number on (`SDLJoystick.cpp`, the left
+  trigger is axis 4), while the default `controls.ini` waits for axis 17 (`10-4034`, PPSSPP's
+  `JOYSTICK_AXIS_LTRIGGER`). Way around: map Pause from PPSSPP's own window (Settings > Controls
+  > Control mapping), which records whatever the trigger really sends. Fix in `armdeck-run`:
+  before PPSSPP starts, once, Pause also gets L3 + R3 (as RetroArch's menu) and the left trigger
+  as SDL reports it (`10-4008`). On the phone the same evening: both open the menu. Still to
+  do: the same for the other emulators (TODO 38).
+- **PPSSPP ran with four Vulkan drivers loaded (2026-10-30).** Its "anylinux" AppImage (sharun)
+  brings Mesa 26.0.6; on aarch64 its hook asks sharun to add the system's drivers too, so the
+  session's `VK_DRIVER_FILES` (the container's Turnip only) ended up behind the bundled Turnip,
+  `lvp` with LLVM and `dzn`. The process maps showed all four, and two "Turnip" shader cache
+  folders. Lesson: an AppImage's environment is set by its own launcher after ours, so check
+  what the running process really loaded (`/proc/<pid>/maps`), not the variables we passed.
+  Fixed in the Library: the unpacked copy loses the bundled driver list and `armdeck-run` sets
+  `SHARUN_ALLOW_SYS_VKICD=0` (gaming-stack.md TODO 38). Checked on the phone the same evening:
+  the running PPSSPP maps only the container's Turnip.
 
 ## Power, charging and controllers
 
@@ -369,6 +430,51 @@ this page is the short version, so the same mistake is not made twice.
   Lesson: a sleep mode that the kernel enters on its own must have a way back that does not
   depend on the code that may have hung, and every "cable present" test must cover the phone
   being the power source as well as the power sink.
+- **A Steam download took the battery to 56.4 °C; the thermal guard could not stop it
+  (2026-10-30, fixed and tested on the phone).** From the op8-sampler log (times in EET):
+  - 00:57-01:25: a Steam download of about 80 GB at about 48 MB/s over WiFi, with the phone
+    powered from USB. Load average 13-17, CPU pressure 26-35 %.
+  - `op8-thermal` reached its top level (4) at 01:04, at 44.5 °C. That level caps only what a
+    game heats: the big cores, the prime core and the GPU. The download ran on the little cores
+    (left at 1.8 GHz), WiFi and UFS.
+  - The battery kept rising for 20 minutes, from 44.5 °C to 56.4 °C at 01:24. The CPU was at
+    90 °C, the PMIC at 80 °C, the WiFi chip at 80 °C.
+  - When the download ended (01:25), the phone charged at 1.1 A with the battery at 56 °C. The
+    PM8150B's JEITA compensation is off (`JEITA_EN_CFG` = 0x00, `pmic-jeita-20261002` readout), so
+    only its hard hot limit would have stopped charging.
+
+  The maintainer then cooled the phone in a freezer (the battery reached 12 °C in 10 minutes)
+  and ran the Tomb Raider benchmark:
+  - the cold, worn cell sagged to 3.21-3.29 V at 2.4-2.6 A, while it rested at 3.91 V before
+    the load: about 0.29 Ω, against about 0.19 Ω at 25 °C the same evening (3.49 V at 3.0 A
+    from 4.02 V);
+  - the gauge reached its empty point (3.25 V, patch 0018) and dropped from 69 % to 0 % at once;
+  - `op8-lowbatt` powered off cleanly after 16 s below 3.25 V.
+
+  After the boot, at 3.86 V and 23 °C, the gauge still read 0-1 %. A full charge should correct
+  it. The fix (same day):
+  - `op8-thermal` caps the little cores from level 3, and a level 5 at 47 °C holds everything
+    near its minimum (that slows a download by itself);
+  - at 52 °C a pause in standby, once per episode, and at 58 °C for 30 s a clean power-off;
+    OnePlus' own values for this phone: charging reduced from 45 °C, stopped from 50 °C, power-off
+    only above 77 °C (hardware-safety.md 4.8);
+  - charging cannot be stopped from Linux here: there is no charger driver, the PMIC charges on
+    its own, and its registers stay untouched. The ARMDeck plugin asks in Steam to unplug the
+    charger when the battery charges at 45 °C or more.
+
+  Tested on the phone the next day with `system/op8-thermal-test` (fake temperatures from a
+  file, the real battery at 26 °C): every level's limits read back from sysfs, cooling one level
+  at a time, a jump straight to level 5, one real standby pause woken with the power button, the
+  power-off counter running inside the standby and reset after 15 s, no second pause after
+  waking, the pause armed again below 47 °C. 0 failures. A first copy of the test printed wrong
+  wait times: its wait loop and its `hold` function shared one variable (`n`), since `sh`
+  functions have no local variables by default; the waits themselves were right.
+
+  Lessons: thermal protection must cap every heat source, not only the ones games use, and
+  each level must be tested with a non-game load too. A freezer is not a cooler: cold raises a worn
+  cell's sag under load by half, the phone gets condensation inside when it comes out, and
+  charging a cell colder than about 10 °C at full current risks lithium plating (the reason for
+  JEITA's cool zone).
 
 ## Audio
 
@@ -533,5 +639,11 @@ this page is the short version, so the same mistake is not made twice.
   then diff without comments and quoted strings. Fixed the same day with
   `userspace/deploy-manifest.txt` and `tools/deploy.sh` (check, then stage + `install.sh` with
   backups): 22 files redeployed, two old-named rules (udev, polkit) moved away, everything "same".
+  **It happened again (found 2026-10-30):** the phone's `steam-in-container.sh` was the copy of
+  2026-10-06, without two changes committed since (the Remote Play preload of 2026-10-11 and
+  `DOTNET_EnableWriteXorExecute=0` of 2026-10-29), and `op8-remoteplay` with its source was not
+  on the phone at all. Deployed that evening; `op8-remoteplay` built the preload at the next
+  Steam start. Lesson: run `tools/deploy.sh check` after every change under `userspace/`, not
+  only before a planned deploy.
 - **Restarting a user service during a kernel lock hang makes it worse.** `systemctl` waits on the
   stuck manager; use `sudo sync && sudo reboot -f`, or the button reset.

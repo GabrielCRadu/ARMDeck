@@ -14,7 +14,7 @@
   "license": "MIT",
   "devDependencies": {
     "@decky/rollup": "^1.0.2",
-    "@decky/ui": "^4.11.0",
+    "@decky/ui": "^4.16.4",
     "@types/react": "19.1.1",
     "@types/react-dom": "19.1.1",
     "rollup": "^4.53.3",

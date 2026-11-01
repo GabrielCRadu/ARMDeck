@@ -1,20 +1,36 @@
 // ARMDeck Decky plugin, frontend: a Quick Access panel with frame generation for the running game
-// (lsfg-vk, see userspace/steam/build-lsfg-vk.sh) and the thermal guard level (op8-thermal).
+// (lsfg-vk, see userspace/steam/build-lsfg-vk.sh), the thermal guard level (op8-thermal) and the
+// way into the Library (library.tsx: emulators and non-Steam games, docs/gaming-stack.md TODO 38).
 import {
+  ButtonItem,
   PanelSection,
   PanelSectionRow,
   ToggleField,
   SliderField,
   Field,
+  Navigation,
   Router,
+  findClassModule,
   staticClasses,
 } from "@decky/ui";
-import { callable, definePlugin, toaster } from "@decky/api";
+import {
+  addEventListener,
+  callable,
+  definePlugin,
+  removeEventListener,
+  routerHook,
+  toaster,
+} from "@decky/api";
 import { useEffect, useRef, useState } from "react";
 import { FaMicrochip } from "react-icons/fa";
+import { LibraryPage, onLibraryJob } from "./library";
+
+const LIBRARY_ROUTE = "/armdeck/library";
 
 type Status = {
   thermal_level: number | null;
+  paused: { battery_c: number; at: number } | null;
+  charging: boolean;
   battery_c: number | null;
   lsfg_layer: boolean;
   lsfg_dll: boolean;
@@ -86,7 +102,70 @@ const SAVE_DELAY_MS = 800;
 function thermalText(level: number | null): string {
   if (level === null) return "unknown";
   if (level === 0) return "0 (no limit)";
-  return `${level} of 4 (big cores and GPU limited)`;
+  if (level === 5) return "5 of 5 (everything at its minimum)";
+  return `${level} of 5 (CPU and GPU limited)`;
+}
+
+// The Quick Access title style. Decky finds staticClasses in Steam's modules by a list of class
+// names; after a Steam beta update (seen 2026-10-30, Decky v3.2.9-dev8) that list no longer
+// matched and staticClasses was undefined, which stopped the whole plugin from loading. Newer
+// @decky/ui looks for these two names only, so do the same when staticClasses is missing.
+function titleClass(): string | undefined {
+  return staticClasses?.Title ?? findClassModule((m) => m.Title && m.QuickAccessMenu)?.Title;
+}
+
+// Warnings in Steam from the thermal guard (op8-thermal, on the host): a level 5, a pause in
+// standby, and charging while the battery is in OnePlus' "warm" (45 C, where OnePlus lowers the
+// charging current) or "hot" (50 C, where it stops) zone. This phone's PMIC charges on its own
+// and nothing here can lower or stop it, so the user is asked to unplug the charger.
+const WATCH_MS = 15000;
+const WARM_C = 45;
+const HOT_C = 50;
+
+function thermalWatcher(): () => void {
+  let lastLevel = 0;
+  let lastPause: number | null | undefined = undefined;
+  let chargeWarned = 0;
+  const check = async () => {
+    let s: Status;
+    try {
+      s = await getStatus();
+    } catch {
+      return;
+    }
+    const level = s.thermal_level ?? 0;
+    if (level === 5 && lastLevel < 5) {
+      toaster.toast({
+        title: "Battery hot",
+        body: `${s.battery_c?.toFixed(1)} °C: everything is slowed down to cool it.`,
+      });
+    }
+    lastLevel = level;
+    // the first reading only remembers the last pause, so an old one is not announced again
+    const pauseAt = s.paused?.at ?? null;
+    if (lastPause !== undefined && pauseAt !== null && pauseAt !== lastPause) {
+      toaster.toast({
+        title: "Paused to cool down",
+        body: `The battery reached ${s.paused?.battery_c.toFixed(1)} °C, so the phone went to sleep. ` +
+          "Limits stay until it is below 47 °C.",
+      });
+    }
+    lastPause = pauseAt;
+    const t = s.battery_c ?? 0;
+    const zone = s.charging ? (t >= HOT_C ? 2 : t >= WARM_C ? 1 : 0) : 0;
+    if (zone > chargeWarned) {
+      toaster.toast({
+        title: zone === 2 ? "Unplug the charger now" : "Battery warm while charging",
+        body: zone === 2
+          ? `${t.toFixed(1)} °C: too hot to charge (OnePlus stops at 50 °C).`
+          : `${t.toFixed(1)} °C: unplugging the charger lets it cool faster.`,
+      });
+    }
+    if (zone > chargeWarned || t < WARM_C - 1) chargeWarned = zone;
+  };
+  check();
+  const timer = setInterval(check, WATCH_MS);
+  return () => clearInterval(timer);
 }
 
 function Content() {
@@ -149,6 +228,19 @@ function Content() {
 
   return (
     <>
+      <PanelSection title="Library">
+        <PanelSectionRow>
+          <ButtonItem
+            layout="below"
+            onClick={() => {
+              Navigation.CloseSideMenus();
+              Navigation.Navigate(LIBRARY_ROUTE);
+            }}
+          >
+            Emulators
+          </ButtonItem>
+        </PanelSectionRow>
+      </PanelSection>
       <PanelSection title="Frame generation">
         {!app && (
           <PanelSectionRow>
@@ -232,9 +324,20 @@ function Content() {
   );
 }
 
-export default definePlugin(() => ({
-  name: "ARMDeck",
-  titleView: <div className={staticClasses.Title}>ARMDeck</div>,
-  content: <Content />,
-  icon: <FaMicrochip />,
-}));
+export default definePlugin(() => {
+  routerHook.addRoute(LIBRARY_ROUTE, LibraryPage, { exact: true });
+  // a finished install or removal makes or removes its tile even when the page is closed
+  const listener = addEventListener("armdeck_library_job", onLibraryJob);
+  const stopWatcher = thermalWatcher();
+  return {
+    name: "ARMDeck",
+    titleView: <div className={titleClass()}>ARMDeck</div>,
+    content: <Content />,
+    icon: <FaMicrochip />,
+    onDismount() {
+      stopWatcher();
+      removeEventListener("armdeck_library_job", listener);
+      routerHook.removeRoute(LIBRARY_ROUTE);
+    },
+  };
+});

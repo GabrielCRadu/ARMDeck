@@ -1,0 +1,22 @@
+{
+  "comment": "ARMDeck Library: the systems a game can belong to. 'ext' are the extensions that name the system on their own; the others (.iso, .chd, .bin, .rvz, .zip...) are recognized from the file's content (armdeck_library/detect.py). 'thumbs' is the system's folder on thumbnails.libretro.com. armdeck-run starts a game with 'emulator' (and 'core' for RetroArch).",
+  "systems": [
+    {"id": "nes", "name": "NES", "ext": [".nes", ".fds", ".unf", ".unif"], "emulator": "retroarch", "core": "fceumm", "thumbs": "Nintendo - Nintendo Entertainment System"},
+    {"id": "snes", "name": "SNES", "ext": [".sfc", ".smc", ".swc", ".fig"], "emulator": "retroarch", "core": "snes9x", "thumbs": "Nintendo - Super Nintendo Entertainment System"},
+    {"id": "gb", "name": "Game Boy", "ext": [".gb"], "emulator": "retroarch", "core": "gambatte", "thumbs": "Nintendo - Game Boy"},
+    {"id": "gbc", "name": "Game Boy Color", "ext": [".gbc"], "emulator": "retroarch", "core": "gambatte", "thumbs": "Nintendo - Game Boy Color"},
+    {"id": "gba", "name": "Game Boy Advance", "ext": [".gba"], "emulator": "retroarch", "core": "mgba", "thumbs": "Nintendo - Game Boy Advance"},
+    {"id": "n64", "name": "Nintendo 64", "ext": [".n64", ".z64", ".v64"], "emulator": "retroarch", "core": "mupen64plus_next", "thumbs": "Nintendo - Nintendo 64"},
+    {"id": "megadrive", "name": "Mega Drive", "ext": [".md", ".gen", ".smd"], "emulator": "retroarch", "core": "genesis_plus_gx", "thumbs": "Sega - Mega Drive - Genesis"},
+    {"id": "mastersystem", "name": "Master System", "ext": [".sms"], "emulator": "retroarch", "core": "genesis_plus_gx", "thumbs": "Sega - Master System - Mark III"},
+    {"id": "gamegear", "name": "Game Gear", "ext": [".gg"], "emulator": "retroarch", "core": "genesis_plus_gx", "thumbs": "Sega - Game Gear"},
+    {"id": "dreamcast", "name": "Dreamcast", "ext": [".gdi", ".cdi"], "emulator": "retroarch", "core": "flycast", "thumbs": "Sega - Dreamcast"},
+    {"id": "psx", "name": "PlayStation", "ext": [".cue", ".m3u", ".ecm", ".mds", ".ccd"], "emulator": "duckstation", "thumbs": "Sony - PlayStation"},
+    {"id": "ps2", "name": "PlayStation 2", "ext": [], "emulator": "armsx2", "thumbs": "Sony - PlayStation 2"},
+    {"id": "psp", "name": "PlayStation Portable", "ext": [], "emulator": "ppsspp", "thumbs": "Sony - PlayStation Portable"},
+    {"id": "nds", "name": "Nintendo DS", "ext": [".nds"], "emulator": "melonds", "thumbs": "Nintendo - Nintendo DS"},
+    {"id": "3ds", "name": "Nintendo 3DS", "ext": [".3ds", ".cci", ".cxi", ".3dsx"], "emulator": "azahar", "thumbs": "Nintendo - Nintendo 3DS"},
+    {"id": "gc", "name": "GameCube", "ext": [".gcm", ".gcz"], "emulator": "dolphin", "thumbs": "Nintendo - GameCube"},
+    {"id": "wii", "name": "Wii", "ext": [".wbfs"], "emulator": "dolphin", "thumbs": "Nintendo - Wii"}
+  ]
+}

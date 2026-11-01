@@ -5,20 +5,44 @@
 # took the battery to 46.5 C (2026-10-02). The phone has no case sensor; the battery (the bq27411
 # gauge) is the closest to the hand and the part that suffers most from heat.
 #
+# OnePlus' battery temperature limits for this phone (LineageOS android_kernel_oneplus_sm8250,
+# DT vendor/oplus/instantnoodle/kona-mtp.dtsi): normal up to 44.9 C, "warm" from 45 C (charging
+# reduced to 1.1 A and 4.13 V), "hot" from 50 C (charging stops); oplus_charger.h powers the phone
+# off above 77 C (85 C at once). Our charging is the PMIC's own, set up by the bootloader, with
+# its JEITA compensation off: it keeps charging at full current up to its hard hot limit. So the
+# limits here keep the battery out of OnePlus' "hot" zone by cutting the heat instead.
+#
 # In levels, with hysteresis: it goes up at once to the level reached and comes down one level
 # at a time, only once the battery drops HYST below the current level's threshold. The limits are
-# maximum frequencies; the kernel still picks the real frequency below them. In standby
-# (op8-standby) nothing is touched: op8-standby then keeps the big cores at their minimum and
-# restores them itself; after waking up the limit is applied again.
+# maximum frequencies; the kernel still picks the real frequency below them. Every heat source
+# that frequency limits can reach is capped: a 2026-10-30 Steam download (80 GB, all cores,
+# WiFi and UFS busy) took the battery from 44.5 C to 56.4 C while levels 1-4 capped only the big
+# cores and the GPU. Level 5 holds everything near its minimum, which slows a download too.
+# Above that, two last steps that do not depend on frequencies:
+# - PAUSE_AT: a standby (op8-standby: apps frozen, panel and WiFi off), once per episode, until
+#   the battery is back below the level 5 threshold. The game and the download wait, nothing is
+#   lost.
+# - OFF_AT, held for OFF_HOLD s, in any state (standby included): a clean power-off.
+# In standby (op8-standby) the frequency limits are not touched: op8-standby then keeps the big
+# cores at their minimum and restores them itself; after waking up the limit is applied again.
+# /run/op8-thermal.level holds the level, /run/op8-thermal.paused the temperature of the last
+# pause (the ARMDeck plugin shows both).
 # Log: journalctl -t op8-thermal (and the frequency columns of op8-sampler).
 # "op8-thermal restore" removes every limit (when the service stops).
-BAT=/sys/class/power_supply/bq27411-0/temp
+# Test without heating the battery: with the service stopped, run it with
+# OP8_THERMAL_TEMP_FILE=<file> and write temperatures (tenths of a degree) into that file;
+# op8-thermal-test does that for every level, one pause and the power-off counter.
+BAT=${OP8_THERMAL_TEMP_FILE:-/sys/class/power_supply/bq27411-0/temp}
 CF=/sys/devices/system/cpu/cpufreq
 GPU=/sys/class/devfreq/3d00000.gpu
 STANDBY=/run/op8-standby.active
 STATE=/run/op8-thermal.level
+PAUSED=/run/op8-thermal.paused
 PERIOD=5
 HYST=10
+PAUSE_AT=520
+OFF_AT=580
+OFF_HOLD=30
 
 log() { logger -t op8-thermal -- "$*"; }
 
@@ -29,18 +53,21 @@ enter() {
 		2) echo 420 ;;
 		3) echo 430 ;;
 		4) echo 445 ;;
+		5) echo 470 ;;
 	esac
 }
 
-# the limits of a level: big cores (policy4, kHz), the prime core (policy7, kHz), GPU (Hz);
-# "max" = no limit. The little cores (policy0) are not limited.
+# the limits of a level: little cores (policy0, kHz), big cores (policy4, kHz), the prime core
+# (policy7, kHz), GPU (Hz); "max" = no limit. Level 5 is the lowest step of each table except
+# the little cores, which keep enough for the Steam interface.
 caps() {
 	case "$1" in
-		0) echo "max max max" ;;
-		1) echo "2054400 2457600 max" ;;
-		2) echo "1766400 2073600 525000000" ;;
-		3) echo "1478400 1632000 441600000" ;;
-		4) echo "1056000 1190400 305000000" ;;
+		0) echo "max max max max" ;;
+		1) echo "max 2054400 2457600 max" ;;
+		2) echo "max 1766400 2073600 525000000" ;;
+		3) echo "1516800 1478400 1632000 441600000" ;;
+		4) echo "1248000 1056000 1190400 305000000" ;;
+		5) echo "883200 710400 844800 305000000" ;;
 	esac
 }
 
@@ -53,15 +80,38 @@ set_max() {
 
 apply() {
 	set -- $(caps "$1")
-	b=$1
-	p=$2
-	g=$3
+	l=$1
+	b=$2
+	p=$3
+	g=$4
+	[ "$l" = max ] && l=$(cat "$CF/policy0/cpuinfo_max_freq")
 	[ "$b" = max ] && b=$(cat "$CF/policy4/cpuinfo_max_freq")
 	[ "$p" = max ] && p=$(cat "$CF/policy7/cpuinfo_max_freq")
 	[ "$g" = max ] && g=$(tr ' ' '\n' < "$GPU/available_frequencies" | sort -n | tail -1)
+	set_max "$CF/policy0/scaling_max_freq" "$l"
 	set_max "$CF/policy4/scaling_max_freq" "$b"
 	set_max "$CF/policy7/scaling_max_freq" "$p"
 	set_max "$GPU/max_freq" "$g"
+}
+
+deg() { echo "$(($1 / 10)).$(($1 % 10)) C"; }
+
+# The same as op8-lowbatt's: a standby keeps the apps frozen with cgroup.freeze, which systemd
+# does not know about, so a shutdown would wait for every frozen unit's stop timeout. End it
+# first (a signal: logind's suspend job cannot be replaced by a stop job), then thaw here too.
+end_standby() {
+	[ -e "$STANDBY" ] || return 0
+	log "standby active: ending it before the power-off"
+	systemctl kill -s TERM systemd-suspend.service
+	n=0
+	while [ -e "$STANDBY" ] && [ $n -lt 15 ]; do
+		sleep 1
+		n=$((n + 1))
+	done
+	u=/sys/fs/cgroup/user.slice/user-10000.slice/user@10000.service
+	for c in "$u/app.slice" "$u/user.slice"; do
+		[ -w "$c/cgroup.freeze" ] && echo 0 > "$c/cgroup.freeze"
+	done
 }
 
 if [ "${1:-}" = restore ]; then
@@ -73,7 +123,9 @@ fi
 
 level=0
 echo 0 > "$STATE"
-log "started: battery thresholds 41/42/43/44.5 C, hysteresis $((HYST / 10)) C"
+paused=0
+hot=0
+log "started: battery levels 41/42/43/44.5/47 C, hysteresis $((HYST / 10)) C, standby at $(deg $PAUSE_AT), power-off at $(deg $OFF_AT) for $OFF_HOLD s"
 while :; do
 	if ! t=$(cat "$BAT" 2>/dev/null) || [ -z "$t" ]; then
 		sleep "$PERIOD"
@@ -81,7 +133,7 @@ while :; do
 	fi
 	new=$level
 	# going up: the highest level whose threshold is reached
-	for l in 4 3 2 1; do
+	for l in 5 4 3 2 1; do
 		if [ "$t" -ge "$(enter "$l")" ]; then
 			[ "$l" -gt "$new" ] && new=$l
 			break
@@ -92,10 +144,41 @@ while :; do
 		new=$((level - 1))
 	fi
 	if [ "$new" != "$level" ]; then
-		log "battery $((t / 10)).$((t % 10)) C: level $level -> $new ($(caps "$new"))"
+		log "battery $(deg "$t"): level $level -> $new ($(caps "$new"))"
 		level=$new
 		echo "$level" > "$STATE"
 	fi
 	[ -e "$STANDBY" ] || apply "$level"
+
+	# the last resort, whatever the state: a clean power-off
+	if [ "$t" -ge "$OFF_AT" ]; then
+		[ "$hot" = 0 ] && log "battery $(deg "$t"): at or above $(deg $OFF_AT), powering off if it stays there for $OFF_HOLD s"
+		hot=$((hot + PERIOD))
+		if [ "$hot" -ge "$OFF_HOLD" ]; then
+			log "battery $(deg "$t") for $hot s: powering off"
+			end_standby
+			systemctl poweroff
+			sleep 60
+			log "shutdown still not done: forcing it"
+			systemctl poweroff --force
+			exit 0
+		fi
+	elif [ "$hot" -gt 0 ]; then
+		log "battery back to $(deg "$t") after $hot s: no power-off"
+		hot=0
+	fi
+	# a pause in standby, once, until the battery is back below the level 5 threshold
+	if [ "$paused" = 1 ] && [ "$t" -lt "$(enter 5)" ]; then
+		paused=0
+		log "battery $(deg "$t"): below $(deg "$(enter 5)"), the next pause is armed again"
+	fi
+	if [ "$paused" = 0 ] && [ "$t" -ge "$PAUSE_AT" ] && [ ! -e "$STANDBY" ]; then
+		paused=1
+		log "battery $(deg "$t"): at or above $(deg $PAUSE_AT) at level 5, pausing everything in standby"
+		echo "$t" > "$PAUSED"
+		# as the Steam menu's sleep does (op8-dbus-send): the SSH sessions' inhibitor locks
+		# must not keep a hot phone awake
+		systemctl suspend --check-inhibitors=no
+	fi
 	sleep "$PERIOD"
 done

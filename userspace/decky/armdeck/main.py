@@ -1,17 +1,22 @@
 # ARMDeck Decky plugin, backend. Runs inside Decky (in the "steam" container, as the normal user,
 # never as root) and touches no hardware: it reads the thermal guard level and the battery
-# temperature, and edits lsfg-vk's configuration file.
+# temperature, edits lsfg-vk's configuration file, and runs the Library (emulators and non-Steam
+# games, py_modules/armdeck_library). The Library's dnf installs use the container's own root
+# (rootless podman: that is this user on the host), never the host's.
 #
 # Frame generation per game: each game gets a profile named "armdeck-<appid>" in
 # ~/.config/lsfg-vk/conf.toml. The frontend puts LSFGVK_PROFILE=armdeck-<appid> (with the layer and
 # TU_DEBUG=noubwc, see build-lsfg-vk.sh) in the game's Launch Options; lsfg-vk watches the file and
 # applies multiplier, flow scale and performance mode while the game runs. Profiles with other
 # names are kept as they are.
+import asyncio
 import json
 import os
 import tomllib
 
 import decky
+
+from armdeck_library import emulators, games, paths, tiles
 
 HOME = decky.DECKY_USER_HOME
 CONF = os.path.join(HOME, ".config/lsfg-vk/conf.toml")
@@ -21,6 +26,8 @@ MANIFEST = os.path.join(HOME, ".local/share/vulkan/explicit_layer.d/"
 DLL = os.path.join(HOME, ".local/share/Steam/steamapps/common/Lossless Scaling/lsfg-vk.dll")
 # op8-thermal writes its level to /run on the host; the container sees the host's /run here
 THERMAL = ("/run/host/run/op8-thermal.level", "/run/op8-thermal.level")
+# the battery temperature (tenths of a degree) of op8-thermal's last pause in standby
+PAUSED = ("/run/host/run/op8-thermal.paused", "/run/op8-thermal.paused")
 BATTERY = "/sys/class/power_supply/bq27411-0"
 PREFIX = "armdeck-"
 DEFAULTS = {"multiplier": 2, "flow_scale": 0.5, "performance_mode": True}
@@ -102,8 +109,16 @@ class Plugin:
                 level = int(text)
                 break
         temp = read_text(os.path.join(BATTERY, "temp"))
+        paused = None
+        for path in PAUSED:
+            text = read_text(path)
+            if text is not None and text.isdigit():
+                paused = {"battery_c": int(text) / 10, "at": int(os.stat(path).st_mtime)}
+                break
         return {
             "thermal_level": level,
+            "paused": paused,
+            "charging": read_text(os.path.join(BATTERY, "status")) == "Charging",
             "battery_c": int(temp) / 10 if temp and temp.lstrip("-").isdigit() else None,
             "lsfg_layer": os.path.exists(LAYER) and os.path.exists(MANIFEST),
             "lsfg_dll": os.path.exists(DLL),
@@ -143,7 +158,85 @@ class Plugin:
                           f"performance {bool(performance_mode)}")
         return True
 
+    # --- Library: emulators (TODO 38) ---
+
+    async def library_status(self):
+        """The catalog with what is installed, the running job and the free space."""
+        return await asyncio.to_thread(emulators.status)
+
+    async def library_install(self, emu_id: str):
+        return emulators.start(emu_id, "install", self._job_finished)
+
+    async def library_remove(self, emu_id: str):
+        return emulators.start(emu_id, "remove", self._job_finished)
+
+    async def library_cancel(self):
+        emulators.cancel()
+        return True
+
+    async def library_tiles(self):
+        return tiles.load()
+
+    async def library_emulator_spec(self, emu_id: str):
+        """The tile of an installed emulator: its own window (settings, its own game list)."""
+        return tiles.emulator_spec(emulators.catalog()[emu_id])
+
+    async def library_pick_folder(self):
+        """Where "Add a game" opens the file picker: the ROM folders, else the games partition."""
+        for d in (paths.roms(), paths.games()):
+            if os.path.isdir(d):
+                return d
+        return HOME
+
+    async def library_inspect(self, path: str, system: str = ""):
+        return await asyncio.to_thread(games.inspect, path, system or None)
+
+    async def library_game_spec(self, path: str, kind: str, name: str):
+        return games.spec(path, kind, name)
+
+    async def library_tile_created(self, key: str, appid: int, name: str):
+        tiles.created(key, appid, name)
+        decky.logger.info(f"tile {key}: appid {appid} ({name})")
+        return True
+
+    async def library_tile_forget(self, key: str):
+        tiles.forget(key)
+        return True
+
+    def _job_finished(self, view):
+        # runs in the job's thread; the frontend makes or removes the tile when it hears this
+        decky.logger.info(f"library job finished: {view}")
+        asyncio.run_coroutine_threadsafe(decky.emit("armdeck_library_job", view), self.loop)
+        if view["action"] == "unpack":
+            self._unpack_next()
+
+    def _unpack_next(self):
+        """Unpack the next installed AppImage that has no unpacked copy yet, one job at a time,
+        each emulator tried once per load."""
+        for emu_id in emulators.pending_unpacks():
+            if emu_id in self.unpack_tried:
+                continue
+            self.unpack_tried.add(emu_id)
+            try:
+                emulators.start(emu_id, "unpack", self._job_finished)
+                decky.logger.info(f"unpacking {emu_id}'s AppImage")
+            except RuntimeError as e:
+                decky.logger.info(f"unpacking later: {e}")   # a job the user started goes first
+            return
+
     async def _main(self):
+        self.loop = asyncio.get_running_loop()
+        self.unpack_tried = set()
+        try:
+            changed = paths.install_launcher()
+            if changed:
+                decky.logger.info(f"launcher files updated in {paths.LIB}: {changed}")
+        except OSError as e:
+            decky.logger.error(f"could not install the launcher files: {e}")
+        try:
+            await asyncio.to_thread(self._unpack_next)
+        except (OSError, ValueError) as e:
+            decky.logger.error(f"could not look for AppImages to unpack: {e}")
         decky.logger.info("ARMDeck plugin loaded")
 
     async def _unload(self):
