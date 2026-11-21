@@ -1,3 +1,11 @@
+> [!IMPORTANT]
+> **This project is moving to [Phonecade](https://github.com/GabrielCRadu/phonecade).**
+> I wanted a solution that is universal: one that will most likely work on any modern Android
+> phone, instead of one tied to a single device and a single mainline Linux kernel. Phonecade
+> builds a handheld console on top of a custom Android ROM, which already knows how to drive the
+> phone's hardware correctly. ARMDeck is no longer developed. Everything learned here (hardware
+> safety, lessons, measurements) stays available as a reference.
+
 <p align="center">
   <img src="docs/images/armdeck-banner.png" alt="ARMDeck" width="620">
 </p>

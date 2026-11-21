@@ -1,6 +1,7 @@
 // The Library page (opened from the ARMDeck panel in Quick Access): the emulator catalog, each
-// installed with one press and given its own tile in the Steam library, and "Add a game", which
-// gives any game file its tile.
+// installed with one press and given its own tile in the Steam library, "Add a game", which
+// gives any game file its tile, and the Inbox, a folder whose contents are placed and given tiles
+// by themselves (inbox.py).
 import {
   ConfirmModal,
   DialogButton,
@@ -13,7 +14,8 @@ import {
 } from "@decky/ui";
 import { callable, FileSelectionType, openFilePicker, toaster } from "@decky/api";
 import { useEffect, useState } from "react";
-import { addTile, launchTile, removeTile, TileSpec, tileExists } from "./shortcuts";
+import qrcode from "qrcode-generator";
+import { addTile, launchTile, removeTile, setArtwork, TileSpec, tileExists } from "./shortcuts";
 
 type Emu = {
   id: string;
@@ -47,6 +49,19 @@ const tileCreated = callable<[key: string, appid: number, name: string], boolean
   "library_tile_created"
 );
 const tileForget = callable<[key: string], boolean>("library_tile_forget");
+const libraryArtwork = callable<[path: string, kind: string], Record<string, string>>(
+  "library_artwork"
+);
+
+// a new game tile gets its artwork in the background (libretro-thumbnails, emulated games only);
+// a tile without it keeps Steam's plain one
+function addArtwork(appid: number, spec: TileSpec) {
+  if (!spec.kind || spec.kind === "windows" || spec.kind === "native") return;
+  const path = spec.key.slice("game:".length);
+  libraryArtwork(path, spec.kind)
+    .then((art) => setArtwork(appid, art))
+    .catch(() => undefined);
+}
 
 type Inspect = {
   path: string;
@@ -63,6 +78,23 @@ const libraryInspect = callable<[path: string, system: string], Inspect>("librar
 const gameSpec = callable<[path: string, kind: string, name: string], TileSpec>(
   "library_game_spec"
 );
+
+type InboxView = { tiles: TileSpec[]; placed: string[]; notes: string[] };
+const inboxStart = callable<[], string>("library_inbox_start");
+const inboxScan = callable<[], InboxView>("library_inbox_scan");
+const libraryPending = callable<[id: string], TileSpec[]>("library_pending");
+
+type Upload = {
+  running: boolean;
+  url?: string;
+  closes_in?: number;
+  received?: number;
+  bytes?: number;
+  error?: string;
+};
+const uploadStart = callable<[], Upload>("library_upload_start");
+const uploadStop = callable<[], boolean>("library_upload_stop");
+const uploadStatus = callable<[], Upload>("library_upload_status");
 
 const mb = (bytes: number) => `${Math.round(bytes / 1e6)} MB`;
 const gb = (bytes: number) => `${(bytes / 1e9).toFixed(1)} GB`;
@@ -89,7 +121,9 @@ export async function onLibraryJob(job: Job) {
   try {
     if (job.action === "install") {
       await ensureEmulatorTile(job.id);
-      toaster.toast({ title: "ARMDeck Library", body: `${job.id} installed; its tile is in the library.` });
+      const waiting = await addTiles(await libraryPending(job.id));
+      const more = waiting.length ? ` ${waiting.length} game(s) from the Inbox got their tiles too.` : "";
+      toaster.toast({ title: "ARMDeck Library", body: `${job.id} installed; its tile is in the library.${more}` });
     } else {
       const known = (await libraryTiles())[key];
       if (known && tileExists(known.appid)) removeTile(known.appid);
@@ -98,6 +132,113 @@ export async function onLibraryJob(job: Job) {
     }
   } catch (e) {
     toaster.toast({ title: "ARMDeck Library", body: String(e) });
+  }
+}
+
+// tiles for games placed by the Inbox (or that waited for their emulator); the names it made
+async function addTiles(specs: TileSpec[]): Promise<string[]> {
+  const known = await libraryTiles();
+  const made: string[] = [];
+  for (const spec of specs) {
+    if (tileExists(known[spec.key]?.appid)) continue;
+    const appid = await addTile(spec);
+    await tileCreated(spec.key, appid, spec.name);
+    addArtwork(appid, spec);
+    made.push(spec.name);
+  }
+  return made;
+}
+
+const listOf = (names: string[]) =>
+  names.length <= 3 ? names.join(", ") : `${names.slice(0, 3).join(", ")} and ${names.length - 3} more`;
+
+// Called for every pass of the Inbox that did something, also when the page is closed
+export async function onInbox(view: InboxView) {
+  const lines: string[] = [];
+  try {
+    const made = await addTiles(view.tiles);
+    if (made.length) lines.push(`In your library: ${listOf(made)}.`);
+  } catch (e) {
+    lines.push(String(e));
+  }
+  if (view.placed.length) lines.push(`Placed: ${listOf(view.placed)}.`);
+  if (view.notes.length) lines.push(`Left in the Inbox: ${listOf(view.notes)}.`);
+  if (lines.length) toaster.toast({ title: "ARMDeck Inbox", body: lines.join(" ") });
+}
+
+// the watcher starts once the frontend listens (index.tsx), so no tile is missed
+export async function startInbox() {
+  try {
+    await inboxStart();
+  } catch (e) {
+    toaster.toast({ title: "ARMDeck Inbox", body: String(e) });
+  }
+}
+
+// --- Files without a cable ---
+
+// the QR code as SVG squares, drawn by React (no HTML from a string)
+function QrCode({ text, size }: { text: string; size: number }) {
+  const qr = qrcode(0, "M");
+  qr.addData(text);
+  qr.make();
+  const n = qr.getModuleCount();
+  let d = "";
+  for (let r = 0; r < n; r++)
+    for (let c = 0; c < n; c++) if (qr.isDark(r, c)) d += `M${c + 4} ${r + 4}h1v1h-1z`;
+  return (
+    <svg width={size} height={size} viewBox={`0 0 ${n + 8} ${n + 8}`} shapeRendering="crispEdges">
+      <rect width={n + 8} height={n + 8} fill="#fff" />
+      <path d={d} fill="#000" />
+    </svg>
+  );
+}
+
+function UploadModal({ first, closeModal }: { first: Upload; closeModal?: () => void }) {
+  const [up, setUp] = useState<Upload>(first);
+  // only while this window is open: received files and the time left
+  useEffect(() => {
+    const timer = setInterval(async () => setUp(await uploadStatus()), 2000);
+    return () => clearInterval(timer);
+  }, []);
+  const stop = async () => {
+    await uploadStop();
+    closeModal?.();
+  };
+  return (
+    <ModalRoot closeModal={closeModal}>
+      <h3 style={{ marginTop: 0 }}>Send files to this phone</h3>
+      {up.running && up.url ? (
+        <div style={{ display: "flex", gap: "24px", alignItems: "center" }}>
+          <QrCode text={up.url} size={220} />
+          <div>
+            <div>Scan the code with a phone, or open this address on a computer on the same WiFi:</div>
+            <div style={{ fontFamily: "monospace", margin: "0.6em 0", wordBreak: "break-all" }}>{up.url}</div>
+            <div style={{ opacity: 0.7 }}>
+              Received: {up.received ?? 0} file(s), {mb(up.bytes ?? 0)}. Everything goes to the Inbox.
+              The page closes by itself after {Math.ceil((up.closes_in ?? 0) / 60)} min without use.
+              Keep this phone awake while it sends.
+            </div>
+          </div>
+        </div>
+      ) : (
+        <div>The upload page is closed.</div>
+      )}
+      <Focusable style={{ display: "flex", gap: "8px", marginTop: "1em" }}>
+        <DialogButton onClick={closeModal}>Keep it open</DialogButton>
+        <DialogButton onClick={stop}>Close the page</DialogButton>
+      </Focusable>
+    </ModalRoot>
+  );
+}
+
+async function openUpload() {
+  try {
+    const up = await uploadStart();
+    if (up.error) return toast(up.error);
+    showModal(<UploadModal first={up} />);
+  } catch (e) {
+    toast(String(e));
   }
 }
 
@@ -137,6 +278,7 @@ function AddGame({ info, closeModal }: { info: Inspect; closeModal?: () => void 
       const spec = await gameSpec(info.path, info.kind!, name);
       const appid = await addTile(spec);
       await tileCreated(spec.key, appid, spec.name);
+      addArtwork(appid, spec);
       toast(`${spec.name} is in your library.`);
     } catch (e) {
       toast(String(e));
@@ -263,6 +405,7 @@ function EmuRow({ emu, job, tiles, refresh }: {
 
 export function LibraryPage() {
   const [status, setStatus] = useState<Status | null>(null);
+  const [checking, setChecking] = useState(false);
   const [tiles, setTiles] = useState<Tiles>({});
 
   const refresh = async () => {
@@ -290,6 +433,39 @@ export function LibraryPage() {
         childrenLayout="inline"
       >
         <DialogButton onClick={addGame}>Choose a file</DialogButton>
+      </Field>
+      <Field
+        label="Inbox"
+        description="Copy games into the Inbox folder on the games partition (over USB, the network or a download): each one is recognized, moved to its place and gets its tile. Archives are unpacked; a Windows game goes in as its whole folder."
+        bottomSeparator="standard"
+        childrenLayout="inline"
+      >
+        <DialogButton
+          disabled={checking}
+          onClick={async () => {
+            setChecking(true);
+            try {
+              const view = await inboxScan();
+              if (!view.tiles.length && !view.placed.length && !view.notes.length)
+                toast("The Inbox is empty.");
+              else await onInbox(view);
+            } catch (e) {
+              toast(String(e));
+            }
+            setChecking(false);
+            refresh();
+          }}
+        >
+          {checking ? "Checking..." : "Check now"}
+        </DialogButton>
+      </Field>
+      <Field
+        label="Send files without a cable"
+        description="Opens a page on the home WiFi for a few minutes, with a QR code: files and folders sent from another phone or a computer go to the Inbox."
+        bottomSeparator="standard"
+        childrenLayout="inline"
+      >
+        <DialogButton onClick={openUpload}>Show the QR code</DialogButton>
       </Field>
       <h3 style={{ marginBottom: "0.2em" }}>Emulators</h3>
       <div style={{ opacity: 0.7, marginBottom: "1em" }}>

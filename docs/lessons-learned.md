@@ -88,6 +88,14 @@ this page is the short version, so the same mistake is not made twice.
 - **Black bars in every game (solved, gamescope patch 9001).** Steam does not treat the panel as an
   internal screen and asks Xwayland for 16:9 modes; the patch keeps the requested height and gives
   every mode the panel's 20:9 aspect (1280x720 -> 1600x720).
+- **Stripes with coloured dots right after boot (2026-11-01, r18, open).** The only clue was the
+  single `dsi_err_worker: status=4` logged at every boot when gamescope takes the screen, which
+  had been judged harmless since r14. Switching the screen off for 2 s and on again
+  (`gamescopectl drm_sleep_internal_screen 1`, then `0`) cleared it without a reboot. Lesson: an
+  error that shows nothing on most boots can still be the one behind a rare visible fault;
+  details in [gaming-stack.md](gaming-stack.md) item 20. The same boot showed the battery at 0-2%
+  while it sat at 3.91 V and charged at 1.3 A: the gauge's known low reading (Power section),
+  not an empty battery.
 
 - **Native x86 Linux games closed at once (solved, 2026-10-05).** Steam's FEX tool needs an x86
   system with x86 Mesa at `/usr/share/guestos/fex-mesa`; FEX's own Arch Linux rootfs provides
@@ -197,6 +205,16 @@ this page is the short version, so the same mistake is not made twice.
   Fixed in the Library: the unpacked copy loses the bundled driver list and `armdeck-run` sets
   `SHARUN_ALLOW_SYS_VKICD=0` (gaming-stack.md TODO 38). Checked on the phone the same evening:
   the running PPSSPP maps only the container's Turnip.
+- **Two Inbox mistakes caught by sample files before the phone (2026-11-01).** The Inbox (TODO 38
+  part 3) first took every `.m3u` for a PlayStation game, because `systems.json` lists `.m3u`
+  under PlayStation, so a Dreamcast `.m3u` of `.gdi` discs would have started in DuckStation.
+  Its first disc now decides. A loose `.m3u` also moved its `.cue` files but not their `.bin`
+  tracks; the files a sheet needs are now followed through the `.m3u` too. The artwork search
+  (part 5) missed "The Legend of Zelda - A Link to the Past" because libretro writes "Legend of
+  Zelda, The - A Link to the Past", with the article moved before the subtitle, not at the end.
+  Lesson: a format that points at other files (a playlist, a sheet) needs a test where those
+  files are of another kind, and name matching needs real names from the server, not made-up
+  ones.
 
 ## Power, charging and controllers
 

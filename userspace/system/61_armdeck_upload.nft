@@ -1,0 +1,10 @@
+# armdeck: the Library's upload page (Decky plugin, armdeck_library/upload.py), the "Send files
+# without a cable" QR code. The firewall's input policy is drop; this opens TCP 8737 only on
+# WiFi and only from private (LAN) addresses. Nothing listens on it unless the user opens the
+# page, which closes by itself after 15 minutes without use; every address carries a random
+# token.
+table inet filter {
+	chain input {
+		iifname "wlan*" ip saddr { 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16 } tcp dport 8737 accept comment "ARMDeck upload page, LAN only"
+	}
+}

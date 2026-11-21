@@ -662,6 +662,14 @@ was running (udev rules + `udevadm trigger` + restarting nftables).
     brightness write timed out. The last three r13 sessions had 26, 6 and 12 `dsi_err` lines. One
     `dsi_err_worker: status=4` is still logged once per boot, when gamescope takes over the
     screen (36-43 s after boot); it is not linked to brightness and shows nothing on screen.
+    **2026-11-01, kernel r18: that boot-time line is not always harmless.** Right after a cold
+    boot (phone off since 2026-10-31), the screen showed stripes with coloured dots; the journal
+    had only the usual single `dsi_err_worker: status=4` at gamescope's takeover and nothing
+    after it. `gamescopectl drm_sleep_internal_screen 1`, 2 s, then `0` cleared it, as on
+    2026-10-04. So a FIFO underflow while gamescope sets up the screen can sometimes leave the
+    panel showing garbage until it is switched off and on. Open: why the takeover still
+    underflows once per boot. A possible fallback is to cycle the screen once from the session
+    start when that line appears.
 21. **Refresh rate the user can change (60 / 90 Hz).** Kernel patch 0006 of r9 ran the panel at
     60 Hz by default, with 90 Hz only through the boot option
     `panel_samsung_amb655uv01.refresh=90`. Wanted: switching from Steam (the refresh-rate slider
@@ -1098,6 +1106,97 @@ was running (udev rules + `udevadm trigger` + restarting nftables).
     `app/AppRun`, with no copy in `/tmp`. The running PPSSPP's maps then showed one Vulkan
     driver, `/usr/lib64/libvulkan_freedreno.so` (the container's Turnip), next to the bundled
     Vulkan loader: no second Turnip, no `lvp`, no LLVM, no `dzn`. Still to check: a Windows game.
+
+    **Part 3 written (2026-11-01, tested on the PC in WSL, not yet on the phone):** the Inbox is
+    `~/games/Inbox` (`armdeck_library/inbox.py`). The watcher sleeps in inotify (the kernel wakes
+    it when a file there is closed after writing or moved in), so an idle Inbox costs nothing.
+    A batch is handled once nothing in it is still open for writing and it has been quiet for
+    5 s; partial downloads (`.part`, `.crdownload`, ...) and hidden names are left alone. It
+    starts only after the frontend calls `library_inbox_start`, so a tile is never lost to a
+    frontend not loaded yet. Where things go, all on the games partition, so a move is a rename:
+    - a game for one of the systems goes to `Emulation/roms/<system>/`. A `.cue`, `.gdi` or `.m3u`
+      takes the files it names with it. A folder with sheets moves whole. A folder with several
+      discs and no `.m3u` gets one, so the game has one tile. An `.m3u` is a PlayStation file by
+      extension, so its first disc decides the system (Dreamcast `.gdi` lists);
+    - a folder with an `.exe` goes to `Windows/<folder>/`. Its tile, through Proton 11, goes to
+      the only `.exe` left once installers, redistributables, crash reporters and anti-cheat are
+      set aside, at the shallowest level (Unreal's starter at the top, not the `-Shipping.exe`
+      deeper), or the one named like the folder. When none is clear, the folder is moved and the
+      toast says to pick the `.exe` with "Add a game". A lone `.exe` stays in the Inbox
+      (installers are a later idea);
+    - an ARM64 program or script goes to `Apps/`, and a folder with one goes there whole;
+    - an archive (`.zip` with Python's own reader, `.7z`/`.rar` with `7z`) is unpacked next to
+      the Inbox after a free-space check. It is removed only once something from it was placed.
+      A cartridge game in a zip or 7z stays packed (RetroArch reads it). One level only: an
+      archive inside an archive is never unpacked. An entry that climbs out of its folder
+      (`../`) refuses the whole archive, and symlinks are never made;
+    - a game whose emulator is not installed is moved anyway and kept in `inbox-pending.json`.
+      It gets its tile when that emulator is installed;
+    - what cannot be placed (an unknown file, a disc image two consoles share, a `.cue` without
+      its `.bin`) stays, and the toast says why, once: the Inbox remembers it and is quiet about
+      it until it changes. "Check now" on the Library page reports it again.
+    Tested with 18 sample cases, all as expected:
+    - a PSP ISO;
+    - a GBA ROM, bare and zipped;
+    - PlayStation games: a two-disc folder, a top-level `.cue` + `.bin`, and a top-level `.m3u`
+      with its sheets and tracks;
+    - a Dreamcast `.m3u` of `.gdi` discs;
+    - Unity and Unreal folders, and a zip with a Windows game;
+    - a lone installer;
+    - an ARM64 script and a native port folder;
+    - a zip with `../`;
+    - a CSO, a `.cue` without its `.bin`, a text file and a `.part`.
+    The watcher placed a file and a folder copied in while it ran 1.2 s after the copy (5 s on
+    the phone). To check on the phone: that `7z` exists in the container (`7zip` package),
+    inotify on the games partition from inside the container, a copy over the network.
+
+    **Part 4 written (2026-11-01, tested on the PC in WSL, not yet on the phone):** "Send files
+    without a cable" on the Library page (`armdeck_library/upload.py`) opens an upload page on
+    the phone's WiFi address, port 8737, and shows its address as a QR code. The code is drawn
+    by `qrcode-generator` 1.4.4 (MIT, no dependencies, pinned) as SVG squares. A top-level file
+    goes to the Inbox as soon as it is complete. A folder (the page's "Choose a folder") waits
+    in a staging folder until the page says it is done, so the Inbox never sees half a game.
+    Its limits are in [security-audit.md](security-audit.md) S8c. The firewall rule is
+    `userspace/system/61_armdeck_upload.nft` (in the deploy manifest; `deploy.sh` checks it
+    with `nft -c` before reloading).
+    Tested in WSL:
+    - the page answers, and a wrong token gets 404;
+    - `../`, absolute, hidden, backslash and empty paths are refused;
+    - a GBA file went to the Inbox at once, and a two-file Windows folder only after "done";
+    - the Inbox then placed both: the Windows folder with its tile, the ROM waiting for
+      RetroArch;
+    - it closed by itself when idle and after 20 wrong tokens.
+    To check on the phone:
+    - that the page opens from another phone on the same WiFi, and the firewall rule;
+    - a large file (several GB);
+    - what Steam's auto-sleep does to a long upload. The page says to keep the phone awake;
+      Steam is not told to stay awake yet.
+
+    **Part 5, emulated games (2026-11-01, tested on the PC against the real server, not yet in
+    Steam):** every new game tile (from "Add a game", the Inbox, or one that waited for its
+    emulator) gets its artwork in the background, from libretro-thumbnails over HTTPS
+    (`armdeck_library/artwork.py`):
+    - the box art becomes the portrait capsule, the title screen the wide capsule, and a
+      screenshot the hero image;
+    - they go to Steam through `SteamClient.Apps.SetCustomArtworkForApp(appid, base64, "png",
+      type)`, with types 0 capsule, 1 hero, 3 wide capsule (`ELibraryAssetType` in
+      decky-frontend-lib). Steam keeps its own copy, so the plugin stores only the server's
+      name lists.
+    Finding the names:
+    - a ROM with its No-Intro / Redump name is found at once;
+    - otherwise the name list of that system's box art folder (1-3 MB, kept 30 days) is
+      searched for the same title without tags. A trailing article is moved back in every part
+      of the name ("Legend of Zelda, The - A Link to the Past" matches "The Legend of Zelda - A
+      Link to the Past"). The ROM's region is preferred, then the plainest name (no "(Virtual
+      Console)"), then USA, World, Europe, Japan.
+    Tested on the PC:
+    - "Advance Wars (USA)" exact, 0.7 s;
+    - "advance wars" through the list, 1.6 s with the list download;
+    - "The Legend of Zelda - A Link to the Past (Europe)" matched;
+    - a two-disc PlayStation game by its `(Disc 1)` name, and "Crash Bandicoot.m3u";
+    - an unknown name gave nothing, without error.
+    PC games (SteamGridDB) need the user's API key: still to do. An emulator's own tile keeps
+    Steam's plain artwork.
 
 #### Ideas for later: more non-Steam games, emulation, a phone-style desktop (2026-10-30)
 

@@ -5,6 +5,7 @@ import hashlib
 import os
 import ssl
 import subprocess
+import urllib.error
 import urllib.request
 
 # Decky is a PyInstaller bundle; the container's own CA list is the one kept up to date by Fedora
@@ -57,6 +58,24 @@ def download(url, dest, sha256=None, progress=None, cancel=None, timeout=30):
     finally:
         if os.path.exists(part):
             os.unlink(part)
+
+
+def get(url, limit, timeout=20):
+    """A small HTTPS download into memory: the bytes, or None when the server has no such file.
+    Anything over limit bytes is refused."""
+    if not url.startswith("https://"):
+        raise ValueError(f"not an HTTPS address: {url}")
+    req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout, context=ssl_context()) as resp:
+            data = resp.read(limit + 1)
+    except urllib.error.HTTPError as e:
+        if e.code == 404:
+            return None
+        raise
+    if len(data) > limit:
+        raise ValueError(f"larger than {limit} bytes: {url}")
+    return data
 
 
 # Decky's loader exports its unpack folder as LD_LIBRARY_PATH; a program started with it loads

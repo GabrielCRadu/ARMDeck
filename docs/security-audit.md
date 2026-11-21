@@ -99,6 +99,26 @@ package, so it survives updates. Logins are done with an SSH key. Later
 - **Measure:** `https://` for `dl-cdn.alpinelinux.org` (it supports HTTPS). For the pmOS mirror,
   check first whether it serves HTTPS.
 
+## S8c. The Library's upload page (low, added 2026-11-01)
+
+- "Send files without a cable" in the ARMDeck plugin (`armdeck_library/upload.py`) serves an
+  upload page on TCP 8737. The firewall opens that port only on WiFi and only for private
+  addresses (`userspace/system/61_armdeck_upload.nft`). Nothing listens on it unless the user
+  opens the page from the Library.
+- **Limits that are in place:**
+  - it listens only on the WiFi address, and only when that address is private;
+  - it refuses any client outside the private ranges;
+  - every opening has a fresh 128-bit token in the address, and a wrong token gets a plain
+    404; after 20 wrong tokens the page closes;
+  - it closes after 15 minutes without a request, and when the plugin unloads;
+  - it writes only into its own staging folder (no `..`, no absolute paths, no hidden top-level
+    names) and checks the free space before each file. Files reach the Inbox only when
+    complete.
+- **What remains:** plain HTTP, so someone who can read the home network's traffic can see the
+  token while the page is open and send files to the Inbox. They can only add files, not read
+  or delete them. HTTPS would need a certificate the other device trusts, which a QR code
+  cannot give.
+
 ## S9. What is fine
 
 - The git history contains no phone serial number, IMEI, keys or tokens. The only personal

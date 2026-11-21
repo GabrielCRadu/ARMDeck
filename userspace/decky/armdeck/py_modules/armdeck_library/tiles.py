@@ -62,7 +62,8 @@ def game_spec(path, kind, name):
     """A game's tile: an emulated game through armdeck-run, a Windows program through Proton
     (Steam composes Proton, its runtime and FEX, as for a Steam game), a native one directly."""
     real = os.path.realpath(path)
-    spec = {"key": f"game:{real}", "name": name, "start_dir": os.path.dirname(real)}
+    spec = {"key": f"game:{real}", "name": name, "start_dir": os.path.dirname(real),
+            "kind": kind}
     if kind == "windows":
         spec.update(exe=real, options="", compat_tool=PROTON)
     elif kind == "native":

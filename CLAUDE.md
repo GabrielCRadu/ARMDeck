@@ -57,5 +57,5 @@ maintainer's explicit OK at that moment.
 
 See [docs/verification-log.md](docs/verification-log.md) for the verified state of the project.
 In short: a OnePlus 8 (IN2013, codename `instantnoodle`) turned into a handheld console with
-mainline Linux. The phone is wiped completely: no Android, no modem, no calls. ARMDeck aims to
+mainline Linux. The phone has no Android (wiped); the modem is intact but unused (switched off from Linux, never erased), so no calls. ARMDeck aims to
 support more Snapdragon phones through community device ports.

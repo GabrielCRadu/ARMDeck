@@ -16,7 +16,7 @@ import tomllib
 
 import decky
 
-from armdeck_library import emulators, games, paths, tiles
+from armdeck_library import artwork, emulators, games, inbox, paths, tiles, upload
 
 HOME = decky.DECKY_USER_HOME
 CONF = os.path.join(HOME, ".config/lsfg-vk/conf.toml")
@@ -194,6 +194,10 @@ class Plugin:
     async def library_game_spec(self, path: str, kind: str, name: str):
         return games.spec(path, kind, name)
 
+    async def library_artwork(self, path: str, kind: str):
+        """Box art, title screen and a screenshot for an emulated game's tile (base64 PNGs)."""
+        return await asyncio.to_thread(artwork.for_game, path, kind)
+
     async def library_tile_created(self, key: str, appid: int, name: str):
         tiles.created(key, appid, name)
         decky.logger.info(f"tile {key}: appid {appid} ({name})")
@@ -202,6 +206,40 @@ class Plugin:
     async def library_tile_forget(self, key: str):
         tiles.forget(key)
         return True
+
+    # --- Library: the Inbox (part 3) ---
+
+    async def library_inbox_start(self):
+        """Called by the frontend once it listens for armdeck_inbox: the first pass and the
+        watcher start only then, so no tile is lost to a frontend not loaded yet."""
+        self.inbox.start()
+        return inbox.inbox()
+
+    async def library_inbox_scan(self):
+        """Check the Inbox now, and report again what was left in it before."""
+        batch = await asyncio.to_thread(self.inbox.scan_now, False)
+        return batch.view()
+
+    async def library_pending(self, emu_id: str):
+        """Tiles for games the Inbox placed before their emulator was installed."""
+        return await asyncio.to_thread(inbox.take_pending, emu_id)
+
+    # --- Library: files without a cable (part 4) ---
+
+    async def library_upload_start(self):
+        """Open the upload page (or keep the open one alive): its address for the QR code."""
+        return await asyncio.to_thread(self.upload.start)
+
+    async def library_upload_stop(self):
+        await asyncio.to_thread(self.upload.stop)
+        return True
+
+    async def library_upload_status(self):
+        return self.upload.status()
+
+    def _inbox_batch(self, view):
+        decky.logger.info(f"inbox: {view}")
+        asyncio.run_coroutine_threadsafe(decky.emit("armdeck_inbox", view), self.loop)
 
     def _job_finished(self, view):
         # runs in the job's thread; the frontend makes or removes the tile when it hears this
@@ -227,6 +265,8 @@ class Plugin:
     async def _main(self):
         self.loop = asyncio.get_running_loop()
         self.unpack_tried = set()
+        self.inbox = inbox.Watcher(self._inbox_batch, decky.logger.info)
+        self.upload = upload.Server(decky.logger.info)
         try:
             changed = paths.install_launcher()
             if changed:
@@ -240,4 +280,5 @@ class Plugin:
         decky.logger.info("ARMDeck plugin loaded")
 
     async def _unload(self):
-        pass
+        self.upload.stop("plugin unloaded")
+        self.inbox.stop()

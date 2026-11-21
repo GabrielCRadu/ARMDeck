@@ -25,6 +25,7 @@ host-root  system/armdeck-usb-gadget-off.service  /etc/systemd/system/armdeck-us
 host-root  system/armdeck-boot-rw                 /etc/apk/commit_hooks.d/armdeck-boot-rw                                       0755
 host-root  system/20-armdeck-quiet-console.conf  /etc/sysctl.d/20-armdeck-quiet-console.conf                                    0644
 host-root  system/60_armdeck_remote_play.nft      /etc/nftables.d/60_armdeck_remote_play.nft                                    0644
+host-root  system/61_armdeck_upload.nft           /etc/nftables.d/61_armdeck_upload.nft                                         0644
 host-root  audio/armdeck-audio-recover           /usr/local/bin/armdeck-audio-recover                                          0755
 host-root  audio/armdeck-audio-recover.service   /etc/systemd/system/armdeck-audio-recover.service                             0644
 host-root  power/op8-standby                      /usr/local/bin/op8-standby                                                    0755

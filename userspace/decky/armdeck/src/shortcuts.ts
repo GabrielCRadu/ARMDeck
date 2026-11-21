@@ -12,6 +12,7 @@ export type TileSpec = {
   start_dir: string;
   options: string;
   compat_tool?: string;
+  kind?: string; // a game tile: its system, "windows" or "native"
 };
 
 export async function addTile(spec: TileSpec): Promise<number> {
@@ -34,6 +35,21 @@ export function tileExists(appid: number | undefined): boolean {
   } catch {
     return false;
   }
+}
+
+// Steam's custom artwork slots, as its own "Set Custom Artwork" fills them
+const ASSET = { grid_p: 0, hero: 1, logo: 2, grid_l: 3, icon: 4 } as const;
+
+export async function setArtwork(appid: number, art: Partial<Record<keyof typeof ASSET, string>>) {
+  const apps = SteamClient?.Apps;
+  if (!apps?.SetCustomArtworkForApp) return 0;
+  let set = 0;
+  for (const [slot, data] of Object.entries(art)) {
+    if (!data) continue;
+    await apps.SetCustomArtworkForApp(appid, data, "png", ASSET[slot as keyof typeof ASSET]);
+    set++;
+  }
+  return set;
 }
 
 export function removeTile(appid: number) {

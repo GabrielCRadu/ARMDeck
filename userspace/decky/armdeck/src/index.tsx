@@ -23,7 +23,7 @@ import {
 } from "@decky/api";
 import { useEffect, useRef, useState } from "react";
 import { FaMicrochip } from "react-icons/fa";
-import { LibraryPage, onLibraryJob } from "./library";
+import { LibraryPage, onInbox, onLibraryJob, startInbox } from "./library";
 
 const LIBRARY_ROUTE = "/armdeck/library";
 
@@ -328,6 +328,8 @@ export default definePlugin(() => {
   routerHook.addRoute(LIBRARY_ROUTE, LibraryPage, { exact: true });
   // a finished install or removal makes or removes its tile even when the page is closed
   const listener = addEventListener("armdeck_library_job", onLibraryJob);
+  const inboxListener = addEventListener("armdeck_inbox", onInbox);
+  startInbox();
   const stopWatcher = thermalWatcher();
   return {
     name: "ARMDeck",
@@ -337,6 +339,7 @@ export default definePlugin(() => {
     onDismount() {
       stopWatcher();
       removeEventListener("armdeck_library_job", listener);
+      removeEventListener("armdeck_inbox", inboxListener);
       routerHook.removeRoute(LIBRARY_ROUTE);
     },
   };
